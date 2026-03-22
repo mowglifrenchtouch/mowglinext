@@ -61,6 +61,8 @@
 #include "xbot_msgs/WheelTick.h"
 
 #include "mower_msgs/Status.h"
+#include "mower_msgs/Power.h"
+#include "mower_msgs/Emergency.h"
 #include "mower_msgs/ESCStatus.h"
 #include "mower_msgs/MowerControlSrv.h"
 #include "mower_msgs/EmergencyStopSrv.h"
@@ -124,6 +126,10 @@ sensor_msgs::Imu imu_onboard_msg;
 mowgli::status status_msg;
 // om status message
 mower_msgs::Status om_mower_status_msg;
+// om power message
+mower_msgs::Power om_power_msg;
+// om emergency message
+mower_msgs::Emergency om_emergency_msg;
 
 xbot_msgs::WheelTick wheel_ticks_msg;
 mower_msgs::HighLevelStatus high_level_status;
@@ -132,7 +138,9 @@ float clamp(float d, float min, float max);
  * PUBLISHERS
  */
 ros::Publisher pubButtonState("buttonstate", &buttonstate_msg);
-ros::Publisher pubOMStatus("mower/status", &om_mower_status_msg);
+ros::Publisher pubOMStatus("/ll/mower_status", &om_mower_status_msg);
+ros::Publisher pubOMPower("/ll/power", &om_power_msg);
+ros::Publisher pubOMEmergency("/ll/emergency", &om_emergency_msg);
 ros::Publisher pubWheelTicks("/mower/wheel_ticks", &wheel_ticks_msg);
 #ifdef ROS_PUBLISH_MOWGLI
 ros::Publisher pubStatus("mowgli/status", &status_msg);
@@ -604,6 +612,22 @@ extern "C" void broadcast_handler()
 		om_mower_status_msg.mower_motor_rpm = BLADEMOTOR_u16RPM;
 		pubOMStatus.publish(&om_mower_status_msg);
 
+		// Publish Power message to /ll/power
+		om_power_msg.stamp = nh.now();
+		om_power_msg.v_battery = battery_voltage;
+		om_power_msg.v_charge = charge_voltage;
+		om_power_msg.charge_current = current;
+		om_power_msg.charger_enabled = chargecontrol_is_charging;
+		om_power_msg.charger_status = chargecontrol_is_charging ? "charging" : "idle";
+		pubOMPower.publish(&om_power_msg);
+
+		// Publish Emergency message to /ll/emergency
+		om_emergency_msg.stamp = nh.now();
+		om_emergency_msg.active_emergency = Emergency_State();
+		om_emergency_msg.latched_emergency = Emergency_State();
+		om_emergency_msg.reason = Emergency_State() ? "emergency" : "";
+		pubOMEmergency.publish(&om_emergency_msg);
+
 	}
 	// if (NBT_handler(&status_nbt))
 }
@@ -713,6 +737,8 @@ extern "C" void init_ROS()
 	nh.advertise(pubStatus);
 #endif
 	nh.advertise(pubOMStatus);
+	nh.advertise(pubOMPower);
+	nh.advertise(pubOMEmergency);
 	nh.advertise(pubWheelTicks);
 
 	// Initialize Subscribers
