@@ -169,7 +169,7 @@ ros::Publisher pubRightBumper("bumper/right", &bumper_left_msg);
  */
 extern "C" void CommandVelocityMessageCb(const geometry_msgs::Twist &msg);
 extern "C" void CommandHighLevelStatusMessageCb(const mower_msgs::HighLevelStatus &msg);
-ros::Subscriber<geometry_msgs::Twist> subCommandVelocity("cmd_vel", CommandVelocityMessageCb);
+ros::Subscriber<geometry_msgs::Twist> subCommandVelocity("/ll/cmd_vel", CommandVelocityMessageCb);
 ros::Subscriber<mower_msgs::HighLevelStatus> subCommandHighLevelStatus("mower_logic/current_state", CommandHighLevelStatusMessageCb);
 
 // SERVICES
