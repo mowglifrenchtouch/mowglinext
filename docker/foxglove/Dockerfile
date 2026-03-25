@@ -1,13 +1,15 @@
-ARG IMAGE
+ARG IMAGE=ghcr.io/cedbossneo/mowgli-docker:upstream
 FROM ${IMAGE}
 
 SHELL ["/bin/bash", "-c"]
 
 RUN apt-get update && apt-get install -y \
     git \
+    build-essential \
     python3-rosdep \
     python3-catkin-tools \
-    build-essential \
+    ros-noetic-ros-babel-fish \
+    nlohmann-json3-dev \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/open_mower_ros/src
