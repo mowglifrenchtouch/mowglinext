@@ -803,6 +803,9 @@ const docTemplate = `{
                 "file": {
                     "type": "string"
                 },
+                "imuOnboardInclinationThreshold": {
+                    "type": "integer"
+                },
                 "limitVoltage150MA": {
                     "type": "number"
                 },

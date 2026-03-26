@@ -27,6 +27,7 @@ type FirmwareConfig struct {
 	TiltEmergencyMillis            int     `json:"tiltEmergencyMillis"`
 	StopButtonEmergencyMillis      int     `json:"stopButtonEmergencyMillis"`
 	PlayButtonClearEmergencyMillis int     `json:"playButtonClearEmergencyMillis"`
+	ImuOnboardInclinationThreshold int     `json:"imuOnboardInclinationThreshold"`
 	ExternalImuAcceleration        bool    `json:"externalImuAcceleration"`
 	ExternalImuAngular             bool    `json:"externalImuAngular"`
 	MasterJ18                      bool    `json:"masterJ18"`

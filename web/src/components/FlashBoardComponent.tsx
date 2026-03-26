@@ -1,5 +1,5 @@
 import {App, Button, Col, Modal, Row} from "antd";
-import {useEffect, useMemo, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import {fetchEventSource} from "@microsoft/fetch-event-source";
 import {createSchemaField} from "@formily/react";
 import {
@@ -48,6 +48,7 @@ type Config = {
     tiltEmergencyMillis: number,
     stopButtonEmergencyMillis: number,
     playButtonClearEmergencyMillis: number,
+    imuOnboardInclinationThreshold: number,
     externalImuAcceleration: boolean,
     externalImuAngular: boolean,
     masterJ18: boolean,
@@ -63,7 +64,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
         validateFirst: true,
         effects: (form) => {
             onFieldValueChange('boardType', (field) => {
-                form.setFieldState('*(panelType,tickPerM,wheelBase,branch,repository,debugType,disableEmergency,maxMps,maxChargeCurrent,limitVoltage150MA,maxChargeVoltage,batChargeCutoffVoltage,oneWheelLiftEmergencyMillis,bothWheelsLiftEmergencyMillis,tiltEmergencyMillis,stopButtonEmergencyMillis,playButtonClearEmergencyMillis,externalImuAcceleration,externalImuAngular,masterJ18,perimeterWire)', (state) => {
+                form.setFieldState('*(panelType,tickPerM,wheelBase,branch,repository,debugType,disableEmergency,maxMps,maxChargeCurrent,limitVoltage150MA,maxChargeVoltage,batChargeCutoffVoltage,oneWheelLiftEmergencyMillis,bothWheelsLiftEmergencyMillis,tiltEmergencyMillis,stopButtonEmergencyMillis,playButtonClearEmergencyMillis,imuOnboardInclinationThreshold,externalImuAcceleration,externalImuAngular,masterJ18,perimeterWire)', (state) => {
                     //For the initial linkage, if the field cannot be found, setFieldState will push the update into the update queue until the field appears before performing the operation
                     state.display = field.value !== "BOARD_VERMUT_YARDFORCE500" ? "visible" : "hidden";
                 })
@@ -77,6 +78,8 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
     const guiApi = useApi();
     const {notification} = App.useApp();
     const [data, setData] = useState<string[]>()
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const [isFlashing, setIsFlashing] = useState(false);
     useEffect(() => {
         (async () => {
             try {
@@ -100,8 +103,20 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                 });
             }
         })()
+        return () => {
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+        };
     }, []);
-    const flashFirmware = async (values: Config) => {
+    const doFlashFirmware = async (values: Config) => {
+        if (isFlashing) return;
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        setIsFlashing(true);
         form.setLoading(true)
         try {
             console.log({
@@ -114,6 +129,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                 headers: {
                     Accept: "text/event-stream",
                 },
+                signal: controller.signal,
                 onopen(res) {
                     if (res.ok && res.status === 200) {
                         console.log({
@@ -140,6 +156,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                         setTimeout(() => {
                             props.onNext();
                         }, 10000);
+                        setIsFlashing(false);
                         form.setLoading(false)
                         return;
                     } else if (event.event == "error") {
@@ -147,6 +164,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                             message: "Error flashing firmware",
                             description: event.data,
                         });
+                        setIsFlashing(false);
                         form.setLoading(false)
                         return;
                     } else {
@@ -163,16 +181,42 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                         message: "Error retrieving log stream",
                         description: err.toString(),
                     });
+                    setIsFlashing(false);
                     form.setLoading(false)
                 },
             });
         } catch (e: any) {
-            notification.error({
-                message: "Error flashing firmware",
-                description: e.toString(),
-            });
+            if (e.name !== 'AbortError') {
+                notification.error({
+                    message: "Error flashing firmware",
+                    description: e.toString(),
+                });
+            }
+            setIsFlashing(false);
             form.setLoading(false)
         }
+    };
+    const flashFirmware = (values: Config) => {
+        Modal.confirm({
+            title: "Confirm firmware flash",
+            content: (
+                <div>
+                    <p><strong>Please verify the following parameters before flashing:</strong></p>
+                    <ul style={{listStyle: "none", padding: 0}}>
+                        <li>Max Charge Current: <strong>{values.maxChargeCurrent} A</strong></li>
+                        <li>Max Charge Voltage: <strong>{values.maxChargeVoltage} V</strong></li>
+                        <li>Bat Charge Cutoff Voltage: <strong>{values.batChargeCutoffVoltage} V</strong></li>
+                        <li>Limit Voltage 150mA: <strong>{values.limitVoltage150MA} V</strong></li>
+                        <li>IMU Inclination Threshold: <strong>0x{values.imuOnboardInclinationThreshold?.toString(16).toUpperCase().padStart(2, "0") ?? "38"}</strong></li>
+                    </ul>
+                    <p style={{color: "red"}}><strong>Wrong voltage or current values can damage your battery or hardware!</strong></p>
+                </div>
+            ),
+            okText: "Flash",
+            okType: "danger",
+            cancelText: "Cancel",
+            onOk: () => doFlashFirmware(values),
+        });
     };
     return <Form form={form}>
         <Row>
@@ -346,7 +390,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                         name={"maxChargeCurrent"}
                         title={"Max Charge Current"}
                         default={1.0}
-                        x-component-props={{step: 0.1, max: 1.5}}
+                        x-component-props={{step: 0.1, max: 5.0}}
                         x-decorator-props={{tooltip: "Max charge current in Amps"}}
                         x-component="NumberPicker"
                         x-decorator="FormItem"/></SchemaField>
@@ -355,7 +399,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                         title={"Limit Voltage 150mA"}
                         default={28.0}
                         x-decorator-props={{tooltip: "Voltage limit during slow charge in Volts"}}
-                        x-component-props={{step: 0.1, max: 29.4}}
+                        x-component-props={{step: 0.1, max: 30.0}}
                         x-component="NumberPicker"
                         x-decorator="FormItem"/></SchemaField>
                     <SchemaField><SchemaField.Number
@@ -363,7 +407,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                         title={"Max Charge Voltage"}
                         default={29.0}
                         x-decorator-props={{tooltip: "Max charge voltage in Volts"}}
-                        x-component-props={{step: 0.1, max: 29.4}}
+                        x-component-props={{step: 0.1, max: 30.0}}
                         x-component="NumberPicker"
                         x-decorator="FormItem"/></SchemaField>
                     <SchemaField><SchemaField.Number
@@ -371,7 +415,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                         title={"Bat Charge Cutoff Voltage"}
                         default={28.0}
                         x-decorator-props={{tooltip: "Max battery voltage allowed in Volts"}}
-                        x-component-props={{step: 0.1, max: 29.0}}
+                        x-component-props={{step: 0.1, max: 30.0}}
                         x-component="NumberPicker"
                         x-decorator="FormItem"/></SchemaField>
                     <SchemaField><SchemaField.Number
@@ -417,6 +461,16 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                             default={2000}
                             x-decorator-props={{tooltip: "Time in milliseconds before emergency stop is cleared when play button is pressed"}}
                             x-component-props={{step: 1}}
+                            x-component="NumberPicker"
+                            x-decorator="FormItem"/>
+                    </SchemaField>
+                    <SchemaField>
+                        <SchemaField.Number
+                            name={"imuOnboardInclinationThreshold"}
+                            title={"IMU Onboard Inclination Threshold"}
+                            default={0x38}
+                            x-decorator-props={{tooltip: "IMU onboard inclination threshold (0x2C=more inclination allowed, 0x38=stock). Value in hex."}}
+                            x-component-props={{step: 1, min: 0, max: 127}}
                             x-component="NumberPicker"
                             x-decorator="FormItem"/>
                     </SchemaField>

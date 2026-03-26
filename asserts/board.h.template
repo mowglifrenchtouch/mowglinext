@@ -139,7 +139,7 @@ extern "C"
 #define TILT_EMERGENCY_MILLIS {{.TiltEmergencyMillis}} // used for both the mechanical and accelerometer based detection
 #define STOP_BUTTON_EMERGENCY_MILLIS {{.StopButtonEmergencyMillis}}
 #define PLAY_BUTTON_CLEAR_EMERGENCY_MILLIS {{.PlayButtonClearEmergencyMillis}}
-#define IMU_ONBOARD_INCLINATION_THRESHOLD 0x38 // stock firmware uses 0x2C (way more allowed inclination)
+#define IMU_ONBOARD_INCLINATION_THRESHOLD {{printf "0x%02X" .ImuOnboardInclinationThreshold}} // stock firmware uses 0x2C (way more allowed inclination)
 
 // Enable Emergency debugging
 //#define EMERGENCY_DEBUG

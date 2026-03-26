@@ -26,17 +26,20 @@ func NewFirmwareProvider(db types.IDBProvider) *FirmwareProvider {
 
 // BuildBoardHeader Open file ../../setup/board.h, apply go template to it with config and return the result
 func (fp *FirmwareProvider) buildBoardHeader(templateFile string, config types.FirmwareConfig) ([]byte, error) {
-	if config.BatChargeCutoffVoltage > 29 {
-		config.BatChargeCutoffVoltage = 29
+	if config.BatChargeCutoffVoltage > 30 {
+		config.BatChargeCutoffVoltage = 30
 	}
-	if config.MaxChargeVoltage > 29 {
-		config.MaxChargeVoltage = 29
+	if config.MaxChargeVoltage > 30 {
+		config.MaxChargeVoltage = 30
 	}
-	if config.LimitVoltage150MA > 29 {
-		config.LimitVoltage150MA = 29
+	if config.LimitVoltage150MA > 30 {
+		config.LimitVoltage150MA = 30
 	}
-	if config.MaxChargeCurrent > 1.5 {
-		config.MaxChargeCurrent = 1.5
+	if config.MaxChargeCurrent > 5 {
+		config.MaxChargeCurrent = 5
+	}
+	if config.ImuOnboardInclinationThreshold <= 0 {
+		config.ImuOnboardInclinationThreshold = 0x38
 	}
 	files, err := template.ParseFiles(templateFile)
 	if err != nil {
