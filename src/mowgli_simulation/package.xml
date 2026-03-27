@@ -13,6 +13,11 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- C++ node dependencies -->
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+
   <!-- Gazebo Ignition integration -->
   <exec_depend>ros_gz_sim</exec_depend>
   <exec_depend>ros_gz_bridge</exec_depend>

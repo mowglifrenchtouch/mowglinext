@@ -367,15 +367,16 @@ BT::NodeStatus PlanCoveragePath::onStart()
   }
 
   if (boundary_str.empty()) {
-    // Default 5 m × 5 m simulation area.
+    // Default 35 m × 25 m simulation area (fits inside 40×30 m garden walls
+    // with 2.5 m margin from each wall for safety).
     geometry_msgs::msg::Point32 p;
     p.z = 0.0f;
-    p.x = -1.0f; p.y = -2.5f; goal_msg.outer_boundary.points.push_back(p);
-    p.x =  4.0f; p.y = -2.5f; goal_msg.outer_boundary.points.push_back(p);
-    p.x =  4.0f; p.y =  2.5f; goal_msg.outer_boundary.points.push_back(p);
-    p.x = -1.0f; p.y =  2.5f; goal_msg.outer_boundary.points.push_back(p);
+    p.x = -17.5f; p.y = -12.5f; goal_msg.outer_boundary.points.push_back(p);
+    p.x =  17.5f; p.y = -12.5f; goal_msg.outer_boundary.points.push_back(p);
+    p.x =  17.5f; p.y =  12.5f; goal_msg.outer_boundary.points.push_back(p);
+    p.x = -17.5f; p.y =  12.5f; goal_msg.outer_boundary.points.push_back(p);
     RCLCPP_INFO(ctx->node->get_logger(),
-      "PlanCoveragePath: using default 5x5m simulation boundary");
+      "PlanCoveragePath: using default 35x25m simulation boundary");
   }
 
   // Send the goal asynchronously.

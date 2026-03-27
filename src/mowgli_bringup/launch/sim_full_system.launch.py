@@ -23,7 +23,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
 )
-from launch.conditions import UnlessCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -73,6 +73,12 @@ def generate_launch_description() -> LaunchDescription:
         description="Launch RViz2.",
     )
 
+    gps_degradation_arg = DeclareLaunchArgument(
+        "simulate_gps_degradation",
+        default_value="true",
+        description="Enable GPS degradation simulation (periodic float mode).",
+    )
+
     # ------------------------------------------------------------------
     # Resolved substitutions
     # use_sim_time is always true in simulation — no argument needed.
@@ -82,6 +88,7 @@ def generate_launch_description() -> LaunchDescription:
     world = LaunchConfiguration("world")
     headless = LaunchConfiguration("headless")
     use_rviz = LaunchConfiguration("use_rviz")
+    simulate_gps_degradation = LaunchConfiguration("simulate_gps_degradation")
 
     # ------------------------------------------------------------------
     # Config paths
@@ -217,6 +224,33 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
+    # 8. GPS degradation simulator — periodically degrades GPS to float
+    #    mode so LiDAR/odometry must compensate. Subscribes to /gps/pose
+    #    and republishes on /gps/pose_degraded with inflated covariance.
+    #    The EKF is remapped to use /gps/pose_degraded when this is active.
+    # ------------------------------------------------------------------
+    gps_degradation_node = Node(
+        condition=IfCondition(simulate_gps_degradation),
+        package="mowgli_simulation",
+        executable="gps_degradation_sim_node",
+        name="gps_degradation_sim_node",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": True,
+                "normal_duration_sec": 30.0,
+                "degraded_duration_sec": 10.0,
+                "degradation_covariance_scale": 100.0,
+                "enable_position_drift": True,
+                "drift_stddev": 0.5,
+                "enabled": True,
+            },
+        ],
+        # The node subscribes to /gps/pose and publishes to /gps/pose_sim
+        # by default (hardcoded topics). No remapping needed.
+    )
+
+    # ------------------------------------------------------------------
     # LaunchDescription
     # ------------------------------------------------------------------
     return LaunchDescription(
@@ -227,6 +261,7 @@ def generate_launch_description() -> LaunchDescription:
             world_arg,
             headless_arg,
             use_rviz_arg,
+            gps_degradation_arg,
             # Subsystem includes
             simulation_launch,
             navigation_launch,
@@ -237,5 +272,6 @@ def generate_launch_description() -> LaunchDescription:
             coverage_planner_node,
             diagnostics_node,
             foxglove_bridge_node,
+            gps_degradation_node,
         ]
     )

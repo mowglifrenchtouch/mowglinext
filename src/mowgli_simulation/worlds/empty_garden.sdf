@@ -4,7 +4,7 @@
   Gazebo Ignition Fortress (SDF 1.9) world for the Mowgli robot mower.
 
   Minimal world with only:
-    - Grass ground plane (20 × 15 m)
+    - Grass ground plane (40 × 30 m)
     - Sun directional light
     - Garden boundary walls
 
@@ -92,7 +92,7 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>30 30</size>
+              <size>60 60</size>
             </plane>
           </geometry>
           <surface>
@@ -108,7 +108,7 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>30 30</size>
+              <size>60 60</size>
             </plane>
           </geometry>
           <material>
@@ -121,19 +121,19 @@
     </model>
 
     <!-- ================================================================
-         Garden boundary walls (20 × 15 m)
+         Garden boundary walls (40 × 30 m)
          ================================================================ -->
 
-    <!-- North wall  y =  7.5 -->
+    <!-- North wall  y = +15.0 -->
     <model name="wall_north">
       <static>true</static>
-      <pose>0 7.5 0.15 0 0 0</pose>
+      <pose>0 15.0 0.15 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>20.2 0.1 0.3</size></box></geometry>
+          <geometry><box><size>40.2 0.1 0.3</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>20.2 0.1 0.3</size></box></geometry>
+          <geometry><box><size>40.2 0.1 0.3</size></box></geometry>
           <material>
             <ambient>0.65 0.55 0.40 1</ambient>
             <diffuse>0.70 0.60 0.45 1</diffuse>
@@ -142,16 +142,16 @@
       </link>
     </model>
 
-    <!-- South wall  y = -7.5 -->
+    <!-- South wall  y = -15.0 -->
     <model name="wall_south">
       <static>true</static>
-      <pose>0 -7.5 0.15 0 0 0</pose>
+      <pose>0 -15.0 0.15 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>20.2 0.1 0.3</size></box></geometry>
+          <geometry><box><size>40.2 0.1 0.3</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>20.2 0.1 0.3</size></box></geometry>
+          <geometry><box><size>40.2 0.1 0.3</size></box></geometry>
           <material>
             <ambient>0.65 0.55 0.40 1</ambient>
             <diffuse>0.70 0.60 0.45 1</diffuse>
@@ -160,16 +160,16 @@
       </link>
     </model>
 
-    <!-- West wall  x = -10 -->
+    <!-- West wall  x = -20.0 -->
     <model name="wall_west">
       <static>true</static>
-      <pose>-10.0 0 0.15 0 0 1.5708</pose>
+      <pose>-20.0 0 0.15 0 0 1.5708</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>15.0 0.1 0.3</size></box></geometry>
+          <geometry><box><size>30.0 0.1 0.3</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>15.0 0.1 0.3</size></box></geometry>
+          <geometry><box><size>30.0 0.1 0.3</size></box></geometry>
           <material>
             <ambient>0.65 0.55 0.40 1</ambient>
             <diffuse>0.70 0.60 0.45 1</diffuse>
@@ -178,16 +178,16 @@
       </link>
     </model>
 
-    <!-- East wall  x = 10 -->
+    <!-- East wall  x = +20.0 -->
     <model name="wall_east">
       <static>true</static>
-      <pose>10.0 0 0.15 0 0 1.5708</pose>
+      <pose>20.0 0 0.15 0 0 1.5708</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>15.0 0.1 0.3</size></box></geometry>
+          <geometry><box><size>30.0 0.1 0.3</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>15.0 0.1 0.3</size></box></geometry>
+          <geometry><box><size>30.0 0.1 0.3</size></box></geometry>
           <material>
             <ambient>0.65 0.55 0.40 1</ambient>
             <diffuse>0.70 0.60 0.45 1</diffuse>

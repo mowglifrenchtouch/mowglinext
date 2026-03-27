@@ -2,11 +2,11 @@
 
 Comprehensive technical documentation of the Mowgli ROS2 system design, including package organization, data flow, communication protocols, and integration points.
 
-Built on **ROS2 Jazzy** with **Gazebo Harmonic** simulation, this architecture spans 9 focused packages providing complete autonomous lawn mower functionality.
+Built on **ROS2 Jazzy** with **Gazebo Harmonic** simulation, this architecture spans 10 focused packages providing complete autonomous lawn mower functionality.
 
 ## System Overview
 
-Mowgli ROS2 is organized as a **nine-package ecosystem** with clear separation of concerns and layered dependencies:
+Mowgli ROS2 is organized as a **10-package ecosystem** with clear separation of concerns and layered dependencies:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -1378,118 +1378,188 @@ foxglove_bridge:
 
 ## Complete Data Flow Diagram
 
-### Scenario: Autonomous Mowing Run
+### Scenario: Autonomous Coverage Mowing Run
 
 ```
-1. User sends goal via GUI (map coordinates)
-   └─→ /navigate_to_pose goal (nav2_msgs/NavigateToPose action)
+1. User sends START command via GUI (or mobile app via Foxglove Bridge)
+   └─→ /high_level_control message: COMMAND_START (1)
 
-2. BehaviorTree processes:
-   └─→ NavigateToPose action → contacts Nav2 action server
+2. BehaviorTree (10 Hz):
+   └─→ MowingSequence triggered:
+       ├─ SetMowerEnabled(true) → blade motor on
+       ├─ PublishHighLevelStatus(UNDOCKING)
+       └─ PlanCoveragePath action:
+            └─→ mowgli_coverage_planner processes goal
+                ├─ 1. Headland generation (ConstHL, F2C v2)
+                ├─ 2. Swath generation (BruteForce angle search)
+                ├─ 3. Route ordering (BoustrophedonOrder)
+                ├─ 4. Dubins path planning (smooth turns)
+                └─ 5. Publishes /coverage_path and /coverage_outline
+                    [BT receives path in result]
 
-3. Nav2 pipeline:
-   Planner (SmacPlanner2D):
-     Global map (/map) + start (odom) + goal
-     └─→ Global path (nav_msgs/Path)
+3. Navigation to coverage start:
+   NavigateToPose(first_waypoint):
+     ├─ Nav2 planner: global path from odometry to start
+     ├─ FTC controller (FollowPath mode, PRE_ROTATE → FOLLOWING)
+     ├─ Costmap: /scan + odom → local obstacles
+     └─ cmd_vel → hardware_bridge → STM32 → wheels
 
-   Controller (FTCController):
-     Global path + robot pose (from EKF)
-     └─→ cmd_vel (geometry_msgs/Twist)
+4. Coverage path following (CoverageWithRecovery loop):
+   FollowCoveragePath:
+     ├─ FTC controller (PRE_ROTATE → FOLLOWING state machine)
+     ├─ Path-indexed tracking (not lookahead-based)
+     │   └─ current_index_ advances along /coverage_path
+     ├─ PID control (lateral, longitudinal, angular)
+     ├─ Oscillation detection (FailureDetector)
+     ├─ Obstacle avoidance (costmap checking)
+     └─ Updates: state → WAITING_FOR_GOAL_APPROACH → POST_ROTATE → FINISHED
+        Returns: RUNNING (in progress), SUCCESS (path complete), FAILURE (stuck)
 
-   Costmap managers:
-     /scan (LiDAR) + odometry
-     └─→ costmap_2d (for obstacles)
+5. Feedback loop (real-time):
+   STM32 (100 Hz):
+     ├─ LL_STATUS packet (encoder ticks, IMU, sensors, rain detection)
+     └─→ hardware_bridge
 
-4. cmd_vel routing (twist_mux):
-   Priority: emergency > teleop > navigation
-   └─→ /cmd_vel (to hardware_bridge)
+   wheel_odometry_node (50 Hz):
+     ├─ Integrates left/right encoder ticks
+     └─→ /wheel_odom (odometry only, high drift)
 
-5. Hardware bridge translates:
-   Twist msg → LlCmdVel packet (COBS + CRC)
-   └─→ USB serial → STM32
+   imu_filter_madgwick (50 Hz):
+     ├─ Fuses IMU gyro + accel
+     └─→ /imu/data (filtered orientation)
 
-6. STM32 firmware:
-   LL_CMD_VEL packet
-   └─→ Motor ESC commands (PWM)
-   └─→ Wheel encoders measure actual motion
+   robot_localization (ekf_odom, 50 Hz):
+     ├─ Fuses /wheel_odom + /imu/data
+     ├─ Output: /odometry/filtered_odom (local estimate, odom frame)
+     └─→ /tf: odom → base_link
 
-7. Feedback loop (50 Hz):
-   STM32 → LL_STATUS packet (encoder ticks, IMU, sensors)
-   └─→ USB serial → hardware_bridge
-   └─→ /wheel_odom (wheel_odometry_node)
-   └─→ /imu/data (filtered)
-   └─→ ekf_odom (robot_localization): fuses odometry + IMU
-       └─→ /odometry/filtered_odom
+   GPS fusion (ekf_map, 20 Hz, if RTK fix):
+     ├─ /gps/rtk_fix → gps_pose_converter → /gps/pose (ENU)
+     ├─ Fuses /odometry/filtered_odom + /gps/pose
+     ├─ Output: /odometry/filtered_map (global estimate, map frame)
+     └─→ /tf: map → odom (corrects drift)
 
-8. GPS fusion (20 Hz, if RTK fix available):
-   /gps/rtk_fix → gps_pose_converter → /gps/pose
-   └─→ ekf_map (robot_localization): fuses filtered odometry + GPS
-       └─→ /odometry/filtered_map
-       └─→ /tf: map → odom → base_link
+   SLAM (slam_toolbox, async):
+     ├─ /scan + /odometry/filtered_odom
+     ├─ Output: /map (occupancy grid)
+     └─→ /tf: map → odom (loop closure correction)
 
-9. SLAM (if running):
-   /scan + /odometry/filtered_odom
-   └─→ slam_toolbox
-       └─→ /map (occupancy grid)
-       └─→ /tf: map → odom correction
+   FTC Controller (10 Hz):
+     ├─ Reads robot pose from /tf: odom → base_link
+     ├─ Reads /coverage_path (current_index_ position)
+     ├─ Computes errors (lateral, longitudinal, angular)
+     ├─ PID loops → u_lat, u_lon, u_ang
+     └─→ /cmd_vel (geometry_msgs/Twist)
 
-10. Navigation feedback:
-    Robot's actual pose (from EKF) vs. goal
-    └─→ Controller recomputes path, adjusts cmd_vel
+6. Command routing (twist_mux, priority-based):
+   /cmd_vel sources:
+     ├─ /cmd_vel_emergency (highest priority)
+     ├─ /cmd_vel_teleop (manual override)
+     └─ /cmd_vel_nav (navigation, from Nav2)
+   Route to:
+     └─→ /hardware_bridge/cmd_vel
 
-11. Safety monitoring (BehaviorTree, 10 Hz):
-    - Check emergency latch (IsEmergency)
-    - Check battery voltage (IsBatteryLow)
-    - Check localization health (IsLocalizationHealthy)
-    - If any unsafe condition → halt (zero cmd_vel) + log warning
+7. Hardware bridge → STM32:
+   /cmd_vel (Twist) → LlCmdVel packet (COBS + CRC16) → USB serial
 
-12. Completion:
-    Robot reaches goal (xy_goal_tolerance + yaw_goal_tolerance)
-    └─→ FTCController returns SUCCESS
-    └─→ Nav2 action completes
-    └─→ NavigateToPose BT node returns SUCCESS
-    └─→ BehaviorTree transitions to next mode (e.g., mowing pattern)
+8. STM32 motor control:
+   LlCmdVel:
+     ├─ linear.x → left/right ESC PWM (duty cycle)
+     ├─ angular.z → differential for steering
+     └─ Watchdog: expects heartbeat every 250 ms (4 Hz)
+        If no heartbeat: safe stop (motor PWM cut)
+
+9. Safety monitoring (BehaviorTree, 10 Hz):
+   Condition checks:
+     ├─ IsEmergency (latched_emergency bit)
+     ├─ NeedsDocking (battery < 20 V)
+     ├─ IsLocalizationHealthy (EKF variance < threshold)
+     └─ IsCommand (COMMAND_START still active)
+   On failure:
+     ├─ SetMowerEnabled(false)
+     ├─ StopMoving() → /cmd_vel = 0
+     └─ PublishHighLevelStatus(RECOVERING or DOCKING)
+
+10. Completion:
+    FollowCoveragePath returns SUCCESS:
+      ├─ Robot completed coverage path
+      ├─ All path indices traversed
+      └─ Final orientation aligned
+
+    BehaviorTree continues:
+      ├─ SetMowerEnabled(false) → blade off
+      ├─ PublishHighLevelStatus(MOWING_COMPLETE)
+      ├─ NavigateToPose(dock_pose) → return to dock
+      └─ PublishHighLevelStatus(IDLE_DOCKED)
+
+11. Telemetry (Foxglove Bridge, 8765/ws):
+    → Web UI receives:
+       ├─ /odometry/filtered_map (robot pose on map)
+       ├─ /coverage_path and /coverage_outline (visualization)
+       ├─ /scan (LiDAR pointcloud)
+       ├─ /diagnostics (system health)
+       └─ /tf tree (all frame transformations)
 ```
 
 ---
 
 ## TF Tree Reference
 
-**Standard ROS2 conventions (REP-103):**
+**Standard ROS2 conventions (REP-103 + REP-105):**
 
 ```
-map
-  │ (map → odom: published by ekf_map in robot_localization)
+map (SLAM origin, or GPS-corrected)
+  │ [published by ekf_map in robot_localization @ 20 Hz]
   │
-  odom
-  │ (odom → base_link: published by ekf_odom in robot_localization)
+  odom (local dead-reckoning origin)
+  │ [published by ekf_odom in robot_localization @ 50 Hz]
   │
-  base_link (robot centre at wheel axle height)
-  │ (base_link → sensors: published by robot_state_publisher)
+  base_link (robot body frame, wheel axle height)
+  │ [published by robot_state_publisher from URDF]
   │
-  ├── imu_link (fixed)
+  ├── base_footprint (ground contact point, fixed offset from base_link)
+  │   └── used by Nav2 costmap for footprint inflation
   │
-  ├── laser_link (fixed, LiDAR origin)
+  ├── imu_link (fixed to chassis, IMU measurement frame)
+  │   └── [hardware_bridge publishes IMU data in this frame]
   │
-  ├── gps_link (fixed, GPS antenna)
+  ├── laser_link (fixed to chassis, LiDAR origin)
+  │   └── [SLAM and costmap read /scan in this frame]
   │
-  ├── left_wheel_link (rotating, odometry input)
+  ├── gps_link (fixed to antenna, GPS measurement point)
   │
-  └── right_wheel_link (rotating, odometry input)
+  ├── left_wheel_link (rotating joint, visual only)
+  │
+  └── right_wheel_link (rotating joint, visual only)
 ```
+
+**Frame Hierarchy:**
+
+| Frame | Publisher | Rate | Purpose |
+|-------|-----------|------|---------|
+| map | ekf_map (robot_localization) | 20 Hz | Global origin (SLAM/GPS) |
+| odom | ekf_odom (robot_localization) | 50 Hz | Local dead-reckoning origin |
+| base_link | robot_state_publisher | Static | Robot body (from URDF) |
+| base_footprint | robot_state_publisher | Static | Footprint inflation center |
+| imu_link | robot_state_publisher | Static | IMU sensor frame |
+| laser_link | robot_state_publisher | Static | LiDAR origin |
+| gps_link | robot_state_publisher | Static | GPS antenna location |
+| [Gazebo sensor frames] | (simulation only) | Static | Gazebo model sensor origins |
 
 **Frame Conventions:**
 
-- `map` – Global (SLAM-corrected or GPS-based)
-- `odom` – Local, drifting dead-reckoning frame
-- `base_link` – Robot body frame (geometric centre at wheel height)
-- `base_footprint` – Robot at ground level (rarely used in Nav2)
+- `map` – Global frame, typically z-up, x-east, y-north (REP-103). Set by first SLAM loop closure or GPS initial fix.
+- `odom` – Local odometry frame, z-up. Origin drifts due to integration error; corrected by ekf_map.
+- `base_link` – Robot body frame. Wheel axle height z = 0 (convention). Xy center at robot geometric center.
+- `base_footprint` – Projection of base_link onto z = 0 (ground level). Used for Nav2 footprint inflation.
 
-**Update Rates:**
+**Simulation (Gazebo Harmonic):**
 
-- `map → odom`: 20 Hz (ekf_map, GPS-corrected)
-- `odom → base_link`: 50 Hz (ekf_odom, local estimation)
-- Static TFs (base_link → sensors): Once at startup (robot_state_publisher)
+Static TF bridges connect Gazebo sensor frame names to URDF frames:
+- `mowgli_mower/laser_link/lidar_sensor` ↔ `laser_link` (identity)
+- `mowgli_mower/base_link/imu_sensor` ↔ `imu_link` (identity)
+
+This allows SLAM, costmap, and other nodes to use standard ROS2 frame names regardless of simulation vs. real hardware.
 
 ---
 
@@ -1499,69 +1569,143 @@ map
 
 | Topic | Type | Publisher | Rate | Purpose |
 |-------|------|-----------|------|---------|
-| `/map` | nav_msgs/OccupancyGrid | slam_toolbox | 1 Hz | Occupancy map from SLAM |
-| `/scan` | sensor_msgs/LaserScan | [hardware] (LiDAR driver) | 5–20 Hz | LiDAR range data |
-| `/imu/data` | sensor_msgs/Imu | [filtered by imu_filter_madgwick or direct] | 50 Hz | Filtered IMU (orientation computed) |
-| `/hardware_bridge/status` | mowgli_interfaces/Status | hardware_bridge_node | 100 Hz | Mower state, sensors |
-| `/hardware_bridge/emergency` | mowgli_interfaces/Emergency | hardware_bridge_node | 100 Hz | Emergency stop status |
-| `/hardware_bridge/power` | mowgli_interfaces/Power | hardware_bridge_node | 100 Hz | Battery, charging info |
-| `/hardware_bridge/imu/data_raw` | sensor_msgs/Imu | hardware_bridge_node | 100 Hz | Raw accelerometer, gyroscope |
-| `/wheel_odom` | nav_msgs/Odometry | wheel_odometry_node | 50 Hz | Dead-reckoning from wheels |
-| `/gps/pose` | geometry_msgs/PoseWithCovarianceStamped | gps_pose_converter_node | 10–20 Hz | RTK position in local ENU |
-| `/odometry/filtered_odom` | nav_msgs/Odometry | ekf_odom (robot_localization) | 50 Hz | Fused odometry + IMU |
-| `/odometry/filtered_map` | nav_msgs/Odometry | ekf_map (robot_localization) | 20 Hz | Fused odometry + GPS (global) |
-| `/localization/status` | diagnostic_msgs/DiagnosticStatus | localization_monitor_node | 2 Hz | EKF health and degradation mode |
-| `/path` | nav_msgs/Path | planner_server (Nav2) | 1 Hz | Global path from planner |
-| `/cmd_vel` | geometry_msgs/Twist | twist_mux | 10–50 Hz | Final motor velocity command |
+| `/map` | nav_msgs/OccupancyGrid | slam_toolbox | 1 Hz | Occupancy map from SLAM (if enabled) |
+| `/scan` | sensor_msgs/LaserScan | Gazebo bridge / LiDAR driver | 10 Hz | LiDAR range data (Gazebo simulated or real) |
+| `/imu/data` | sensor_msgs/Imu | imu_filter_madgwick | 50 Hz | Filtered IMU (9-DOF fusion) |
+| `/imu/data_raw` | sensor_msgs/Imu | hardware_bridge_node | 100 Hz | Raw accelerometer + gyroscope |
+| `/hardware_bridge/status` | mowgli_interfaces/Status | hardware_bridge_node | 100 Hz | Mower state (blade on/off, rain, charging) |
+| `/hardware_bridge/emergency` | mowgli_interfaces/Emergency | hardware_bridge_node | 100 Hz | Emergency stop status (latched, active) |
+| `/hardware_bridge/power` | mowgli_interfaces/Power | hardware_bridge_node | 100 Hz | Battery voltage, charging current |
+| `/wheel_odom` | nav_msgs/Odometry | wheel_odometry_node | 50 Hz | Dead-reckoning from wheel encoders |
+| `/gps/rtk_fix` | sensor_msgs/NavSatFix | GPS hardware driver | 10–20 Hz | RTK fix (latitude, longitude, altitude) |
+| `/gps/pose` | geometry_msgs/PoseWithCovarianceStamped | gps_pose_converter_node | 10–20 Hz | RTK position converted to local ENU |
+| `/odometry/filtered_odom` | nav_msgs/Odometry | ekf_odom (robot_localization) | 50 Hz | Local estimate (odom frame) |
+| `/odometry/filtered_map` | nav_msgs/Odometry | ekf_map (robot_localization) | 20 Hz | Global estimate (map frame) with GPS correction |
+| `/localization/status` | diagnostic_msgs/DiagnosticStatus | localization_monitor_node | 2 Hz | EKF health, degradation mode |
+| `/coverage_path` | nav_msgs/Path | coverage_planner_node | Once per plan | Boustrophedon coverage path with poses |
+| `/coverage_outline` | nav_msgs/Path | coverage_planner_node | Once per plan | Headland outline for visualization |
+| `/path` | nav_msgs/Path | planner_server (Nav2) | 1 Hz | Global path from Nav2 planner |
+| `/cmd_vel` | geometry_msgs/Twist | twist_mux | 10–50 Hz | Final velocity command (to hardware/Gazebo) |
+| `/diagnostics` | diagnostic_msgs/DiagnosticArray | diagnostics_node (mowgli_monitoring) | 1 Hz | System health aggregation |
+| `/high_level_status` | std_msgs/UInt8 | behavior_tree_node | 10 Hz | Current high-level mode (IDLE, MOWING, DOCKING) |
 
 **Subscribers (Sinks):**
 
 | Topic | Subscriber | Purpose |
 |-------|-----------|---------|
-| `/hardware_bridge/cmd_vel` | hardware_bridge_node | Motor velocity input |
-| `/scan` | slam_toolbox, nav2_costmap | LiDAR for mapping and obstacles |
-| `/odometry/filtered_odom` | slam_toolbox | Odometry for SLAM |
-| `/odometry/filtered_map` | nav2_behavior_tree, behavior_tree_navigator | Localized pose for navigation |
-| `/cmd_vel_nav` | twist_mux | Nav2 velocity output |
-| `/cmd_vel_teleop` | twist_mux | Teleoperation input |
-| `/cmd_vel_emergency` | twist_mux | Emergency velocity (safety system) |
-| `/emergency_stop` | twist_mux | Emergency stop lock |
-| `/hardware_bridge/status` | behavior_tree_node, localization_monitor | Hardware state |
-| `/hardware_bridge/emergency` | behavior_tree_node | Emergency status |
-| `/hardware_bridge/power` | behavior_tree_node | Battery monitoring |
+| `/cmd_vel` | hardware_bridge_node / Gazebo | Motor/wheel commands |
+| `/scan` | slam_toolbox, nav2_local_costmap, diagnostics_node | SLAM, obstacle detection, monitoring |
+| `/imu/data_raw` | diagnostics_node | Monitor IMU freshness |
+| `/odometry/filtered_odom` | slam_toolbox, nav2 controller, diagnostics_node | SLAM input, localized pose for control |
+| `/odometry/filtered_map` | nav2 planner, behavior_tree (goal comparison), diagnostics_node | Global navigation reference |
+| `/gps/rtk_fix` | gps_pose_converter_node, diagnostics_node | Convert fix to local frame, monitor GPS |
+| `/hardware_bridge/status` | behavior_tree_node, localization_monitor_node, diagnostics_node | Health checks, sensor freshness |
+| `/hardware_bridge/emergency` | behavior_tree_node, diagnostics_node | Emergency monitoring |
+| `/hardware_bridge/power` | behavior_tree_node, diagnostics_node | Battery level monitoring |
+| `/wheel_odom` | diagnostics_node | Monitor odometry freshness |
+| `/coverage_path` | FollowCoveragePath BT node, diagnostics_node (optional) | Coverage execution |
 
 **Services (Request-Response):**
 
 | Service | Type | Server | Client | Purpose |
 |---------|------|--------|--------|---------|
-| `/hardware_bridge/mower_control` | MowerControl | hardware_bridge_node | behavior_tree_node, external tools | Enable/disable blade |
-| `/hardware_bridge/emergency_stop` | EmergencyStop | hardware_bridge_node | behavior_tree_node, safety system | Emergency stop control |
-| `/navigate_to_pose` | nav2_msgs/NavigateToPose | nav2 | behavior_tree_node | Send navigation goal |
-| `/robot_localization/set_pose` | robot_localization/SetPose | ekf_odom | startup/initialization tools | Initialize odometry pose |
+| `/hardware_bridge/mower_control` | MowerControl | hardware_bridge_node | behavior_tree_node | Enable/disable blade motor |
+| `/hardware_bridge/emergency_stop` | EmergencyStop | hardware_bridge_node | behavior_tree_node, safety system | Assert/release latched emergency |
+| `/navigate_to_pose` | nav2_msgs/NavigateToPose | nav2_behavior_tree_navigator | behavior_tree_node | Send goal to Nav2 |
+| `/robot_localization/set_pose` | robot_localization/SetPose | ekf_odom | startup/testing tools | Initialize odometry origin |
 
-**Actions:**
+**Actions (Async Request-Response):**
 
 | Action | Type | Server | Client | Purpose |
 |--------|------|--------|--------|---------|
-| `/navigate_to_pose` | nav2_msgs/NavigateToPose | nav2_behavior_tree_navigator | mowgli_behavior | Non-blocking navigation goal |
+| `/navigate_to_pose` | nav2_msgs/NavigateToPose | nav2_behavior_tree_navigator | behavior_tree_node (NavigateToPose BT node) | Non-blocking navigation goal |
+| `/plan_coverage` | mowgli_interfaces/PlanCoverage | coverage_planner_node | behavior_tree_node (PlanCoveragePath BT node) | Coverage path planning with feedback |
 
 ---
 
 ## Summary: Architectural Principles
 
-1. **Layered Abstraction:** Each package handles one responsibility (hardware, localization, navigation, behavior).
-2. **Decoupled Communication:** ROS2 pub/sub + services isolate packages. Easy to swap implementations.
-3. **Robust Serial Protocol:** COBS + CRC-16 enables reliable STM32 ↔ Pi communication over noisy USB.
-4. **Dual EKF Localization:** Separates fast local estimation (odometry + IMU) from slower global correction (GPS).
-5. **Reactive Behavior Trees:** Allows preemptable, composable high-level control without state bloat.
-6. **Outdoor-Optimized SLAM:** Conservative loop closure and map updates suit changing outdoor environments.
-7. **Priority-Based Command Routing:** Emergency commands override teleoperation, which overrides autonomous navigation.
-8. **Modular Nav2 Plugins:** Custom FTC controller maintains proven mowing-specific tuning while using Nav2's infrastructure.
+1. **10-Package Modular Design:** Separation of concerns across hardware, localization, navigation, planning, monitoring, and behavior layers.
+   - **Core:** mowgli_interfaces (message definitions)
+   - **Hardware:** mowgli_hardware (STM32 bridge via COBS)
+   - **Perception:** mowgli_localization (EKF fusion, multi-sensor)
+   - **Control:** mowgli_nav2_plugins (path tracking, FTC algorithm)
+   - **Planning:** mowgli_coverage_planner (Fields2Cover v2, boustrophedon)
+   - **Behavior:** mowgli_behavior (BehaviorTree.CPP, 10 Hz reactive control)
+   - **Monitoring:** mowgli_monitoring (diagnostics, MQTT bridge)
+   - **Simulation:** mowgli_simulation (Gazebo Harmonic, ros_gz_bridge)
+   - **Infrastructure:** mowgli_bringup (launch, URDF, config), mowgli_map (map storage)
+
+2. **ROS2 Jazzy + Gazebo Harmonic:** Modern robotics stack with first-class simulation support and lifecycle management.
+
+3. **Decoupled Communication:** ROS2 pub/sub (topics), services, and actions isolate packages. Easy to substitute, test, or extend components independently.
+
+4. **Robust Serial Protocol (COBS + CRC-16):** Enables reliable bidirectional communication between Raspberry Pi and STM32 firmware over noisy USB at 115200 baud.
+
+5. **Dual-Tier EKF Localization:**
+   - Local (ekf_odom, 50 Hz): Fast odometry + IMU fusion for real-time control
+   - Global (ekf_map, 20 Hz): Corrects drift using GPS or SLAM loop closures
+   - Graceful degradation: operates without GPS in GNSS-denied areas
+
+6. **Path-Indexed Coverage Control:** FTC controller with 5-state FSM (PRE_ROTATE → FOLLOWING → WAITING_FOR_GOAL_APPROACH → POST_ROTATE → FINISHED) using path index advancement rather than lookahead distance, enabling precise coverage execution.
+
+7. **Fields2Cover v2 Coverage Planning:** Deterministic boustrophedon path generation with Dubins curve smoothing, optimal angle search, and headland generation for complete edge coverage.
+
+8. **Reactive Behavior Trees (BehaviorTree.CPP v4):** 10 Hz non-preemptive tree execution with priority-based fallback selection:
+   - Emergency guard: highest priority, interrupts all activity
+   - Multi-mode state machine: IDLE → UNDOCKING → MOWING (with recovery) → DOCKING
+   - Composable async action nodes (NavigateToPose, PlanCoveragePath, FollowCoveragePath)
+
+9. **Priority-Based Command Routing:** twist_mux mediates three command sources (emergency > teleoperation > navigation) before forwarding to hardware bridge.
+
+10. **Comprehensive Health Monitoring:** Diagnostics aggregator tracks 8 subsystems (hardware bridge, emergency, battery, IMU, LiDAR, GPS, odometry, motors) with multi-level status (OK, WARN, ERROR, STALE) for autonomous decision-making.
+
+11. **Unified Simulation-to-Hardware Workflow:**
+    - Gazebo Harmonic with ros_gz_bridge enables identical ROS2 stack on both sim and real hardware
+    - Static TF bridges map Gazebo sensor frames to URDF frames
+    - Behavior tree, Nav2, SLAM, and diagnostics unchanged between environments
+
+12. **Foxglove Bridge for Remote UI:** Modern WebSocket-based telemetry (port 8765) replaces legacy rosbridge, reducing latency and CPU overhead.
+
+---
+
+## Development & Testing
+
+**Key Resources:**
+
+| Resource | Location | Purpose |
+|----------|----------|---------|
+| URDF/Xacro | src/mowgli_bringup/urdf/mowgli.urdf.xacro | Robot kinematics, sensor frames, collision geometry |
+| SLAM Config | src/mowgli_bringup/config/slam_toolbox.yaml | Loop closure, occupancy grid updates |
+| Nav2 Config | src/mowgli_bringup/config/nav2_params.yaml | Planner, controller, costmap tuning |
+| Behavior Tree | src/mowgli_behavior/trees/main_tree.xml | High-level state machine and sequencing |
+| Coverage Config | src/mowgli_coverage_planner/config/coverage_planner.yaml | Fields2Cover parameters (headland, spacing) |
+| Gazebo Worlds | src/mowgli_simulation/worlds/ | garden.sdf (realistic), empty_garden.sdf (testing) |
+
+**Testing Workflow:**
+
+```bash
+# Simulation (Gazebo Harmonic, full stack)
+ros2 launch mowgli_simulation simulation.launch.py
+
+# Real hardware (Raspberry Pi + STM32)
+ros2 launch mowgli_bringup mowgli.launch.py
+
+# SLAM + mapping
+ros2 launch mowgli_bringup navigation.launch.py
+
+# Coverage planning (standalone test)
+ros2 service call /plan_coverage mowgli_interfaces/srv/PlanCoverage '{outer_boundary: {...}}'
+
+# Diagnostics monitoring
+ros2 topic echo /diagnostics
+```
 
 ---
 
 ## Next Steps
 
-- See [CONFIGURATION.md](CONFIGURATION.md) for parameter tuning details.
-- See [FIRMWARE_MIGRATION.md](FIRMWARE_MIGRATION.md) for STM32 integration.
-- See [SIMULATION.md](SIMULATION.md) for testing in Gazebo Ignition.
+- See [CONFIGURATION.md](CONFIGURATION.md) for parameter tuning (PID gains, speed profiles, costmap).
+- See [FIRMWARE_MIGRATION.md](FIRMWARE_MIGRATION.md) for STM32 packet protocol and firmware integration.
+- See [SIMULATION.md](SIMULATION.md) for detailed Gazebo world setup and physics tuning.
+- See [DEVELOPMENT.md](DEVELOPMENT.md) for build instructions and dev container setup.

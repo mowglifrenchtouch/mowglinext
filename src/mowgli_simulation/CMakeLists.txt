@@ -8,10 +8,36 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+
+# ---------------------------------------------------------------------------
+# GPS degradation simulator node
+# ---------------------------------------------------------------------------
+add_executable(gps_degradation_sim_node
+  src/gps_degradation_sim_node.cpp
+)
+
+target_include_directories(gps_degradation_sim_node
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+ament_target_dependencies(gps_degradation_sim_node
+  rclcpp
+  geometry_msgs
+  std_msgs
+)
+
+install(TARGETS
+  gps_degradation_sim_node
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 # ---------------------------------------------------------------------------
 # Install data directories
-# All simulation assets are pure data — no compiled artefacts.
 # ---------------------------------------------------------------------------
 install(
   DIRECTORY
