@@ -7,7 +7,7 @@
  *
  * Algorithm overview (F2C pipeline):
  *   1. Validate the input boundary polygon (must have >= 3 vertices).
- *   2. Convert the ROS Polygon to f2c::Types::Field / Cells.
+ *   2. Convert the ROS Polygon to f2c::types::Field / Cells.
  *   3. Generate headlands via f2c::hg::ConstHL (headland_passes * headland_width).
  *   4. Generate swaths via f2c::sg::BruteForce (optimal angle search).
  *   5. Order swaths via f2c::rp::BoustrophedonOrder.
@@ -204,28 +204,28 @@ void CoveragePlannerNode::execute(
 
   // ---- Build Fields2Cover types -------------------------------------------
   //
-  // f2c::Types::LinearRing requires the ring to be explicitly closed (first
+  // f2c::types::LinearRing requires the ring to be explicitly closed (first
   // point repeated at the end).
 
-  f2c::Types::LinearRing ring;
+  F2CLinearRing ring;
   for (const auto & pt : outer) {
-    ring.addPoint(f2c::Types::Point(pt.first, pt.second));
+    ring.addPoint(F2CPoint(pt.first, pt.second));
   }
   // Close the ring by repeating the first vertex.
-  ring.addPoint(f2c::Types::Point(outer.front().first, outer.front().second));
+  ring.addPoint(F2CPoint(outer.front().first, outer.front().second));
 
-  f2c::Types::Cell  cell(ring);
-  f2c::Types::Cells cells(cell);
+  F2CCell  cell(ring);
+  F2CCells cells(cell);
 
   // Robot model: width = tool_width_, minimum turning radius for Dubins.
-  f2c::Types::Robot robot(tool_width_);
+  F2CRobot robot(tool_width_);
   robot.setMinTurningRadius(min_turning_radius_);
 
   // ---- Phase: headland (F2C) ----------------------------------------------
   publish_feedback(15.0f, "headland");
 
   f2c::hg::ConstHL headland_gen;
-  f2c::Types::Cells inner_cells;
+  F2CCells inner_cells;
 
   try {
     const double total_headland = static_cast<double>(headland_passes_) * headland_width_;
@@ -238,7 +238,7 @@ void CoveragePlannerNode::execute(
     return;
   }
 
-  if (inner_cells.isEmpty()) {
+  if (inner_cells.size() == 0) {
     result->success = false;
     result->message =
       "Headland contraction collapsed the inner area. "
@@ -273,12 +273,13 @@ void CoveragePlannerNode::execute(
   }
 
   f2c::sg::BruteForce swath_gen;
-  f2c::Types::Swaths swaths;
+  f2c::obj::NSwath n_swath_obj;
+  F2CSwaths swaths;
 
   try {
     if (auto_angle) {
-      // BruteForce::generateBestSwaths searches over all angles.
-      swaths = swath_gen.generateBestSwaths(path_spacing_, inner_cells.getGeometry(0));
+      // BruteForce::generateBestSwaths searches over all angles using NSwath objective.
+      swaths = swath_gen.generateBestSwaths(n_swath_obj, path_spacing_, inner_cells.getGeometry(0));
     } else {
       swaths = swath_gen.generateSwaths(swath_angle_rad, path_spacing_,
                                         inner_cells.getGeometry(0));
@@ -291,7 +292,7 @@ void CoveragePlannerNode::execute(
     return;
   }
 
-  if (swaths.isEmpty()) {
+  if (swaths.size() == 0) {
     result->success = false;
     result->message =
       "F2C swath generator produced no swaths — polygon may be too small "
@@ -314,7 +315,7 @@ void CoveragePlannerNode::execute(
   publish_feedback(55.0f, "routing");
 
   f2c::rp::BoustrophedonOrder route_planner;
-  f2c::Types::Swaths route;
+  F2CSwaths route;
 
   try {
     route = route_planner.genSortedSwaths(swaths);
@@ -337,10 +338,10 @@ void CoveragePlannerNode::execute(
   publish_feedback(75.0f, "path_planning");
 
   f2c::pp::DubinsCurves dubins;
-  f2c::Types::Path f2c_path;
+  F2CPath f2c_path;
 
   try {
-    f2c_path = dubins.planPath(robot, route);
+    f2c_path = f2c::pp::PathPlanning::planPath(robot, route, dubins);
   } catch (const std::exception & ex) {
     result->success = false;
     result->message = std::string("F2C Dubins path planning failed: ") + ex.what();

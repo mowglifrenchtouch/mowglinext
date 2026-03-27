@@ -42,6 +42,7 @@ add_library(mowgli_coverage_planner_lib STATIC
 target_include_directories(mowgli_coverage_planner_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
+  ${Fields2Cover_INCLUDE_DIR}
 )
 
 ament_target_dependencies(mowgli_coverage_planner_lib
@@ -55,7 +56,7 @@ ament_target_dependencies(mowgli_coverage_planner_lib
 )
 
 target_link_libraries(mowgli_coverage_planner_lib
-  Fields2Cover
+  Fields2Cover::Fields2Cover
 )
 
 # ---------------------------------------------------------------------------

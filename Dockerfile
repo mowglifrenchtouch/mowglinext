@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Motion control
     ros-jazzy-twist-mux \
     # Behavior trees
-    ros-jazzy-behaviortree-cpp-v4 \
+    ros-jazzy-behaviortree-cpp \
     # Robot description / TF
     ros-jazzy-xacro \
     ros-jazzy-robot-state-publisher \
@@ -46,6 +46,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-foxglove-bridge \
     # Rotation shim controller for transit navigation
     ros-jazzy-nav2-rotation-shim-controller \
+    # Nav2 core headers (FTC controller plugin depends on nav2_core)
+    ros-jazzy-nav2-core \
+    ros-jazzy-nav2-util \
     # Nav2 msgs (CostmapFilterInfo for costmap filters)
     ros-jazzy-nav2-msgs \
     # Coverage planning with Fields2Cover v2
