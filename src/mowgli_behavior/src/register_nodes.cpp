@@ -20,6 +20,8 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<WaitForDuration>("WaitForDuration");
   factory.registerNodeType<NavigateToPose>("NavigateToPose");
   factory.registerNodeType<PlanCoveragePath>("PlanCoveragePath");
+  factory.registerNodeType<FollowCoveragePath>("FollowCoveragePath");
+  factory.registerNodeType<ClearCommand>("ClearCommand");
 }
 
 }  // namespace mowgli_behavior

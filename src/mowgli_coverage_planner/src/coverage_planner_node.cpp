@@ -155,7 +155,39 @@ void CoveragePlannerNode::handle_plan_coverage(
   }
 
   // ---- Generate swath path ---------------------------------------------
-  const nav_msgs::msg::Path swath_path = generate_swath_path(inner, angle_rad, map_frame_);
+  const nav_msgs::msg::Path raw_path = generate_swath_path(inner, angle_rad, map_frame_);
+
+  // Densify the path so consecutive waypoints are at most ~0.1 m apart.
+  // This prevents RPP from skipping to the wrong swath via nearest-point matching.
+  nav_msgs::msg::Path swath_path;
+  swath_path.header = raw_path.header;
+  constexpr double kMaxGap = 0.1;
+  for (size_t i = 0; i < raw_path.poses.size(); ++i) {
+    if (i > 0) {
+      const auto& prev = raw_path.poses[i - 1].pose.position;
+      const auto& curr = raw_path.poses[i].pose.position;
+      const double dx = curr.x - prev.x;
+      const double dy = curr.y - prev.y;
+      const double dist = std::hypot(dx, dy);
+      if (dist > kMaxGap) {
+        const int n = static_cast<int>(std::ceil(dist / kMaxGap));
+        for (int j = 1; j < n; ++j) {
+          const double t = static_cast<double>(j) / n;
+          geometry_msgs::msg::PoseStamped ps;
+          ps.header = raw_path.poses[i].header;
+          ps.pose.position.x = prev.x + t * dx;
+          ps.pose.position.y = prev.y + t * dy;
+          ps.pose.position.z = 0.0;
+          ps.pose.orientation = raw_path.poses[i - 1].pose.orientation;
+          swath_path.poses.push_back(ps);
+        }
+      }
+    }
+    swath_path.poses.push_back(raw_path.poses[i]);
+  }
+  RCLCPP_INFO(get_logger(),
+    "Path densified: %zu -> %zu poses (max gap %.2f m)",
+    raw_path.poses.size(), swath_path.poses.size(), kMaxGap);
 
   // ---- Populate response -----------------------------------------------
   response->success = true;
@@ -301,12 +333,17 @@ nav_msgs::msg::Path CoveragePlannerNode::generate_swath_path(
       };
     };
 
-  for (const auto & swath : swaths) {
-    // Process segments in order (forward) or reverse (backward).
+  // Number of intermediate waypoints for U-turns between swaths.
+  // A semicircle is divided into this many steps.
+  constexpr int turn_steps = 6;
+  // Turn radius: half the spacing between adjacent swaths.
+  const double turn_radius = path_spacing_ * 0.5;
+
+  for (std::size_t swath_idx = 0; swath_idx < swaths.size(); ++swath_idx) {
+    const auto & swath = swaths[swath_idx];
     const std::size_t seg_count = swath.segments.size();
 
     for (std::size_t si = 0; si < seg_count; ++si) {
-      // For backward passes, iterate segments in reverse order.
       const std::size_t idx = swath.forward ? si : (seg_count - 1 - si);
       const Segment2D & seg = swath.segments[idx];
 
@@ -319,12 +356,48 @@ nav_msgs::msg::Path CoveragePlannerNode::generate_swath_path(
         world_end = rotate_point_back(seg.start);
       }
 
-      const double yaw_fwd = angle_rad;          // forward travel angle
-      const double yaw_bwd = angle_rad + M_PI;   // backward travel angle
+      const double yaw_fwd = angle_rad;
+      const double yaw_bwd = angle_rad + M_PI;
       const double yaw = swath.forward ? yaw_fwd : yaw_bwd;
 
       path.poses.push_back(make_pose(world_start.first, world_start.second, yaw, frame));
       path.poses.push_back(make_pose(world_end.first, world_end.second, yaw, frame));
+    }
+
+    // Insert semicircular U-turn waypoints between this swath and the next.
+    if (swath_idx + 1 < swaths.size()) {
+      const auto & prev_pose = path.poses.back().pose;
+      const double end_x = prev_pose.position.x;
+      const double end_y = prev_pose.position.y;
+
+      // Determine direction: which side does the next swath start?
+      const auto & next_swath = swaths[swath_idx + 1];
+      const auto & first_seg = next_swath.forward
+        ? next_swath.segments.front()
+        : next_swath.segments.back();
+      const Point2D next_start_rot = next_swath.forward
+        ? first_seg.start : first_seg.end;
+      const Point2D next_start_world = rotate_point_back(next_start_rot);
+
+      // Center of the semicircle is midpoint between end of current and start of next.
+      const double cx = (end_x + next_start_world.first) * 0.5;
+      const double cy = (end_y + next_start_world.second) * 0.5;
+
+      // Angle from center to end of current swath.
+      const double start_angle = std::atan2(end_y - cy, end_x - cx);
+      const double actual_radius = std::hypot(end_x - cx, end_y - cy);
+
+      // Generate semicircular arc from current end to next start.
+      // Direction of arc: away from the mowing area (outward turn).
+      for (int step = 1; step < turn_steps; ++step) {
+        const double t = static_cast<double>(step) / turn_steps;
+        const double theta = start_angle + M_PI * t;  // semicircle
+        const double wx = cx + actual_radius * std::cos(theta);
+        const double wy = cy + actual_radius * std::sin(theta);
+        // Tangent direction along the arc
+        const double tangent_yaw = theta + M_PI * 0.5;
+        path.poses.push_back(make_pose(wx, wy, tangent_yaw, frame));
+      }
     }
   }
 
