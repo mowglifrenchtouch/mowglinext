@@ -68,6 +68,22 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions & options)
   mow_progress_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
     "map_server/mow_progress", rclcpp::QoS(1));
 
+  // Costmap filter publishers: transient_local durability so that Nav2 costmap
+  // filter nodes that start after this node still receive the latched message.
+  auto transient_qos = rclcpp::QoS(1).transient_local();
+
+  keepout_filter_info_pub_ = create_publisher<nav2_msgs::msg::CostmapFilterInfo>(
+    "/costmap_filter_info", transient_qos);
+
+  keepout_mask_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
+    "/keepout_mask", transient_qos);
+
+  speed_filter_info_pub_ = create_publisher<nav2_msgs::msg::CostmapFilterInfo>(
+    "/speed_filter_info", transient_qos);
+
+  speed_mask_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
+    "/speed_mask", transient_qos);
+
   // ── Subscribers ──────────────────────────────────────────────────────────
   occupancy_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
     "/map", rclcpp::QoS(1),
@@ -253,6 +269,10 @@ void MapServerNode::on_publish_timer()
 
     // Publish mow_progress as OccupancyGrid for visualisation
     mow_progress_pub_->publish(mow_progress_to_occupancy_grid());
+
+    // Publish costmap filter masks (transient_local — harmless to re-publish).
+    publish_keepout_mask();
+    publish_speed_mask();
   }
 }
 
@@ -595,6 +615,191 @@ bool MapServerNode::point_in_polygon(
     }
   }
   return inside;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Costmap filter mask helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MapServerNode::publish_keepout_mask()
+{
+  // Caller must hold map_mutex_.
+  if (mowing_area_polygon_.points.size() < 3) {
+    return;
+  }
+
+  const int rows = map_.getSize()(0);
+  const int cols = map_.getSize()(1);
+  const float res = static_cast<float>(resolution_);
+
+  nav_msgs::msg::OccupancyGrid mask;
+  mask.header.stamp    = now();
+  mask.header.frame_id = map_frame_;
+  mask.info.resolution = res;
+  mask.info.width      = static_cast<uint32_t>(cols);
+  mask.info.height     = static_cast<uint32_t>(rows);
+  mask.info.origin.position.x = map_.getPosition().x() - map_size_x_ * 0.5;
+  mask.info.origin.position.y = map_.getPosition().y() - map_size_y_ * 0.5;
+  mask.info.origin.position.z = 0.0;
+  mask.info.origin.orientation.w = 1.0;
+  mask.data.resize(static_cast<std::size_t>(rows * cols), 100);  // default: keepout
+
+  // Check each cell against the mowing boundary.
+  // grid_map row 0 is top; OccupancyGrid row 0 is bottom — flip the row axis.
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < cols; ++c) {
+      // World position of this cell centre.
+      grid_map::Position pos;
+      const grid_map::Index idx(r, c);
+      if (!map_.getPosition(idx, pos)) {
+        continue;
+      }
+
+      geometry_msgs::msg::Point32 pt;
+      pt.x = static_cast<float>(pos.x());
+      pt.y = static_cast<float>(pos.y());
+      pt.z = 0.0F;
+
+      const int og_row = rows - 1 - r;
+      const auto flat_idx = static_cast<std::size_t>(og_row * cols + c);
+
+      if (point_in_polygon(pt, mowing_area_polygon_)) {
+        mask.data[flat_idx] = 0;  // inside boundary → free
+      }
+      // else: already 100 (outside boundary → lethal keepout)
+    }
+  }
+
+  // Overlay no-go zones: any cell classified as NO_GO_ZONE → 100.
+  const auto & cls = map_[std::string(layers::CLASSIFICATION)];
+  const float no_go_val = static_cast<float>(CellType::NO_GO_ZONE);
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < cols; ++c) {
+      if (cls(r, c) == no_go_val) {
+        const int og_row = rows - 1 - r;
+        mask.data[static_cast<std::size_t>(og_row * cols + c)] = 100;
+      }
+    }
+  }
+
+  keepout_mask_pub_->publish(mask);
+
+  // Publish the filter info so Nav2 knows how to interpret the mask.
+  nav2_msgs::msg::CostmapFilterInfo info;
+  info.header.stamp    = mask.header.stamp;
+  info.header.frame_id = map_frame_;
+  info.type            = 0;                // KEEPOUT = 0
+  info.filter_mask_topic = "/keepout_mask";
+  info.base            = 0.0F;
+  info.multiplier      = 1.0F;
+  keepout_filter_info_pub_->publish(info);
+}
+
+void MapServerNode::publish_speed_mask()
+{
+  // Caller must hold map_mutex_.
+  if (mowing_area_polygon_.points.size() < 3) {
+    return;
+  }
+
+  const int rows = map_.getSize()(0);
+  const int cols = map_.getSize()(1);
+  const float res = static_cast<float>(resolution_);
+
+  // Headland band half-width: one full tool width from the boundary.
+  const double headland_radius = mower_width_;
+
+  nav_msgs::msg::OccupancyGrid mask;
+  mask.header.stamp    = now();
+  mask.header.frame_id = map_frame_;
+  mask.info.resolution = res;
+  mask.info.width      = static_cast<uint32_t>(cols);
+  mask.info.height     = static_cast<uint32_t>(rows);
+  mask.info.origin.position.x = map_.getPosition().x() - map_size_x_ * 0.5;
+  mask.info.origin.position.y = map_.getPosition().y() - map_size_y_ * 0.5;
+  mask.info.origin.position.z = 0.0;
+  mask.info.origin.orientation.w = 1.0;
+  mask.data.resize(static_cast<std::size_t>(rows * cols), 0);  // default: full speed
+
+  // For each boundary edge compute the perpendicular distance from every interior
+  // cell.  Any cell within headland_radius of any edge gets value 50.
+  const auto & pts = mowing_area_polygon_.points;
+  const std::size_t n = pts.size();
+
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < cols; ++c) {
+      grid_map::Position pos;
+      const grid_map::Index idx(r, c);
+      if (!map_.getPosition(idx, pos)) {
+        continue;
+      }
+
+      geometry_msgs::msg::Point32 pt;
+      pt.x = static_cast<float>(pos.x());
+      pt.y = static_cast<float>(pos.y());
+      pt.z = 0.0F;
+
+      // Only relevant for cells inside the mowing boundary.
+      if (!point_in_polygon(pt, mowing_area_polygon_)) {
+        continue;
+      }
+
+      // Find minimum distance from cell centre to any polygon edge.
+      double min_dist_sq = std::numeric_limits<double>::max();
+
+      for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
+        const double ax = static_cast<double>(pts[j].x);
+        const double ay = static_cast<double>(pts[j].y);
+        const double bx = static_cast<double>(pts[i].x);
+        const double by = static_cast<double>(pts[i].y);
+
+        const double dx = bx - ax;
+        const double dy = by - ay;
+        const double len_sq = dx * dx + dy * dy;
+
+        double dist_sq = 0.0;
+        if (len_sq < 1e-12) {
+          // Degenerate edge — treat as point.
+          const double ex = pos.x() - ax;
+          const double ey = pos.y() - ay;
+          dist_sq = ex * ex + ey * ey;
+        } else {
+          // Project cell centre onto the edge segment.
+          const double t = std::clamp(
+            ((pos.x() - ax) * dx + (pos.y() - ay) * dy) / len_sq,
+            0.0, 1.0);
+          const double proj_x = ax + t * dx - pos.x();
+          const double proj_y = ay + t * dy - pos.y();
+          dist_sq = proj_x * proj_x + proj_y * proj_y;
+        }
+
+        if (dist_sq < min_dist_sq) {
+          min_dist_sq = dist_sq;
+        }
+      }
+
+      if (min_dist_sq <= headland_radius * headland_radius) {
+        const int og_row = rows - 1 - r;
+        mask.data[static_cast<std::size_t>(og_row * cols + c)] = 50;
+      }
+    }
+  }
+
+  speed_mask_pub_->publish(mask);
+
+  // Publish filter info.  Nav2 SpeedFilter interprets the mask as:
+  //   speed_limit = base + multiplier * (mask_value / 100)
+  // With base=100.0, multiplier=-100.0 and a mask cell of 50:
+  //   speed_limit = 100 + (-100) * 0.50 = 50 %
+  // Cells with mask value 0 → speed_limit = 100 % (no reduction).
+  nav2_msgs::msg::CostmapFilterInfo info;
+  info.header.stamp    = mask.header.stamp;
+  info.header.frame_id = map_frame_;
+  info.type            = 1;                // SPEED_LIMIT = 1 (percentage mode)
+  info.filter_mask_topic = "/speed_mask";
+  info.base            = 100.0F;
+  info.multiplier      = -1.0F;
+  speed_filter_info_pub_->publish(info);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

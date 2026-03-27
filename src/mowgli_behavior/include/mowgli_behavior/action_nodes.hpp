@@ -15,9 +15,9 @@
 #include "nav_msgs/msg/path.hpp"
 
 #include "mowgli_behavior/bt_context.hpp"
+#include "mowgli_interfaces/action/plan_coverage.hpp"
 #include "mowgli_interfaces/msg/high_level_status.hpp"
 #include "mowgli_interfaces/srv/mower_control.hpp"
-#include "mowgli_interfaces/srv/plan_coverage_path.hpp"
 
 namespace mowgli_behavior {
 
@@ -156,12 +156,19 @@ private:
 // PlanCoveragePath
 // ---------------------------------------------------------------------------
 
-/// Calls the coverage planner service asynchronously and waits for the result.
+/// Calls the coverage planner action server asynchronously and waits for the
+/// result.  Feedback progress is logged at DEBUG level.
 ///
 /// Input ports:
 ///   area_index (uint32_t, default "0") – index of the mowing area to plan.
+///   boundary   (string, default "")    – mowing boundary points (optional).
+/// Output ports:
+///   first_waypoint (string) – first waypoint as "x;y;yaw" for NavigateToPose.
 class PlanCoveragePath : public BT::StatefulActionNode {
 public:
+  using PlanCoverageAction = mowgli_interfaces::action::PlanCoverage;
+  using GoalHandle = rclcpp_action::ClientGoalHandle<PlanCoverageAction>;
+
   PlanCoveragePath(const std::string& name, const BT::NodeConfig& config)
     : BT::StatefulActionNode(name, config) {}
 
@@ -178,8 +185,14 @@ public:
   void           onHalted() override;
 
 private:
-  rclcpp::Client<mowgli_interfaces::srv::PlanCoveragePath>::SharedPtr client_;
-  rclcpp::Client<mowgli_interfaces::srv::PlanCoveragePath>::SharedFuture future_;
+  rclcpp_action::Client<PlanCoverageAction>::SharedPtr action_client_;
+  std::shared_future<GoalHandle::SharedPtr>            goal_handle_future_;
+  GoalHandle::SharedPtr                                goal_handle_;
+
+  /// Latest result received from the action server (set in result callback).
+  std::shared_ptr<const PlanCoverageAction::Result> latest_result_;
+  bool result_received_{false};
+
   uint32_t area_index_{0};
 };
 

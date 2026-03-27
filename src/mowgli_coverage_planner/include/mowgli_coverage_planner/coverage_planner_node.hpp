@@ -3,18 +3,18 @@
 
 /**
  * @file coverage_planner_node.hpp
- * @brief ROS2 node that provides coverage path planning via a service interface.
+ * @brief ROS2 node that provides coverage path planning via a ROS2 action interface.
  *
  * The node accepts an area boundary and a list of obstacle polygons, then
- * generates an efficient boustrophedon (zigzag) mowing path using:
- *   1. Headland pass generation (polygon contraction by headland_width).
- *   2. Optimal or user-specified swath angle selection.
- *   3. Parallel swath generation clipped to the inner area.
- *   4. Route ordering to minimise travel distance.
+ * generates an efficient boustrophedon mowing path using the Fields2Cover v2
+ * library:
+ *   1. Headland generation via f2c::hg::ConstHL (configurable passes).
+ *   2. Swath generation via f2c::sg::BruteForce (optimal angle search).
+ *   3. Route planning via f2c::rp::BoustrophedonOrder.
+ *   4. Smooth path via f2c::pp::DubinsCurves (respects robot turning radius).
  *
- * The implementation is self-contained and relies only on the polygon_utils
- * utilities — no external geometry library (CGAL, Clipper, Boost.Geometry)
- * is required.
+ * The headland outline path is still generated internally using polygon_utils
+ * for visualisation purposes.
  */
 
 #ifndef MOWGLI_COVERAGE_PLANNER__COVERAGE_PLANNER_NODE_HPP_
@@ -25,9 +25,10 @@
 #include <vector>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
-#include "mowgli_interfaces/srv/plan_coverage_path.hpp"
+#include "mowgli_interfaces/action/plan_coverage.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
 
 #include "mowgli_coverage_planner/polygon_utils.hpp"
 
@@ -37,14 +38,20 @@ namespace mowgli_coverage_planner
 /**
  * @brief Coverage path planner node.
  *
- * Advertises the `~/plan_coverage` service and publishes the computed paths
- * on `~/coverage_path` and `~/coverage_outline` for RViz visualisation.
+ * Advertises:
+ *   - `~/plan_coverage` action server (PlanCoverage action)
+ *   - `~/coverage_path` publisher (nav_msgs::Path, transient-local)
+ *   - `~/coverage_outline` publisher (nav_msgs::Path, transient-local)
  */
 class CoveragePlannerNode : public rclcpp::Node
 {
 public:
+  using PlanCoverageAction = mowgli_interfaces::action::PlanCoverage;
+  using GoalHandlePlanCoverage = rclcpp_action::ServerGoalHandle<PlanCoverageAction>;
+
   /**
-   * @brief Construct the node, declare parameters, create publishers and service.
+   * @brief Construct the node, declare parameters, create publishers and
+   *        action server.
    *
    * @param options Node options forwarded to rclcpp::Node.
    */
@@ -52,51 +59,62 @@ public:
 
 private:
   // -------------------------------------------------------------------------
-  // Service callback
+  // Action server callbacks
   // -------------------------------------------------------------------------
 
   /**
-   * @brief Handle a PlanCoveragePath service request.
+   * @brief Handle a new goal request.
    *
-   * Validates the input polygon, runs the coverage algorithm, fills the
-   * response, and publishes the resulting paths for visualisation.
-   *
-   * @param request  Incoming service request.
-   * @param response Outgoing service response (mutated in place).
+   * Always accepts the goal so that the BT node does not have to retry.
    */
-  void handle_plan_coverage(
-    const std::shared_ptr<mowgli_interfaces::srv::PlanCoveragePath::Request> request,
-    std::shared_ptr<mowgli_interfaces::srv::PlanCoveragePath::Response> response);
+  rclcpp_action::GoalResponse handle_goal(
+    const rclcpp_action::GoalUUID & uuid,
+    std::shared_ptr<const PlanCoverageAction::Goal> goal);
+
+  /**
+   * @brief Handle a cancel request.
+   *
+   * Accepts the cancellation — the execute thread will check for it.
+   */
+  rclcpp_action::CancelResponse handle_cancel(
+    const std::shared_ptr<GoalHandlePlanCoverage> goal_handle);
+
+  /**
+   * @brief Spawn the execute callback on a detached thread.
+   *
+   * Using a detached thread keeps the action server callbacks non-blocking
+   * while the F2C pipeline runs.
+   */
+  void handle_accepted(const std::shared_ptr<GoalHandlePlanCoverage> goal_handle);
+
+  /**
+   * @brief Execute the Fields2Cover planning pipeline and fill the result.
+   *
+   * Publishes feedback for each phase: "headland", "swaths", "routing",
+   * and "path_planning". On completion, publishes the paths and fills
+   * the action result.
+   *
+   * @param goal_handle Active goal handle for feedback / result publication.
+   */
+  void execute(const std::shared_ptr<GoalHandlePlanCoverage> goal_handle);
 
   // -------------------------------------------------------------------------
   // Internal planning helpers
   // -------------------------------------------------------------------------
 
   /**
-   * @brief Generate the headland outline path.
+   * @brief Generate the headland outline path using polygon_utils.
    *
-   * Contracts the outer boundary by (headland_passes_ * headland_width_) and
-   * returns a nav_msgs::Path that traces all headland offset rings.
+   * Contracts the outer boundary by successive headland offsets and returns a
+   * nav_msgs::Path tracing all headland contour rings. Used for visualisation
+   * and for the outline component of the planner response.
    *
    * @param outer   Outer boundary polygon.
-   * @param frame   Coordinate frame for the header stamp.
+   * @param frame   Coordinate frame for the header.
    * @return Path tracing the headland contour(s).
    */
   nav_msgs::msg::Path generate_outline_path(
     const Polygon2D & outer,
-    const std::string & frame) const;
-
-  /**
-   * @brief Generate the boustrophedon swath path for the inner area.
-   *
-   * @param inner      Inner polygon (already contracted by headland passes).
-   * @param angle_rad  Mowing angle in radians.
-   * @param frame      Coordinate frame for the header stamp.
-   * @return Path containing all swath traversals.
-   */
-  nav_msgs::msg::Path generate_swath_path(
-    const Polygon2D & inner,
-    double angle_rad,
     const std::string & frame) const;
 
   /**
@@ -123,7 +141,7 @@ private:
   // ROS interfaces
   // -------------------------------------------------------------------------
 
-  rclcpp::Service<mowgli_interfaces::srv::PlanCoveragePath>::SharedPtr service_;
+  rclcpp_action::Server<PlanCoverageAction>::SharedPtr action_server_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr outline_pub_;
 
@@ -131,12 +149,13 @@ private:
   // Parameters
   // -------------------------------------------------------------------------
 
-  double tool_width_;        ///< Mowing blade / disc width [m].
-  int headland_passes_;      ///< Number of headland perimeter passes.
-  double headland_width_;    ///< Width of one headland pass [m].
-  double default_mow_angle_; ///< Default mowing angle [deg]; -1 = auto.
-  double path_spacing_;      ///< Distance between parallel swath centrelines [m].
-  std::string map_frame_;    ///< TF frame for output paths.
+  double tool_width_;           ///< Mowing blade / disc width [m].
+  int headland_passes_;         ///< Number of headland perimeter passes.
+  double headland_width_;       ///< Width of one headland pass [m].
+  double default_mow_angle_;    ///< Default mowing angle [deg]; -1 = auto.
+  double path_spacing_;         ///< Distance between parallel swath centrelines [m].
+  double min_turning_radius_;   ///< Minimum robot turning radius for Dubins curves [m].
+  std::string map_frame_;       ///< TF frame for output paths.
 };
 
 }  // namespace mowgli_coverage_planner

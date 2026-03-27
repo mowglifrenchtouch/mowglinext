@@ -3,16 +3,17 @@
 
 /**
  * @file test_coverage_planner.cpp
- * @brief Integration tests for CoveragePlannerNode service logic.
+ * @brief Integration tests for CoveragePlannerNode action server.
  *
  * Tests spin the CoveragePlannerNode together with a lightweight client node
  * inside a MultiThreadedExecutor running on a background thread.  Each test
- * sends a synchronous service request and verifies the geometric properties
- * of the returned paths.
+ * sends an action goal and verifies the geometric properties of the returned
+ * paths.
  *
- * All tests use a simple 10×10 m² square boundary unless stated otherwise.
+ * All tests use a simple 10x10 m² square boundary unless stated otherwise.
  */
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <memory>
@@ -22,16 +23,18 @@
 
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
 #include "geometry_msgs/msg/point32.hpp"
 #include "geometry_msgs/msg/polygon.hpp"
-#include "mowgli_interfaces/srv/plan_coverage_path.hpp"
+#include "mowgli_interfaces/action/plan_coverage.hpp"
 #include "nav_msgs/msg/path.hpp"
 
 #include "mowgli_coverage_planner/coverage_planner_node.hpp"
 #include "mowgli_coverage_planner/polygon_utils.hpp"
 
 using mowgli_coverage_planner::CoveragePlannerNode;
-using PlanCoveragePath = mowgli_interfaces::srv::PlanCoveragePath;
+using PlanCoverageAction = mowgli_interfaces::action::PlanCoverage;
+using GoalHandle = rclcpp_action::ClientGoalHandle<PlanCoverageAction>;
 using namespace std::chrono_literals;
 
 // ---------------------------------------------------------------------------
@@ -50,12 +53,13 @@ protected:
     planner_opts.append_parameter_override("headland_width", 0.5);
     planner_opts.append_parameter_override("path_spacing", 0.5);
     planner_opts.append_parameter_override("map_frame", "map");
+    planner_opts.append_parameter_override("min_turning_radius", 0.3);
     planner_node_ = std::make_shared<CoveragePlannerNode>(planner_opts);
 
     // Build a minimal client node.
     client_node_ = rclcpp::Node::make_shared("test_client_node");
-    client_ = client_node_->create_client<PlanCoveragePath>(
-      "/coverage_planner_node/plan_coverage");
+    action_client_ = rclcpp_action::create_client<PlanCoverageAction>(
+      client_node_, "/coverage_planner_node/plan_coverage");
 
     // Spin both nodes on a background thread.
     executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
@@ -64,9 +68,9 @@ protected:
 
     spin_thread_ = std::thread([this]() {executor_->spin();});
 
-    // Wait for service to be ready.
-    ASSERT_TRUE(client_->wait_for_service(5s))
-      << "PlanCoveragePath service did not become available within 5 s";
+    // Wait for action server to be ready.
+    ASSERT_TRUE(action_client_->wait_for_action_server(5s))
+      << "PlanCoverage action server did not become available within 5 s";
   }
 
   void TearDown() override
@@ -79,7 +83,7 @@ protected:
 
   // ---- Helpers ------------------------------------------------------------
 
-  /// Build a 10×10 m² square polygon (CCW).
+  /// Build a 10x10 m² square polygon (CCW).
   static geometry_msgs::msg::Polygon make_square_10x10()
   {
     return make_rectangle(0.0f, 0.0f, 10.0f, 10.0f);
@@ -102,47 +106,70 @@ protected:
     return poly;
   }
 
-  /// Send a synchronous service request and return the response.
-  PlanCoveragePath::Response::SharedPtr call_service(
+  /// Send an action goal and block until the result is received.
+  std::shared_ptr<const PlanCoverageAction::Result> send_goal(
     const geometry_msgs::msg::Polygon & boundary,
     const std::vector<geometry_msgs::msg::Polygon> & obstacles = {},
     double mow_angle_deg = -1.0,
     bool skip_outline = false)
   {
-    auto req = std::make_shared<PlanCoveragePath::Request>();
-    req->outer_boundary = boundary;
-    req->obstacles = obstacles;
-    req->mow_angle_deg = mow_angle_deg;
-    req->skip_outline = skip_outline;
+    PlanCoverageAction::Goal goal;
+    goal.outer_boundary = boundary;
+    goal.obstacles = obstacles;
+    goal.mow_angle_deg = mow_angle_deg;
+    goal.skip_outline = skip_outline;
 
-    auto future = client_->async_send_request(req);
-    if (future.wait_for(10s) != std::future_status::ready) {
-      auto error_res = std::make_shared<PlanCoveragePath::Response>();
-      error_res->success = false;
-      error_res->message = "timeout waiting for service response";
-      return error_res;
+    auto send_goal_options = rclcpp_action::Client<PlanCoverageAction>::SendGoalOptions{};
+
+    std::shared_ptr<const PlanCoverageAction::Result> result;
+    std::atomic<bool> result_ready{false};
+
+    send_goal_options.result_callback =
+      [&result, &result_ready](const GoalHandle::WrappedResult & wr)
+      {
+        result = wr.result;
+        result_ready.store(true);
+      };
+
+    auto goal_handle_future = action_client_->async_send_goal(goal, send_goal_options);
+
+    // Wait for goal acceptance.
+    if (goal_handle_future.wait_for(5s) != std::future_status::ready) {
+      return nullptr;
     }
-    return future.get();
+    auto goal_handle = goal_handle_future.get();
+    if (!goal_handle) {
+      return nullptr;
+    }
+
+    // Wait for result.
+    const auto deadline = std::chrono::steady_clock::now() + 15s;
+    while (!result_ready.load() && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(50ms);
+    }
+
+    return result;
   }
 
   // ---- Members ------------------------------------------------------------
 
   std::shared_ptr<CoveragePlannerNode> planner_node_;
   rclcpp::Node::SharedPtr client_node_;
-  rclcpp::Client<PlanCoveragePath>::SharedPtr client_;
+  rclcpp_action::Client<PlanCoverageAction>::SharedPtr action_client_;
   std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> executor_;
   std::thread spin_thread_;
 };
 
 // ---------------------------------------------------------------------------
-// Test: valid path on a simple 10×10 square
+// Test: valid path on a simple 10x10 square
 // ---------------------------------------------------------------------------
 
-TEST_F(CoveragePlannerTest, SimpleSqaureProducesValidPath)
+TEST_F(CoveragePlannerTest, SimpleSquareProducesValidPath)
 {
-  const auto res = call_service(make_square_10x10());
+  const auto res = send_goal(make_square_10x10());
 
-  ASSERT_TRUE(res->success) << "Service failed: " << res->message;
+  ASSERT_NE(res, nullptr) << "Action goal timed out";
+  ASSERT_TRUE(res->success) << "Action failed: " << res->message;
   EXPECT_GT(res->path.poses.size(), 0u) << "Expected non-empty swath path";
 }
 
@@ -152,12 +179,13 @@ TEST_F(CoveragePlannerTest, SimpleSqaureProducesValidPath)
 
 TEST_F(CoveragePlannerTest, TotalDistanceReasonable)
 {
-  const auto res = call_service(make_square_10x10());
+  const auto res = send_goal(make_square_10x10());
 
+  ASSERT_NE(res, nullptr) << "Action goal timed out";
   ASSERT_TRUE(res->success) << res->message;
 
-  // Inner polygon after 0.5 m headland inset: ~9×9 = 81 m².
-  // Lower bound: inner_area / path_spacing * 0.5 (50 % efficiency).
+  // Inner polygon after 0.5 m headland inset: ~9x9 = 81 m².
+  // Lower bound: inner_area / path_spacing * 0.5 (50% efficiency).
   const double inner_area = res->coverage_area;
   const double path_spacing = 0.5;
   const double min_expected = inner_area / path_spacing * 0.5;
@@ -173,8 +201,9 @@ TEST_F(CoveragePlannerTest, TotalDistanceReasonable)
 
 TEST_F(CoveragePlannerTest, OutlinePathGeneratedWhenNotSkipped)
 {
-  const auto res = call_service(make_square_10x10(), {}, -1.0, false);
+  const auto res = send_goal(make_square_10x10(), {}, -1.0, false);
 
+  ASSERT_NE(res, nullptr) << "Action goal timed out";
   ASSERT_TRUE(res->success) << res->message;
   EXPECT_GT(res->outline_path.poses.size(), 0u)
     << "Expected non-empty outline path when skip_outline=false";
@@ -186,8 +215,9 @@ TEST_F(CoveragePlannerTest, OutlinePathGeneratedWhenNotSkipped)
 
 TEST_F(CoveragePlannerTest, OutlinePathEmptyWhenSkipped)
 {
-  const auto res = call_service(make_square_10x10(), {}, -1.0, true);
+  const auto res = send_goal(make_square_10x10(), {}, -1.0, true);
 
+  ASSERT_NE(res, nullptr) << "Action goal timed out";
   ASSERT_TRUE(res->success) << res->message;
   EXPECT_EQ(res->outline_path.poses.size(), 0u)
     << "Expected empty outline path when skip_outline=true";
@@ -199,8 +229,9 @@ TEST_F(CoveragePlannerTest, OutlinePathEmptyWhenSkipped)
 
 TEST_F(CoveragePlannerTest, CustomMowAngle45Degrees)
 {
-  const auto res = call_service(make_square_10x10(), {}, 45.0, true);
+  const auto res = send_goal(make_square_10x10(), {}, 45.0, true);
 
+  ASSERT_NE(res, nullptr) << "Action goal timed out";
   ASSERT_TRUE(res->success) << res->message;
   ASSERT_GT(res->path.poses.size(), 0u);
 
@@ -210,7 +241,7 @@ TEST_F(CoveragePlannerTest, CustomMowAngle45Degrees)
     2.0 * (q.w * q.z + q.x * q.y),
     1.0 - 2.0 * (q.y * q.y + q.z * q.z));
 
-  // The yaw should be close to ±45° (forward) or ±135° (return pass).
+  // The yaw should be close to +/-45 deg (forward) or +/-135 deg (return pass).
   const double abs_yaw = std::abs(yaw);
   const double pi_4 = M_PI / 4.0;
 
@@ -219,7 +250,7 @@ TEST_F(CoveragePlannerTest, CustomMowAngle45Degrees)
     (std::abs(abs_yaw - 3.0 * pi_4) < 15.0 * M_PI / 180.0);
 
   EXPECT_TRUE(near_45_or_135)
-    << "Expected yaw near ±45° or ±135°, got " << yaw * 180.0 / M_PI << "°";
+    << "Expected yaw near +/-45 deg or +/-135 deg, got " << yaw * 180.0 / M_PI << " deg";
 }
 
 // ---------------------------------------------------------------------------
@@ -228,12 +259,13 @@ TEST_F(CoveragePlannerTest, CustomMowAngle45Degrees)
 
 TEST_F(CoveragePlannerTest, CoverageAreaMatchesInnerPolygon)
 {
-  const auto res = call_service(make_square_10x10());
+  const auto res = send_goal(make_square_10x10());
 
+  ASSERT_NE(res, nullptr) << "Action goal timed out";
   ASSERT_TRUE(res->success) << res->message;
 
-  // After 0.5 m inset on all sides: (10 - 2*0.5) × (10 - 2*0.5) = 9×9 = 81 m².
-  EXPECT_NEAR(res->coverage_area, 81.0, 1.5);  // ±1.5 m² tolerance
+  // After 0.5 m inset on all sides: (10 - 2*0.5) x (10 - 2*0.5) = 9x9 = 81 m².
+  EXPECT_NEAR(res->coverage_area, 81.0, 1.5);  // +/-1.5 m² tolerance
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +282,8 @@ TEST_F(CoveragePlannerTest, DegeneratePolygonRejected)
   bad_poly.points.push_back(pt);
   // Only 2 vertices — must be rejected.
 
-  const auto res = call_service(bad_poly);
+  const auto res = send_goal(bad_poly);
+  ASSERT_NE(res, nullptr) << "Action goal timed out";
   EXPECT_FALSE(res->success);
   EXPECT_FALSE(res->message.empty());
 }
@@ -261,8 +294,9 @@ TEST_F(CoveragePlannerTest, DegeneratePolygonRejected)
 
 TEST_F(CoveragePlannerTest, AutoAngleOnWideRectangle)
 {
-  const auto res = call_service(make_rectangle(0.0f, 0.0f, 20.0f, 4.0f));
+  const auto res = send_goal(make_rectangle(0.0f, 0.0f, 20.0f, 4.0f));
 
+  ASSERT_NE(res, nullptr) << "Action goal timed out";
   ASSERT_TRUE(res->success) << res->message;
   EXPECT_GT(res->path.poses.size(), 0u);
 }

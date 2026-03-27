@@ -332,30 +332,34 @@ BT::NodeStatus PlanCoveragePath::onStart()
   if (auto res = getInput<uint32_t>("area_index")) {
     area_index = res.value();
   }
+  area_index_       = area_index;
+  result_received_  = false;
+  latest_result_.reset();
+  goal_handle_.reset();
 
-  if (!client_) {
-    client_ = ctx->node->create_client<mowgli_interfaces::srv::PlanCoveragePath>(
-      "/coverage_planner_node/plan_coverage");
+  // Lazily create the action client once and reuse it across ticks.
+  if (!action_client_) {
+    action_client_ = rclcpp_action::create_client<PlanCoverageAction>(
+      ctx->node, "/coverage_planner_node/plan_coverage");
   }
 
-  if (!client_->wait_for_service(std::chrono::milliseconds(500))) {
+  if (!action_client_->wait_for_action_server(std::chrono::milliseconds(500))) {
     RCLCPP_WARN(ctx->node->get_logger(),
-      "PlanCoveragePath: service not available");
+      "PlanCoveragePath: action server not available");
     return BT::NodeStatus::FAILURE;
   }
 
-  auto request = std::make_shared<mowgli_interfaces::srv::PlanCoveragePath::Request>();
-  request->mow_angle_deg = -1.0;  // auto-optimize
-  request->skip_outline  = false;
+  // Build goal.
+  PlanCoverageAction::Goal goal_msg;
+  goal_msg.mow_angle_deg = -1.0;  // auto-optimize
+  goal_msg.skip_outline  = false;
 
-  // Try reading the mowing boundary from the blackboard.
-  // If not set, use a default rectangular area (useful for simulation).
+  // Try reading the mowing boundary from the blackboard / port.
   std::string boundary_str;
   if (auto res = getInput<std::string>("boundary")) {
     boundary_str = res.value();
   }
   if (boundary_str.empty()) {
-    // Try blackboard (check existence first to avoid exception)
     auto entry = config().blackboard->getEntry("mowing_boundary");
     if (entry) {
       boundary_str = entry->value.cast<std::string>();
@@ -363,22 +367,44 @@ BT::NodeStatus PlanCoveragePath::onStart()
   }
 
   if (boundary_str.empty()) {
-    // Default 5m x 5m simulation area offset from origin
+    // Default 5 m × 5 m simulation area.
     geometry_msgs::msg::Point32 p;
     p.z = 0.0f;
-    p.x = -1.0f; p.y = -2.5f; request->outer_boundary.points.push_back(p);
-    p.x =  4.0f; p.y = -2.5f; request->outer_boundary.points.push_back(p);
-    p.x =  4.0f; p.y =  2.5f; request->outer_boundary.points.push_back(p);
-    p.x = -1.0f; p.y =  2.5f; request->outer_boundary.points.push_back(p);
+    p.x = -1.0f; p.y = -2.5f; goal_msg.outer_boundary.points.push_back(p);
+    p.x =  4.0f; p.y = -2.5f; goal_msg.outer_boundary.points.push_back(p);
+    p.x =  4.0f; p.y =  2.5f; goal_msg.outer_boundary.points.push_back(p);
+    p.x = -1.0f; p.y =  2.5f; goal_msg.outer_boundary.points.push_back(p);
     RCLCPP_INFO(ctx->node->get_logger(),
       "PlanCoveragePath: using default 5x5m simulation boundary");
   }
 
-  future_ = client_->async_send_request(request);
-  area_index_ = area_index;
+  // Send the goal asynchronously.
+  auto send_goal_options = rclcpp_action::Client<PlanCoverageAction>::SendGoalOptions{};
+
+  // Feedback callback: log progress.
+  send_goal_options.feedback_callback =
+    [ctx](GoalHandle::SharedPtr /*gh*/,
+          const std::shared_ptr<const PlanCoverageAction::Feedback> fb)
+    {
+      RCLCPP_DEBUG(ctx->node->get_logger(),
+        "PlanCoveragePath feedback: %.0f%% [%s]",
+        static_cast<double>(fb->progress_percent),
+        fb->phase.c_str());
+    };
+
+  // Result callback: store result and signal readiness.
+  send_goal_options.result_callback =
+    [this](const GoalHandle::WrappedResult & wr)
+    {
+      latest_result_  = wr.result;
+      result_received_ = true;
+    };
+
+  goal_handle_future_ = action_client_->async_send_goal(goal_msg, send_goal_options);
+  goal_handle_.reset();
 
   RCLCPP_INFO(ctx->node->get_logger(),
-    "PlanCoveragePath: request sent for area_index=%u", area_index);
+    "PlanCoveragePath: goal sent for area_index=%u", area_index);
 
   return BT::NodeStatus::RUNNING;
 }
@@ -387,13 +413,36 @@ BT::NodeStatus PlanCoveragePath::onRunning()
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
 
-  if (future_.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+  // Phase 1: wait for the goal to be accepted.
+  if (!goal_handle_) {
+    if (goal_handle_future_.wait_for(std::chrono::milliseconds(0))
+        != std::future_status::ready)
+    {
+      return BT::NodeStatus::RUNNING;
+    }
+    goal_handle_ = goal_handle_future_.get();
+    if (!goal_handle_) {
+      RCLCPP_ERROR(ctx->node->get_logger(),
+        "PlanCoveragePath: goal was rejected by the action server");
+      return BT::NodeStatus::FAILURE;
+    }
+  }
+
+  // Phase 2: wait for the result callback to fire.
+  if (!result_received_) {
+    const auto status = goal_handle_->get_status();
+    if (status == action_msgs::msg::GoalStatus::STATUS_ABORTED ||
+        status == action_msgs::msg::GoalStatus::STATUS_CANCELED)
+    {
+      RCLCPP_WARN(ctx->node->get_logger(),
+        "PlanCoveragePath: goal aborted/canceled by planner");
+      return BT::NodeStatus::FAILURE;
+    }
     return BT::NodeStatus::RUNNING;
   }
 
-  auto response = future_.get();
-  const bool success = response->success;
-  if (!success) {
+  // Phase 3: evaluate the result.
+  if (!latest_result_ || !latest_result_->success) {
     RCLCPP_WARN(ctx->node->get_logger(),
       "PlanCoveragePath: planner returned failure for area_index=%u", area_index_);
     return BT::NodeStatus::FAILURE;
@@ -401,17 +450,16 @@ BT::NodeStatus PlanCoveragePath::onRunning()
 
   RCLCPP_INFO(ctx->node->get_logger(),
     "PlanCoveragePath: planner returned path with %zu poses for area_index=%u",
-    response->path.poses.size(), area_index_);
+    latest_result_->path.poses.size(), area_index_);
 
-  // Write the first waypoint to the blackboard so NavigateToPose can drive there.
-  if (!response->path.poses.empty()) {
-    const auto& first = response->path.poses.front().pose;
-    // Extract yaw from quaternion
-    double siny = 2.0 * (first.orientation.w * first.orientation.z +
-                          first.orientation.x * first.orientation.y);
-    double cosy = 1.0 - 2.0 * (first.orientation.y * first.orientation.y +
-                                 first.orientation.z * first.orientation.z);
-    double yaw = std::atan2(siny, cosy);
+  // Write the first waypoint to the output port so NavigateToPose can use it.
+  if (!latest_result_->path.poses.empty()) {
+    const auto & first = latest_result_->path.poses.front().pose;
+    const double siny = 2.0 * (first.orientation.w * first.orientation.z +
+                                first.orientation.x * first.orientation.y);
+    const double cosy = 1.0 - 2.0 * (first.orientation.y * first.orientation.y +
+                                       first.orientation.z * first.orientation.z);
+    const double yaw = std::atan2(siny, cosy);
 
     std::ostringstream oss;
     oss << first.position.x << ";" << first.position.y << ";" << yaw;
@@ -427,7 +475,16 @@ BT::NodeStatus PlanCoveragePath::onRunning()
 
 void PlanCoveragePath::onHalted()
 {
-  // Nothing to clean up — service call will complete on its own.
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  if (goal_handle_) {
+    RCLCPP_INFO(ctx->node->get_logger(),
+      "PlanCoveragePath: canceling active planning goal");
+    action_client_->async_cancel_goal(goal_handle_);
+    goal_handle_.reset();
+  }
+  result_received_ = false;
+  latest_result_.reset();
 }
 
 // ---------------------------------------------------------------------------

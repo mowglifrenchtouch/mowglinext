@@ -46,6 +46,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-foxglove-bridge \
     # Rotation shim controller for transit navigation
     ros-jazzy-nav2-rotation-shim-controller \
+    # Nav2 msgs (CostmapFilterInfo for costmap filters)
+    ros-jazzy-nav2-msgs \
+    # Coverage planning with Fields2Cover v2
+    ros-jazzy-fields2cover \
     # Simulation bridge (needed at runtime for ros_gz_bridge topic bridging)
     ros-jazzy-ros-gz-sim \
     ros-jazzy-ros-gz-bridge \

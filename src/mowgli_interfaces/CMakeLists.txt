@@ -36,12 +36,12 @@ set(srv_files
   "srv/GetMowingArea.srv"
   "srv/SetDockingPoint.srv"
   "srv/ClearMap.srv"
-  "srv/PlanCoveragePath.srv"
 )
 
 # Declare action files
 set(action_files
   "action/CoverageTask.action"
+  "action/PlanCoverage.action"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

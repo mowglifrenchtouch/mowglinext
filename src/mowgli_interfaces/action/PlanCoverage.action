@@ -1,13 +1,17 @@
-# Request
+# Goal
 geometry_msgs/Polygon outer_boundary
 geometry_msgs/Polygon[] obstacles
 float64 mow_angle_deg  # -1 = auto-optimize
 bool skip_outline
 ---
-# Response
+# Result
 bool success
 string message
 nav_msgs/Path path
 nav_msgs/Path outline_path
 float64 total_distance
 float64 coverage_area
+---
+# Feedback
+float32 progress_percent
+string phase  # "headland", "swaths", "routing", "path_planning"

@@ -238,7 +238,12 @@ global_costmap:
       rolling_window: true
       width: 20
       height: 20
-      plugins: ["obstacle_layer", "inflation_layer"]
+      plugins: ["keepout_filter", "obstacle_layer", "inflation_layer"]
+
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: "/costmap_filter_info"
 
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -276,7 +281,18 @@ local_costmap:
       rolling_window: true
       width: 6
       height: 6
-      plugins: ["obstacle_layer", "inflation_layer"]
+      plugins: ["keepout_filter", "speed_filter", "obstacle_layer", "inflation_layer"]
+
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: "/costmap_filter_info"
+
+      speed_filter:
+        plugin: "nav2_costmap_2d::SpeedFilter"
+        enabled: true
+        filter_info_topic: "/speed_filter_info"
+        speed_limit_topic: "/speed_limit"
 
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"

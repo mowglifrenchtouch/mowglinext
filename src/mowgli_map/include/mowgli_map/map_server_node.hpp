@@ -33,6 +33,8 @@
 
 #include <grid_map_msgs/msg/grid_map.hpp>
 
+#include <nav2_msgs/msg/costmap_filter_info.hpp>
+
 #include <mowgli_interfaces/msg/status.hpp>
 #include <mowgli_interfaces/srv/add_mowing_area.hpp>
 #include <mowgli_interfaces/srv/get_mowing_area.hpp>
@@ -151,6 +153,20 @@ private:
     const geometry_msgs::msg::Point32 & pt,
     const geometry_msgs::msg::Polygon & polygon) noexcept;
 
+  /// Build and publish the keepout OccupancyGrid mask and CostmapFilterInfo.
+  /// Outside the mowing boundary → 100 (lethal).  No-go zones → 100.
+  /// Inside the mowing boundary → 0 (free).
+  /// Does nothing if mowing_area_polygon_ has fewer than 3 points.
+  /// Caller must hold map_mutex_.
+  void publish_keepout_mask();
+
+  /// Build and publish the speed OccupancyGrid mask and CostmapFilterInfo.
+  /// Cells within one tool_width of the mowing boundary → 50 (50 % speed).
+  /// All other interior cells → 0 (full speed).
+  /// Does nothing if mowing_area_polygon_ has fewer than 3 points.
+  /// Caller must hold map_mutex_.
+  void publish_speed_mask();
+
   // ── Parameters ────────────────────────────────────────────────────────────
   double resolution_;
   double map_size_x_;
@@ -174,6 +190,13 @@ private:
   // ── Publishers ────────────────────────────────────────────────────────────
   rclcpp::Publisher<grid_map_msgs::msg::GridMap>::SharedPtr grid_map_pub_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr mow_progress_pub_;
+
+  // Costmap filter mask publishers (transient_local so late subscribers receive
+  // the last message immediately — required by Nav2 costmap filter design).
+  rclcpp::Publisher<nav2_msgs::msg::CostmapFilterInfo>::SharedPtr keepout_filter_info_pub_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr keepout_mask_pub_;
+  rclcpp::Publisher<nav2_msgs::msg::CostmapFilterInfo>::SharedPtr speed_filter_info_pub_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr speed_mask_pub_;
 
   // ── Subscribers ───────────────────────────────────────────────────────────
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr occupancy_sub_;

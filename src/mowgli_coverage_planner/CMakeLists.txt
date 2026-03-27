@@ -19,11 +19,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(mowgli_interfaces REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(Fields2Cover REQUIRED)
 
 # ---------------------------------------------------------------------------
 # Library: mowgli_coverage_planner_lib
@@ -44,11 +46,16 @@ target_include_directories(mowgli_coverage_planner_lib PUBLIC
 
 ament_target_dependencies(mowgli_coverage_planner_lib
   rclcpp
+  rclcpp_action
   nav_msgs
   geometry_msgs
   mowgli_interfaces
   tf2
   tf2_geometry_msgs
+)
+
+target_link_libraries(mowgli_coverage_planner_lib
+  Fields2Cover
 )
 
 # ---------------------------------------------------------------------------
@@ -70,6 +77,7 @@ target_link_libraries(coverage_planner_node
 
 ament_target_dependencies(coverage_planner_node
   rclcpp
+  rclcpp_action
   nav_msgs
   geometry_msgs
   mowgli_interfaces
@@ -124,6 +132,7 @@ if(BUILD_TESTING)
 
   ament_target_dependencies(test_polygon_utils
     rclcpp
+    rclcpp_action
     nav_msgs
     geometry_msgs
     mowgli_interfaces
@@ -146,6 +155,7 @@ if(BUILD_TESTING)
 
   ament_target_dependencies(test_coverage_planner
     rclcpp
+    rclcpp_action
     nav_msgs
     geometry_msgs
     mowgli_interfaces

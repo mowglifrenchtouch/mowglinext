@@ -26,6 +26,7 @@ find_package(grid_map_core REQUIRED)
 find_package(grid_map_ros REQUIRED)
 find_package(grid_map_msgs REQUIRED)
 find_package(mowgli_interfaces REQUIRED)
+find_package(nav2_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 
 # ---------------------------------------------------------------------------
@@ -52,6 +53,7 @@ ament_target_dependencies(mowgli_map_lib
   grid_map_ros
   grid_map_msgs
   mowgli_interfaces
+  nav2_msgs
   tf2_ros
 )
 
@@ -137,6 +139,7 @@ ament_export_dependencies(
   grid_map_ros
   grid_map_msgs
   mowgli_interfaces
+  nav2_msgs
   tf2_ros
 )
 
