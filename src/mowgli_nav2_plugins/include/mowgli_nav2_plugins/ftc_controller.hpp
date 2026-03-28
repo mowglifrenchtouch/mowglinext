@@ -214,8 +214,8 @@ private:
 
     // Recovery
     bool oscillation_recovery{true};
-    double oscillation_v_eps{5.0};
-    double oscillation_omega_eps{5.0};
+    double oscillation_v_eps{0.05};
+    double oscillation_omega_eps{0.05};
     double oscillation_recovery_min_duration{5.0};
 
     // Obstacles

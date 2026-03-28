@@ -127,13 +127,13 @@
     <!-- North wall  y = +15.0 -->
     <model name="wall_north">
       <static>true</static>
-      <pose>0 15.0 0.15 0 0 0</pose>
+      <pose>0 15.0 0.30 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>40.2 0.1 0.3</size></box></geometry>
+          <geometry><box><size>40.2 0.1 0.6</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>40.2 0.1 0.3</size></box></geometry>
+          <geometry><box><size>40.2 0.1 0.6</size></box></geometry>
           <material>
             <ambient>0.65 0.55 0.40 1</ambient>
             <diffuse>0.70 0.60 0.45 1</diffuse>
@@ -145,13 +145,13 @@
     <!-- South wall  y = -15.0 -->
     <model name="wall_south">
       <static>true</static>
-      <pose>0 -15.0 0.15 0 0 0</pose>
+      <pose>0 -15.0 0.30 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>40.2 0.1 0.3</size></box></geometry>
+          <geometry><box><size>40.2 0.1 0.6</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>40.2 0.1 0.3</size></box></geometry>
+          <geometry><box><size>40.2 0.1 0.6</size></box></geometry>
           <material>
             <ambient>0.65 0.55 0.40 1</ambient>
             <diffuse>0.70 0.60 0.45 1</diffuse>
@@ -163,13 +163,13 @@
     <!-- West wall  x = -20.0 -->
     <model name="wall_west">
       <static>true</static>
-      <pose>-20.0 0 0.15 0 0 1.5708</pose>
+      <pose>-20.0 0 0.30 0 0 1.5708</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>30.0 0.1 0.3</size></box></geometry>
+          <geometry><box><size>30.0 0.1 0.6</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>30.0 0.1 0.3</size></box></geometry>
+          <geometry><box><size>30.0 0.1 0.6</size></box></geometry>
           <material>
             <ambient>0.65 0.55 0.40 1</ambient>
             <diffuse>0.70 0.60 0.45 1</diffuse>
@@ -181,13 +181,13 @@
     <!-- East wall  x = +20.0 -->
     <model name="wall_east">
       <static>true</static>
-      <pose>20.0 0 0.15 0 0 1.5708</pose>
+      <pose>20.0 0 0.30 0 0 1.5708</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>30.0 0.1 0.3</size></box></geometry>
+          <geometry><box><size>30.0 0.1 0.6</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>30.0 0.1 0.3</size></box></geometry>
+          <geometry><box><size>30.0 0.1 0.6</size></box></geometry>
           <material>
             <ambient>0.65 0.55 0.40 1</ambient>
             <diffuse>0.70 0.60 0.45 1</diffuse>

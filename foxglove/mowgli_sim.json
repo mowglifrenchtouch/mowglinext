@@ -239,6 +239,115 @@
       "diffMethod": "custom",
       "diffTopicPath": "",
       "showFullMessageForDiff": false
+    },
+    "Plot!gps_precision": {
+      "paths": [
+        {
+          "value": "/precision/gps_error_m.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "GPS Error (m)",
+          "color": "#e74c3c",
+          "showLine": true
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "title": "GPS Precision",
+      "yAxisMin": 0
+    },
+    "Plot!wheel_odom": {
+      "paths": [
+        {
+          "value": "/precision/wheel_odom_speed.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Wheel Speed (m/s)",
+          "color": "#2ecc71",
+          "showLine": true
+        },
+        {
+          "value": "/cmd_vel.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Cmd Vel (m/s)",
+          "color": "#3498db",
+          "showLine": true
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "title": "Wheel Odometry vs Commanded",
+      "yAxisMin": -0.1
+    },
+    "Plot!lidar_precision": {
+      "paths": [
+        {
+          "value": "/precision/lidar_min_range.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Min Range (m)",
+          "color": "#e67e22",
+          "showLine": true
+        },
+        {
+          "value": "/precision/lidar_scan_count.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Valid Points",
+          "color": "#9b59b6",
+          "showLine": true
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "title": "LiDAR Precision",
+      "yAxisMin": 0
+    },
+    "Plot!overall_quality": {
+      "paths": [
+        {
+          "value": "/precision/localization_quality.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Quality Score (0-100)",
+          "color": "#1abc9c",
+          "showLine": true
+        },
+        {
+          "value": "/precision/slam_map_known_pct.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "SLAM Map Known %",
+          "color": "#f1c40f",
+          "showLine": true
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "title": "Overall Localization Quality",
+      "yAxisMin": 0,
+      "yAxisMax": 100
     }
   },
   "globalVariables": {},
@@ -286,22 +395,42 @@
     },
     "second": {
       "first": {
-        "first": "Plot!velocity",
-        "second": "Plot!battery",
-        "direction": "row",
+        "first": {
+          "first": "Plot!velocity",
+          "second": "Plot!battery",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "second": {
+          "first": "Plot!gps_precision",
+          "second": "Plot!wheel_odom",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "direction": "column",
         "splitPercentage": 50
       },
       "second": {
-        "first": "Log!rosout",
-        "second": "RawMessages!diagnostics",
-        "direction": "row",
-        "splitPercentage": 60
+        "first": {
+          "first": "Plot!lidar_precision",
+          "second": "Plot!overall_quality",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "second": {
+          "first": "Log!rosout",
+          "second": "RawMessages!diagnostics",
+          "direction": "row",
+          "splitPercentage": 60
+        },
+        "direction": "column",
+        "splitPercentage": 50
       },
       "direction": "column",
-      "splitPercentage": 55
+      "splitPercentage": 50
     },
     "direction": "column",
-    "splitPercentage": 65
+    "splitPercentage": 55
   },
   "playbackConfig": {
     "speed": 1

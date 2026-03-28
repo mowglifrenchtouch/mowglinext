@@ -21,8 +21,8 @@ WORKSPACE=/ros2_ws
 
 cd "${WORKSPACE}"
 
-# shellcheck source=/opt/ros/humble/setup.bash
-source /opt/ros/humble/setup.bash
+# shellcheck source=/opt/ros/jazzy/setup.bash
+source /opt/ros/${ROS_DISTRO:-jazzy}/setup.bash
 
 # The workspace must be built before running tests
 if [ ! -f "${WORKSPACE}/install/setup.bash" ]; then

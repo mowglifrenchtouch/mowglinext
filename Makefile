@@ -54,7 +54,7 @@ help:
 	@echo "  backup-maps    Pull SLAM maps from robot into maps_backup/"
 	@echo ""
 	@echo "Overridable variables:"
-	@echo "  ROS_DISTRO     ROS 2 distribution (default: humble)"
+	@echo "  ROS_DISTRO     ROS 2 distribution (default: jazzy)"
 	@echo "  BUILD_TYPE     CMake build type (default: Release)"
 	@echo "  DOCKER_IMAGE   Base image name (default: mowgli-ros2)"
 	@echo "  DOCKER_TAG     Image tag (default: latest)"

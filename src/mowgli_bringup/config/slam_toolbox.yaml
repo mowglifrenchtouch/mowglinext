@@ -8,8 +8,15 @@ slam_toolbox:
     ceres_dogleg_type: TRADITIONAL_DOGLEG
 
     # Mode: mapping | localization | lifelong
+    # On first boot leave mode=mapping and map_file_name="".
+    # After a map has been saved with slam_map_manager.py, switch to:
+    #   mode: localization
+    #   map_file_name: "/ros2_ws/maps/garden_map"
+    # The navigation.launch.py slam_mode / map_file_name launch args override
+    # these values at runtime via RewrittenYaml, so you rarely need to edit
+    # this file directly.
     mode: mapping
-    map_file_name: ""
+    map_file_name: "/ros2_ws/maps/garden_map"
     map_start_pose: [0.0, 0.0, 0.0]
     map_start_at_dock: true
 
@@ -33,7 +40,7 @@ slam_toolbox:
 
     # Timing constraints
     minimum_time_interval: 0.5        # seconds between processed scans
-    transform_timeout: 0.2
+    transform_timeout: 1.0
     tf_buffer_duration: 30.0
 
     # Memory

@@ -44,7 +44,7 @@ controller_server:
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.05
-      movement_time_allowance: 600.0
+      movement_time_allowance: 15.0
 
     stopped_goal_checker:
       plugin: "nav2_controller::StoppedGoalChecker"
@@ -92,44 +92,94 @@ controller_server:
       max_angular_vel: 0.5
       max_robot_pose_search_dist: 100.0
 
-    # FTC controller for coverage path following (path-indexed, no densification needed).
-    # PID gains from OpenMower ftc_local_planner tuning.
+    # MPPI controller for coverage path following.
+    # MPPI samples multiple trajectories and uses critic plugins to balance
+    # path tracking with obstacle avoidance — it naturally steers around
+    # obstacles detected in the costmap while staying close to the coverage path.
     FollowCoveragePath:
-      plugin: "mowgli_nav2_plugins/FTCController"
-      speed_fast: 0.3
-      speed_fast_threshold: 1.5
-      speed_fast_threshold_angle: 5.0
-      speed_slow: 0.1
-      speed_angular: 20.0
-      acceleration: 0.5
-      # PID lateral (cross-track correction)
-      kp_lat: 25.0
-      ki_lat: 0.06153
-      ki_lat_max: 10.0
-      kd_lat: 1.23
-      # PID longitudinal (along-track speed)
-      kp_lon: 1.0
-      ki_lon: 0.0
-      ki_lon_max: 10.0
-      kd_lon: 0.0
-      # PID angular (heading correction)
-      kp_ang: 1.0
-      ki_ang: 0.0
-      ki_ang_max: 10.0
-      kd_ang: 0.0
-      # Limits
-      max_cmd_vel_speed: 0.5
-      max_cmd_vel_ang: 0.8
-      max_goal_distance_error: 1.0
-      max_goal_angle_error: 10.0
-      goal_timeout: 10.0
-      max_follow_distance: 1.0
-      forward_only: true
-      check_obstacles: true
-      obstacle_lookahead: 5
-      obstacle_footprint: true
-      oscillation_recovery: true
-      oscillation_recovery_min_duration: 5.0
+      plugin: "nav2_mppi_controller::MPPIController"
+      time_steps: 28
+      model_dt: 0.1
+      batch_size: 2000
+      vx_std: 0.2
+      vy_std: 0.0       # diff-drive: no lateral motion
+      wz_std: 0.4
+      vx_max: 0.3
+      vx_min: -0.1      # allow slight reverse for recovery
+      vy_max: 0.0
+      wz_max: 0.8
+      iteration_count: 1
+      prune_distance: 1.5
+      transform_tolerance: 0.1
+      temperature: 0.3
+      gamma: 0.015
+      motion_model: "DiffDrive"
+      visualize: false
+      retry_attempt_limit: 1
+      regenerate_noises: false
+      critics: ["ConstraintCritic", "CostCritic", "GoalCritic",
+                "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic",
+                "PathAngleCritic", "PreferForwardCritic", "ObstaclesCritic"]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.81
+        critical_cost: 300.0
+        consider_footprint: false
+        collision_cost: 1000000.0
+        near_goal_distance: 1.0
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 1.4
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 4
+        threshold_to_consider: 0.5
+        offset_from_furthest: 20
+        use_path_orientations: false
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 5
+        threshold_to_consider: 1.4
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.0
+        mode: 0
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5
+      ObstaclesCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 10.0
+        repulsion_weight: 0.1
+        critical_weight: 20.0
+        consider_footprint: false
+        collision_cost: 10000.0
+        collision_margin_distance: 0.15
+        near_goal_distance: 0.5
 
 # ---------------------------------------------------------------------------
 # Planner server
@@ -393,15 +443,28 @@ collision_monitor:
     source_timeout: 1.0
     base_shift_correction: true
     stop_pub_timeout: 2.0
-    polygons: ["FootprintApproach"]
+    polygons: ["PolygonStop", "FootprintApproach"]
+    # Stop zone: extended forward to 1.0m to give enough braking distance
+    # at 0.3 m/s coverage speed + scan/processing latency (~0.2s).
+    # Lateral 0.40m covers robot radius (0.22m) + safety margin.
+    PolygonStop:
+      type: "polygon"
+      points: "[[1.00, 0.40], [1.00, -0.40], [-0.30, -0.40], [-0.30, 0.40]]"
+      action_type: "stop"
+      min_points: 1
+      visualize: true
+      polygon_pub_topic: "polygon_stop"
+      enabled: true
+    # Approach: uses dynamic robot footprint with velocity projection.
+    # Gradually slows when predicted collision is within time_before_collision.
     FootprintApproach:
       type: "polygon"
       action_type: "approach"
       footprint_topic: "/local_costmap/published_footprint"
-      time_before_collision: 1.2
-      simulation_time_step: 0.1
-      min_points: 6
-      visualize: false
+      time_before_collision: 2.0
+      simulation_time_step: 0.05
+      min_points: 1
+      visualize: true
       enabled: true
     observation_sources: ["scan"]
     scan:
@@ -417,7 +480,7 @@ collision_monitor:
 # with the correct node list. This section provides parameters that get merged
 # via RewrittenYaml.
 # ---------------------------------------------------------------------------
-lifecycle_manager:
+lifecycle_manager_navigation:
   ros__parameters:
     use_sim_time: false
     autostart: true

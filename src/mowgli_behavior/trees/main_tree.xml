@@ -73,6 +73,9 @@
         <Sequence name="MowingSequence">
           <IsCommand command="1"/>
           <PublishHighLevelStatus state="2" state_name="UNDOCKING"/>
+          <!-- Undock by reversing 1.5m away from the charging station.
+               This ensures the robot is clear of the dock before turning. -->
+          <BackUp backup_dist="1.5" backup_speed="0.15"/>
           <SetMowerEnabled enabled="true"/>
           <PublishHighLevelStatus state="2" state_name="MOWING"/>
           <PlanCoveragePath area_index="0" first_waypoint="{first_wp}"/>
@@ -82,7 +85,10 @@
           <NavigateToPose goal="{first_wp}"/>
           <PublishHighLevelStatus state="2" state_name="FOLLOWING_PATH"/>
           <!-- Recovery-wrapped coverage path following:
-               On failure: stop, wait, retry (max 3 attempts).
+               On FollowCoveragePath failure (triggered by Nav2 progress_checker
+               after 15 s without movement): stop moving, clear both costmaps so
+               the obstacle is no longer inflated in the planning grid, wait 3 s
+               for the sensor to confirm the obstacle is gone, then retry.
                After 3 failures: disable mower and navigate to dock. -->
           <Fallback name="CoverageWithRecovery">
             <RetryUntilSuccessful num_attempts="3" name="RetryFollowCoverage">
@@ -91,7 +97,12 @@
                 <Sequence name="RecoverAndRetry">
                   <PublishHighLevelStatus state="2" state_name="RECOVERING"/>
                   <StopMoving/>
-                  <WaitForDuration duration_sec="2.0"/>
+                  <!-- Back up 0.5m — if stuck against an obstacle the LiDAR
+                       didn't see (e.g. ground-level root), reversing clears it.
+                       Then clear costmaps and wait for sensors to update. -->
+                  <BackUp backup_dist="0.5" backup_speed="0.1"/>
+                  <ClearCostmap/>
+                  <WaitForDuration duration_sec="3.0"/>
                   <AlwaysFailure/>
                 </Sequence>
               </Fallback>
@@ -107,6 +118,8 @@
           </Fallback>
           <SetMowerEnabled enabled="false"/>
           <PublishHighLevelStatus state="1" state_name="MOWING_COMPLETE"/>
+          <!-- Persist the SLAM map so the next boot can start in localization mode -->
+          <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
           <NavigateToPose goal="{dock_pose}"/>
           <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
           <ClearCommand/>

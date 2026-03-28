@@ -16,7 +16,7 @@ Group=pi
 # Workspace location — install tree synced here by `make deploy`
 WorkingDirectory=/opt/mowgli_ros2
 
-# ros2_entrypoint.sh sources /opt/ros/humble/setup.bash and
+# ros2_entrypoint.sh sources /opt/ros/jazzy/setup.bash and
 # /opt/mowgli_ros2/install/setup.bash before exec-ing its arguments.
 ExecStart=/opt/mowgli_ros2/scripts/ros2_entrypoint.sh \
     ros2 launch mowgli_bringup mowgli.launch.py
@@ -33,7 +33,7 @@ StartLimitIntervalSec=60
 StartLimitBurst=5
 
 # Environment
-Environment=ROS_DISTRO=humble
+Environment=ROS_DISTRO=jazzy
 Environment=ROS_DOMAIN_ID=42
 # Disable ROS2 colored output so journald output is clean.
 Environment=RCUTILS_COLORIZED_OUTPUT=0

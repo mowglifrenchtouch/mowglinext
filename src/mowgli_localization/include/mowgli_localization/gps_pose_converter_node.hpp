@@ -85,9 +85,7 @@ private:
   // ---------------------------------------------------------------------------
   // Parameters
   // ---------------------------------------------------------------------------
-  bool   use_first_fix_as_datum_{true};
-  double datum_lat_{0.0};
-  double datum_lon_{0.0};
+  // Reserved: datum parameters removed — not yet implemented.
   double min_accuracy_threshold_{0.5};
 
   // ---------------------------------------------------------------------------

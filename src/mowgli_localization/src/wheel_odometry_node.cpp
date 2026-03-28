@@ -174,12 +174,12 @@ void WheelOdometryNode::on_wheel_tick(mowgli_interfaces::msg::WheelTick::ConstSh
   // Pose covariance (row-major 6×6: x y z roll pitch yaw).
   // Large diagonal — we trust the EKF to own the absolute pose; we only
   // contribute velocity information (odom0_config selects vx and vyaw).
-  odom.pose.covariance[0]  = 1e-2;   // x
-  odom.pose.covariance[7]  = 1e-2;   // y
+  odom.pose.covariance[0]  = 1e6;    // x  (untrusted — EKF uses velocity only)
+  odom.pose.covariance[7]  = 1e6;    // y  (untrusted — EKF uses velocity only)
   odom.pose.covariance[14] = 1e6;    // z  (irrelevant for 2D)
   odom.pose.covariance[21] = 1e6;    // roll
   odom.pose.covariance[28] = 1e6;    // pitch
-  odom.pose.covariance[35] = 1e-2;   // yaw
+  odom.pose.covariance[35] = 1e6;    // yaw (untrusted — EKF uses velocity only)
 
   // Twist (velocities in body frame)
   // Avoid division by zero: treat zero dt as zero velocity.

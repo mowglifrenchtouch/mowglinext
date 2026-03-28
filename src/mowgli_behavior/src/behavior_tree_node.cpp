@@ -150,6 +150,8 @@ private:
     blackboard_->set("dock_pose", dock_pose);
     blackboard_->set("undock_pose", undock_pose);
 
+    declare_parameter<double>("tick_rate", 10.0);
+
     tree_ = factory_.createTreeFromFile(tree_file, blackboard_);
 
     // Attach a console logger so state transitions are visible in the terminal.
@@ -160,8 +162,12 @@ private:
 
   void setupTimer()
   {
-    // 10 Hz tick rate
-    tick_timer_ = create_wall_timer(100ms, [this]() { tickTree(); });
+    const double tick_rate = get_parameter("tick_rate").as_double();
+    const auto period = std::chrono::milliseconds(
+      static_cast<int>(1000.0 / tick_rate));
+    RCLCPP_INFO(get_logger(), "Behavior tree tick rate: %.1f Hz (%ld ms)",
+      tick_rate, period.count());
+    tick_timer_ = create_wall_timer(period, [this]() { tickTree(); });
   }
 
   void tickTree()

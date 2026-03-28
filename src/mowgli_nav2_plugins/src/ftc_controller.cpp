@@ -248,6 +248,34 @@ void FTCController::setPlan(const nav_msgs::msg::Path & path)
   current_index_ = 0;
   current_progress_ = 0.0;
 
+  // Find the nearest path point to the robot's current position so we don't
+  // start from index 0 when the robot is far from the path start.
+  try {
+    const auto base_to_map = tf_buffer_->lookupTransform(
+      "map", "base_link", tf2::TimePointZero, tf2::durationFromSec(0.5));
+    const double rx = base_to_map.transform.translation.x;
+    const double ry = base_to_map.transform.translation.y;
+    double best_dist = std::numeric_limits<double>::max();
+    for (uint32_t i = 0; i < global_plan_.size(); ++i) {
+      const double dx = global_plan_[i].pose.position.x - rx;
+      const double dy = global_plan_[i].pose.position.y - ry;
+      const double d = dx * dx + dy * dy;
+      if (d < best_dist) {
+        best_dist = d;
+        current_index_ = i;
+      }
+    }
+    best_dist = std::sqrt(best_dist);
+    RCLCPP_INFO(
+      logger_,
+      "FTCController: setPlan with %zu points, starting at idx=%u (%.2fm from robot at %.2f,%.2f).",
+      global_plan_.size(), current_index_, best_dist, rx, ry);
+  } catch (const tf2::TransformException & ex) {
+    RCLCPP_WARN(
+      logger_, "FTCController: TF lookup in setPlan failed (%s), starting from idx=0.", ex.what());
+    current_index_ = 0;
+  }
+
   last_time_ = clock_->now();
   current_movement_speed_ = config_.speed_slow;
 
@@ -272,7 +300,7 @@ void FTCController::setPlan(const nav_msgs::msg::Path & path)
       global_plan_[global_plan_.size() - 3].pose.orientation;
 
     pub_path.header = path.header;
-    pub_path.poses = path.poses;
+    pub_path.poses = global_plan_;
   } else {
     RCLCPP_WARN(
       logger_,
@@ -423,12 +451,47 @@ FTCController::PlannerState FTCController::update_planner_state()
       {
         const double distance = local_control_point_.translation().norm();
         if (distance > config_.max_follow_distance) {
-          RCLCPP_ERROR(
-            logger_,
-            "FTCController: robot too far from plan (%.3f > %.3f). Possible crash.",
-            distance, config_.max_follow_distance);
-          is_crashed_ = true;
-          return PlannerState::FINISHED;
+          // Instead of aborting, try nearest-point recovery: find the closest
+          // path point to the robot and resync the carrot there.
+          try {
+            const auto base_to_map = tf_buffer_->lookupTransform(
+              "map", "base_link", tf2::TimePointZero, tf2::durationFromSec(0.5));
+            const double rx = base_to_map.transform.translation.x;
+            const double ry = base_to_map.transform.translation.y;
+
+            double best_dist = std::numeric_limits<double>::max();
+            uint32_t best_idx = current_index_;
+            for (uint32_t i = 0; i < global_plan_.size(); ++i) {
+              const double dx = global_plan_[i].pose.position.x - rx;
+              const double dy = global_plan_[i].pose.position.y - ry;
+              const double d = std::sqrt(dx * dx + dy * dy);
+              if (d < best_dist) {
+                best_dist = d;
+                best_idx = i;
+              }
+            }
+            if (best_dist < config_.max_follow_distance) {
+              RCLCPP_WARN(
+                logger_,
+                "FTCController: resyncing carrot idx %u->%u (%.3fm away, was %.3fm).",
+                static_cast<unsigned>(current_index_), best_idx, best_dist, distance);
+              current_index_ = best_idx;
+              current_progress_ = 0.0;
+              tf2::fromMsg(global_plan_[current_index_].pose, current_control_point_);
+            } else {
+              RCLCPP_ERROR(
+                logger_,
+                "FTCController: robot too far from plan (%.3f > %.3f). Aborting.",
+                best_dist, config_.max_follow_distance);
+              is_crashed_ = true;
+              return PlannerState::FINISHED;
+            }
+          } catch (const tf2::TransformException & ex) {
+            RCLCPP_ERROR(logger_,
+              "FTCController: TF lookup failed during resync: %s", ex.what());
+            is_crashed_ = true;
+            return PlannerState::FINISHED;
+          }
         }
         if (current_index_ == global_plan_.size() - 2) {
           RCLCPP_INFO(logger_, "FTCController: switching to WAITING_FOR_GOAL_APPROACH.");
@@ -510,11 +573,20 @@ void FTCController::update_control_point(double dt)
 {
   switch (current_state_) {
     case PlannerState::PRE_ROTATE:
-      tf2::fromMsg(global_plan_[0].pose, current_control_point_);
+      tf2::fromMsg(global_plan_[current_index_].pose, current_control_point_);
       break;
 
     case PlannerState::FOLLOWING:
       {
+        // Don't advance the carrot if it's already too far ahead of the robot.
+        // This prevents the carrot from running away when an external component
+        // (e.g. collision_monitor) slows the robot below the carrot's speed.
+        const double carrot_dist = local_control_point_.translation().norm();
+        const double carrot_max_lead = 1.0;  // max metres the carrot may lead
+        if (carrot_dist > carrot_max_lead) {
+          break;  // skip advancement, let robot catch up
+        }
+
         // Compute target speed based on how much straight path lies ahead.
         const double straight_dist = distanceLookahead();
         const double target_speed = (straight_dist >= config_.speed_fast_threshold)
@@ -688,10 +760,6 @@ void FTCController::calculate_velocity_commands(
     } else {
       lin_speed = std::clamp(lin_speed, -config_.max_cmd_vel_speed, config_.max_cmd_vel_speed);
 
-      // When reversing, flip the lateral error so steering corrects properly.
-      if (lin_speed < 0.0) {
-        lat_error_ *= -1.0;
-      }
     }
 
     cmd_vel.twist.linear.x = lin_speed;
@@ -701,13 +769,19 @@ void FTCController::calculate_velocity_commands(
 
   // ── Angular velocity ───────────────────────────────────────────────────────
 
+  // When reversing, steering must correct in the opposite lateral direction.
+  // Use a local adjusted copy so lat_error_ (the member) stays unflipped for
+  // the next cycle's derivative computation.
+  const double lat_error_for_steering =
+    (cmd_vel.twist.linear.x < 0.0) ? -lat_error_ : lat_error_;
+
   if (current_state_ == PlannerState::FOLLOWING) {
     // Combined angle + lateral PID during path following.
     double ang_speed =
       angle_error_ * config_.kp_ang +
       i_angle_error_ * config_.ki_ang +
       d_angle * config_.kd_ang +
-      lat_error_ * config_.kp_lat +
+      lat_error_for_steering * config_.kp_lat +
       i_lat_error_ * config_.ki_lat +
       d_lat * config_.kd_lat;
 
@@ -792,11 +866,15 @@ bool FTCController::checkCollision(int max_points)
           cost, max_points);
       }
 
-      if (cost > 0u) {
-        if (cost > 127u && cost > previous_cost) {
-          RCLCPP_WARN(logger_, "FTCController: possible forward collision on path.");
-          return true;
-        }
+      if (cost >= 253u) {
+        // Lethal or inscribed obstacle — immediate collision.
+        RCLCPP_WARN(logger_, "FTCController: lethal obstacle on path (cost=%u).", cost);
+        return true;
+      }
+      if (cost > 127u && cost > previous_cost) {
+        // Cost increasing toward obstacle — approaching collision.
+        RCLCPP_WARN(logger_, "FTCController: possible forward collision on path (cost=%u).", cost);
+        return true;
       }
 
       previous_cost = cost;

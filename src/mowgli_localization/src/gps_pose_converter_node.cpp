@@ -57,9 +57,6 @@ GpsPoseConverterNode::GpsPoseConverterNode(const rclcpp::NodeOptions & options)
 
 void GpsPoseConverterNode::declare_parameters()
 {
-  use_first_fix_as_datum_  = declare_parameter<bool>  ("use_first_fix_as_datum",  true);
-  datum_lat_               = declare_parameter<double>("datum_lat",               0.0);
-  datum_lon_               = declare_parameter<double>("datum_lon",               0.0);
   min_accuracy_threshold_  = declare_parameter<double>("min_accuracy_threshold",  0.5);
 }
 
@@ -170,8 +167,6 @@ double GpsPoseConverterNode::compute_xy_variance(
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
-
-#include "rclcpp/rclcpp.hpp"
 
 int main(int argc, char ** argv)
 {

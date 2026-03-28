@@ -215,8 +215,6 @@ bool LocalizationMonitorNode::is_fresh(
 // main
 // ---------------------------------------------------------------------------
 
-#include "rclcpp/rclcpp.hpp"
-
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);

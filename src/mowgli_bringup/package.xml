@@ -53,8 +53,7 @@
   <exec_depend>mowgli_monitoring</exec_depend>
 
   <!-- GUI bridge (optional at runtime, declared for rosdep resolution) -->
-  <exec_depend>rosbridge_server</exec_depend>
-  <exec_depend>rosapi</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
 
   <!-- Integration test dependencies -->
   <test_depend>launch_testing_ament_cmake</test_depend>

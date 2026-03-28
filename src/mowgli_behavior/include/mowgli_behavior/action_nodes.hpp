@@ -10,9 +10,13 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "nav2_msgs/action/back_up.hpp"
 #include "nav2_msgs/action/follow_path.hpp"
 #include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "nav_msgs/msg/path.hpp"
+
+#include "std_srvs/srv/empty.hpp"
+#include "slam_toolbox/srv/serialize_pose_graph.hpp"
 
 #include "mowgli_behavior/bt_context.hpp"
 #include "mowgli_interfaces/action/plan_coverage.hpp"
@@ -61,6 +65,30 @@ public:
 
 private:
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
+};
+
+// ---------------------------------------------------------------------------
+// ClearCostmap
+// ---------------------------------------------------------------------------
+
+/// Calls the Nav2 clear_entirely service on both the global and local costmaps.
+///
+/// This is a synchronous fire-and-forget node: it sends both service requests
+/// without waiting for responses (the node is already being spun by the main
+/// executor), then returns SUCCESS immediately.  Useful after obstacle removal
+/// to let the planner see a clean costmap before retrying coverage.
+class ClearCostmap : public BT::SyncActionNode {
+public:
+  ClearCostmap(const std::string& name, const BT::NodeConfig& config)
+    : BT::SyncActionNode(name, config) {}
+
+  static BT::PortsList providedPorts() { return {}; }
+
+  BT::NodeStatus tick() override;
+
+private:
+  rclcpp::Client<std_srvs::srv::Empty>::SharedPtr global_client_;
+  rclcpp::Client<std_srvs::srv::Empty>::SharedPtr local_client_;
 };
 
 // ---------------------------------------------------------------------------
@@ -208,7 +236,9 @@ private:
 class FollowCoveragePath : public BT::StatefulActionNode {
 public:
   using FollowPathAction = nav2_msgs::action::FollowPath;
-  using GoalHandle = rclcpp_action::ClientGoalHandle<FollowPathAction>;
+  using Nav2Goal         = nav2_msgs::action::NavigateToPose;
+  using FollowGoalHandle = rclcpp_action::ClientGoalHandle<FollowPathAction>;
+  using NavGoalHandle    = rclcpp_action::ClientGoalHandle<Nav2Goal>;
 
   FollowCoveragePath(const std::string& name, const BT::NodeConfig& config)
     : BT::StatefulActionNode(name, config) {}
@@ -217,7 +247,11 @@ public:
     return {
       BT::InputPort<std::string>("path_topic",
         "/coverage_planner_node/coverage_path",
-        "Topic with the coverage path to follow")
+        "Topic with the coverage path to follow"),
+      BT::InputPort<double>("skip_distance", 3.0,
+        "Distance along path to skip past obstacle (m)"),
+      BT::InputPort<int>("max_detours", 10,
+        "Max obstacle detours before giving up")
     };
   }
 
@@ -226,12 +260,115 @@ public:
   void           onHalted() override;
 
 private:
-  rclcpp_action::Client<FollowPathAction>::SharedPtr action_client_;
+  enum class Phase { WAIT_PATH, FOLLOWING, DETOURING, RESUMING };
+
+  // TODO(cedric): Add findClosestPoseIndex(robot_pose) using a TF lookup for
+  // more accurate detour resumption when the robot has drifted off the path.
+  /// Find a pose that is at least skip_dist metres ahead of path_index.
+  size_t findSkipTarget(size_t from_index, double skip_dist) const;
+  /// Send a FollowPath goal starting from path[start_index] to the end.
+  void sendFollowPathGoal(size_t start_index);
+
+  // FollowPath action (RPP controller)
+  rclcpp_action::Client<FollowPathAction>::SharedPtr follow_client_;
+  std::shared_future<FollowGoalHandle::SharedPtr> follow_future_;
+  FollowGoalHandle::SharedPtr follow_handle_;
+
+  // NavigateToPose action (for detours around obstacles)
+  rclcpp_action::Client<Nav2Goal>::SharedPtr nav_client_;
+  std::shared_future<NavGoalHandle::SharedPtr> nav_future_;
+  NavGoalHandle::SharedPtr nav_handle_;
+
+  // Path and state
+  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
+  nav_msgs::msg::Path full_path_;
+  bool path_received_{false};
+  Phase phase_{Phase::WAIT_PATH};
+  size_t current_path_index_{0};  ///< Where we are on the coverage path
+  size_t detour_target_index_{0}; ///< Where we're detouring to
+  int detour_count_{0};
+  double skip_distance_{3.0};
+  int max_detours_{10};
+};
+
+// ---------------------------------------------------------------------------
+// SaveSlamMap
+// ---------------------------------------------------------------------------
+
+/// Calls /slam_toolbox/serialize_map to persist the current pose graph to
+/// disk.  Intended to run after mowing completes so the map survives container
+/// restarts.
+///
+/// Input ports:
+///   map_path (string, default "/ros2_ws/maps/garden_map") – destination path
+///            without extension.  slam_toolbox appends .posegraph / .data.
+///
+/// Returns SUCCESS when the service call succeeds, FAILURE otherwise.  The
+/// node is synchronous: it blocks for up to 5 s waiting for the service
+/// response before declaring failure.
+class SaveSlamMap : public BT::StatefulActionNode {
+public:
+  using SerializeSrv = slam_toolbox::srv::SerializePoseGraph;
+
+  SaveSlamMap(const std::string& name, const BT::NodeConfig& config)
+    : BT::StatefulActionNode(name, config) {}
+
+  static BT::PortsList providedPorts() {
+    return {
+      BT::InputPort<std::string>(
+        "map_path",
+        "/ros2_ws/maps/garden_map",
+        "Destination path without extension for the pose graph files")
+    };
+  }
+
+  BT::NodeStatus onStart() override;
+  BT::NodeStatus onRunning() override;
+  void           onHalted() override;
+
+private:
+  rclcpp::Client<SerializeSrv>::SharedPtr client_;
+  std::shared_future<SerializeSrv::Response::SharedPtr> response_future_;
+};
+
+// ---------------------------------------------------------------------------
+// BackUp
+// ---------------------------------------------------------------------------
+
+/// Calls the Nav2 /backup action to reverse the robot by a given distance.
+/// Used for undocking (reverse away from charger) and recovery (back away
+/// from unseen obstacles).
+///
+/// Input ports:
+///   backup_dist  (double, default "0.5") – distance to reverse in metres.
+///   backup_speed (double, default "0.15") – reverse speed in m/s.
+class BackUp : public BT::StatefulActionNode {
+public:
+  using BackUpAction = nav2_msgs::action::BackUp;
+  using GoalHandle   = rclcpp_action::ClientGoalHandle<BackUpAction>;
+
+  BackUp(const std::string& name, const BT::NodeConfig& config)
+    : BT::StatefulActionNode(name, config) {}
+
+  static BT::PortsList providedPorts() {
+    return {
+      BT::InputPort<double>("backup_dist",  0.5,  "Distance to reverse (m)"),
+      BT::InputPort<double>("backup_speed", 0.15, "Reverse speed (m/s)")
+    };
+  }
+
+  BT::NodeStatus onStart() override;
+  BT::NodeStatus onRunning() override;
+  void           onHalted() override;
+
+private:
+  using WrappedResult = rclcpp_action::ClientGoalHandle<BackUpAction>::WrappedResult;
+
+  rclcpp_action::Client<BackUpAction>::SharedPtr action_client_;
   std::shared_future<GoalHandle::SharedPtr> goal_handle_future_;
   GoalHandle::SharedPtr goal_handle_;
-  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
-  nav_msgs::msg::Path latest_path_;
-  bool path_received_{false};
+  std::shared_future<WrappedResult> result_future_;
+  bool result_requested_{false};
 };
 
 // ---------------------------------------------------------------------------

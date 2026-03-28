@@ -29,7 +29,9 @@ find_package(nav2_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(mowgli_interfaces REQUIRED)
+find_package(slam_toolbox REQUIRED)
 
 # ---------------------------------------------------------------------------
 # Executable: behavior_tree_node
@@ -59,7 +61,9 @@ ament_target_dependencies(behavior_tree_node
   nav_msgs
   geometry_msgs
   action_msgs
+  std_srvs
   mowgli_interfaces
+  slam_toolbox
 )
 
 # ---------------------------------------------------------------------------

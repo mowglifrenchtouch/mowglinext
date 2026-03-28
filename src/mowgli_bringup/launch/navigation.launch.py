@@ -20,11 +20,12 @@ from launch.actions import (
     DeclareLaunchArgument,
     GroupAction,
     IncludeLaunchDescription,
+    TimerAction,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, LaunchConfigurationEquals
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetParameter
 from nav2_common.launch import RewrittenYaml
 
 
@@ -87,7 +88,7 @@ def generate_launch_description() -> LaunchDescription:
     # ------------------------------------------------------------------
     # Config paths
     # ------------------------------------------------------------------
-    slam_toolbox_params = os.path.join(bringup_dir, "config", "slam_toolbox.yaml")
+    slam_toolbox_params_file = os.path.join(bringup_dir, "config", "slam_toolbox.yaml")
     slam_toolbox_dir = get_package_share_directory("slam_toolbox")
     localization_params = os.path.join(bringup_dir, "config", "localization.yaml")
     nav2_params_file = os.path.join(bringup_dir, "config", "nav2_params.yaml")
@@ -102,24 +103,85 @@ def generate_launch_description() -> LaunchDescription:
         convert_types=True,
     )
 
+    # Build two rewritten variants of the slam_toolbox yaml so the launch
+    # file can pass the correct mode and map_file_name without touching the
+    # config file on disk.
+    #
+    # mapping_params  — mode overridden to "mapping", map_file_name preserved
+    #                   from the yaml (or the launch arg if provided).
+    # localization_params_slam — mode overridden to "localization", map file
+    #                   taken from the map_file_name launch arg.
+    mapping_slam_params = RewrittenYaml(
+        source_file=slam_toolbox_params_file,
+        root_key="",
+        param_rewrites={
+            "mode": "mapping",
+            "map_file_name": map_file_name,
+            "use_sim_time": use_sim_time,
+        },
+        convert_types=True,
+    )
+
+    localization_slam_params = RewrittenYaml(
+        source_file=slam_toolbox_params_file,
+        root_key="",
+        param_rewrites={
+            "mode": "localization",
+            "map_file_name": map_file_name,
+            "use_sim_time": use_sim_time,
+        },
+        convert_types=True,
+    )
+
     # ------------------------------------------------------------------
     # 1. slam_toolbox  (only when slam=true)
-    #    Uses the official launch file which handles lifecycle auto-activation.
+    #    Two mutually exclusive sub-groups select the correct launch file
+    #    and parameter set depending on slam_mode.
+    #
+    #    mapping mode     → online_async_launch.py  (builds a new map)
+    #    localization mode → localization_launch.py (loads saved map,
+    #                        read-only pose graph)
     # ------------------------------------------------------------------
-    slam_toolbox_launch = GroupAction(
+    slam_toolbox_mapping = GroupAction(
         condition=IfCondition(slam),
         actions=[
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(slam_toolbox_dir, "launch", "online_async_launch.py")
-                ),
-                launch_arguments={
-                    "use_sim_time": use_sim_time,
-                    "slam_params_file": slam_toolbox_params,
-                }.items(),
+            GroupAction(
+                condition=LaunchConfigurationEquals("slam_mode", "mapping"),
+                actions=[
+                    IncludeLaunchDescription(
+                        PythonLaunchDescriptionSource(
+                            os.path.join(
+                                slam_toolbox_dir, "launch", "online_async_launch.py"
+                            )
+                        ),
+                        launch_arguments={
+                            "use_sim_time": use_sim_time,
+                            "slam_params_file": mapping_slam_params,
+                        }.items(),
+                    ),
+                ],
+            ),
+            GroupAction(
+                condition=LaunchConfigurationEquals("slam_mode", "localization"),
+                actions=[
+                    IncludeLaunchDescription(
+                        PythonLaunchDescriptionSource(
+                            os.path.join(
+                                slam_toolbox_dir, "launch", "localization_launch.py"
+                            )
+                        ),
+                        launch_arguments={
+                            "use_sim_time": use_sim_time,
+                            "slam_params_file": localization_slam_params,
+                        }.items(),
+                    ),
+                ],
             ),
         ],
     )
+
+    # Keep the old name so the LaunchDescription list below stays unchanged.
+    slam_toolbox_launch = slam_toolbox_mapping
 
     # ------------------------------------------------------------------
     # 2. robot_localization – odom EKF
@@ -157,14 +219,34 @@ def generate_launch_description() -> LaunchDescription:
     #    because bringup_launch.py also starts localization (AMCL) which
     #    would fight with our slam_toolbox over the map→odom TF.
     # ------------------------------------------------------------------
-    nav2_navigation = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(nav2_bringup_dir, "launch", "navigation_launch.py")
-        ),
-        launch_arguments={
-            "use_sim_time": use_sim_time,
-            "params_file": nav2_params,
-        }.items(),
+    # Nav2's navigation_launch.py creates lifecycle_manager_navigation with
+    # hardcoded params (ignoring params_file for the lifecycle manager node).
+    # Wrap in a GroupAction with SetParameter so bond_timeout is available as
+    # a global parameter override — lifecycle_manager will pick it up.
+    # Delay Nav2 startup by 10 s so slam_toolbox has time to activate and
+    # start publishing the map → odom TF.  Without this delay, the
+    # planner_server's global costmap times out waiting for the map frame
+    # and the lifecycle_manager aborts the entire bringup.
+    nav2_navigation = TimerAction(
+        period=20.0,
+        actions=[
+            GroupAction(
+                actions=[
+                    SetParameter("bond_timeout", 10.0),
+                    IncludeLaunchDescription(
+                        PythonLaunchDescriptionSource(
+                            os.path.join(
+                                nav2_bringup_dir, "launch", "navigation_launch.py"
+                            )
+                        ),
+                        launch_arguments={
+                            "use_sim_time": use_sim_time,
+                            "params_file": nav2_params,
+                        }.items(),
+                    ),
+                ]
+            ),
+        ],
     )
 
     # ------------------------------------------------------------------

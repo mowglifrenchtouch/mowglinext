@@ -16,11 +16,14 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   // Action nodes
   factory.registerNodeType<SetMowerEnabled>("SetMowerEnabled");
   factory.registerNodeType<StopMoving>("StopMoving");
+  factory.registerNodeType<ClearCostmap>("ClearCostmap");
   factory.registerNodeType<PublishHighLevelStatus>("PublishHighLevelStatus");
   factory.registerNodeType<WaitForDuration>("WaitForDuration");
   factory.registerNodeType<NavigateToPose>("NavigateToPose");
   factory.registerNodeType<PlanCoveragePath>("PlanCoveragePath");
   factory.registerNodeType<FollowCoveragePath>("FollowCoveragePath");
+  factory.registerNodeType<SaveSlamMap>("SaveSlamMap");
+  factory.registerNodeType<BackUp>("BackUp");
   factory.registerNodeType<ClearCommand>("ClearCommand");
 }
 
