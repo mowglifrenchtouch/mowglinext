@@ -207,7 +207,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                         <li>Max Charge Voltage: <strong>{values.maxChargeVoltage} V</strong></li>
                         <li>Bat Charge Cutoff Voltage: <strong>{values.batChargeCutoffVoltage} V</strong></li>
                         <li>Limit Voltage 150mA: <strong>{values.limitVoltage150MA} V</strong></li>
-                        <li>IMU Inclination Threshold: <strong>0x{values.imuOnboardInclinationThreshold?.toString(16).toUpperCase().padStart(2, "0") ?? "38"}</strong></li>
+                        <li>IMU Inclination Threshold: <strong>0x{(values.imuOnboardInclinationThreshold ?? 0x38).toString(16).toUpperCase().padStart(2, "0")}</strong></li>
                     </ul>
                     <p style={{color: "red"}}><strong>Wrong voltage or current values can damage your battery or hardware!</strong></p>
                 </div>
