@@ -10,6 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 # ---------------------------------------------------------------------------
@@ -31,8 +32,28 @@ ament_target_dependencies(gps_degradation_sim_node
   std_msgs
 )
 
+# ---------------------------------------------------------------------------
+# NavSat → Pose converter for simulation GPS pipeline
+# ---------------------------------------------------------------------------
+add_executable(navsat_to_pose_node
+  src/navsat_to_pose_node.cpp
+)
+
+target_include_directories(navsat_to_pose_node
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+ament_target_dependencies(navsat_to_pose_node
+  rclcpp
+  geometry_msgs
+  sensor_msgs
+)
+
 install(TARGETS
   gps_degradation_sim_node
+  navsat_to_pose_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

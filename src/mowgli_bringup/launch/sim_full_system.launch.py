@@ -123,7 +123,7 @@ def generate_launch_description() -> LaunchDescription:
             "use_sim_time": "true",
             "slam": slam,
             "map": map_yaml,
-            "use_ekf": "False",
+            "use_ekf": "True",
         }.items(),
     )
 
@@ -224,7 +224,27 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
-    # 8. GPS degradation simulator — periodically degrades GPS to float
+    # 8. NavSat → Pose converter — bridges Gazebo NavSatFix to the
+    #    PoseWithCovarianceStamped expected by the EKF's pose0 input.
+    #    On real hardware, gps_pose_converter handles this from AbsolutePose.
+    # ------------------------------------------------------------------
+    navsat_to_pose_node = Node(
+        package="mowgli_simulation",
+        executable="navsat_to_pose_node",
+        name="navsat_to_pose_node",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": True,
+                "datum_lat": 0.0,
+                "datum_lon": 0.0,
+                "xy_covariance": 0.001,
+            },
+        ],
+    )
+
+    # ------------------------------------------------------------------
+    # 9. GPS degradation simulator — periodically degrades GPS to float
     #    mode so LiDAR/odometry must compensate. Subscribes to /gps/pose
     #    and republishes on /gps/pose_degraded with inflated covariance.
     #    The EKF is remapped to use /gps/pose_degraded when this is active.
@@ -272,6 +292,7 @@ def generate_launch_description() -> LaunchDescription:
             coverage_planner_node,
             diagnostics_node,
             foxglove_bridge_node,
+            navsat_to_pose_node,
             gps_degradation_node,
         ]
     )

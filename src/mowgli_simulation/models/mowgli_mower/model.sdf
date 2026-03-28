@@ -130,12 +130,13 @@
           <position_sensing>
             <horizontal>
               <noise type="gaussian">
-                <mean>0.0</mean><stddev>0.01</stddev>
+                <!-- RTK-fixed: ~2cm accuracy → ~1.8e-7 degrees -->
+                <mean>0.0</mean><stddev>0.0000002</stddev>
               </noise>
             </horizontal>
             <vertical>
               <noise type="gaussian">
-                <mean>0.0</mean><stddev>0.02</stddev>
+                <mean>0.0</mean><stddev>0.05</stddev>
               </noise>
             </vertical>
           </position_sensing>

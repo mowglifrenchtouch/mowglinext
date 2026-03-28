@@ -138,7 +138,7 @@ void DiagnosticsNode::create_subscriptions()
     [this](mowgli_interfaces::msg::Power::ConstSharedPtr msg) { on_power(msg); });
 
   sub_imu_ = create_subscription<sensor_msgs::msg::Imu>(
-    "/imu/data_raw", sensor_qos,
+    "/imu/data", sensor_qos,
     [this](sensor_msgs::msg::Imu::ConstSharedPtr msg) { on_imu(msg); });
 
   sub_scan_ = create_subscription<sensor_msgs::msg::LaserScan>(

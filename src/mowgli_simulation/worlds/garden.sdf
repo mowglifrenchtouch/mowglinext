@@ -67,6 +67,24 @@
     <plugin filename="gz-sim-imu-system"
             name="gz::sim::systems::Imu"/>
 
+    <plugin filename="gz-sim-navsat-system"
+            name="gz::sim::systems::NavSat"/>
+
+    <!-- ================================================================
+         Spherical coordinates — required for NavSat sensor to produce
+         lat/lon from Gazebo local positions.  The origin corresponds
+         to the mower spawn / docking position in the local frame.
+         Using a generic European garden location.
+         ================================================================ -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>48.137154</latitude_deg>
+      <longitude_deg>11.576124</longitude_deg>
+      <elevation>520.0</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+
     <plugin filename="gz-sim-sensors-system"
             name="gz::sim::systems::Sensors">
       <render_engine>ogre2</render_engine>
