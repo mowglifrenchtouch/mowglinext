@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -17,6 +18,8 @@ type SystemInfo struct {
 func SystemRoutes(r *gin.RouterGroup) {
 	group := r.Group("/system")
 	group.GET("/info", getSystemInfo)
+	group.POST("/reboot", postSystemReboot)
+	group.POST("/shutdown", postSystemShutdown)
 }
 
 // getSystemInfo returns system information (CPU temperature, etc.)
@@ -40,4 +43,38 @@ func getSystemInfo(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, info)
+}
+
+// postSystemReboot reboots the host system
+//
+// @Summary reboot the system
+// @Description reboots the Raspberry Pi
+// @Tags system
+// @Produce json
+// @Success 200 {object} OkResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /system/reboot [post]
+func postSystemReboot(c *gin.Context) {
+	if err := exec.Command("sudo", "reboot").Start(); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, OkResponse{})
+}
+
+// postSystemShutdown shuts down the host system
+//
+// @Summary shutdown the system
+// @Description shuts down the Raspberry Pi
+// @Tags system
+// @Produce json
+// @Success 200 {object} OkResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /system/shutdown [post]
+func postSystemShutdown(c *gin.Context) {
+	if err := exec.Command("sudo", "shutdown", "-h", "now").Start(); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, OkResponse{})
 }

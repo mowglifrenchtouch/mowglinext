@@ -11,6 +11,7 @@ import (
 
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/cedbossneo/openmower-gui/pkg/types"
@@ -84,6 +85,51 @@ func extractAllKeys(schema map[string]any, keys map[string]bool) {
 			}
 		}
 	}
+}
+
+// extractKeyTypes collects the JSON schema type for each leaf property key.
+// This is used to coerce string values from mower_config.sh to the correct Go types.
+func extractKeyTypes(schema map[string]any, types_ map[string]string) {
+	if props, ok := schema["properties"].(map[string]any); ok {
+		for key, prop := range props {
+			if propMap, ok := prop.(map[string]any); ok {
+				propType, _ := propMap["type"].(string)
+				if propType != "" && propType != "object" {
+					types_[key] = propType
+				}
+				extractKeyTypes(propMap, types_)
+			}
+		}
+	}
+	if allOf, ok := schema["allOf"].([]any); ok {
+		for _, cond := range allOf {
+			if condMap, ok := cond.(map[string]any); ok {
+				if thenBlock, ok := condMap["then"].(map[string]any); ok {
+					extractKeyTypes(thenBlock, types_)
+				}
+				if elseBlock, ok := condMap["else"].(map[string]any); ok {
+					extractKeyTypes(elseBlock, types_)
+				}
+			}
+		}
+	}
+}
+
+// coerceValue converts a string value to the appropriate Go type based on the JSON schema type.
+func coerceValue(value string, schemaType string) any {
+	switch schemaType {
+	case "boolean":
+		return strings.EqualFold(value, "true")
+	case "number":
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
+			return f
+		}
+	case "integer":
+		if i, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return i
+		}
+	}
+	return value
 }
 
 func getSchema(dbProvider types.IDBProvider) (map[string]any, error) {
@@ -279,15 +325,21 @@ func GetSettings(r *gin.RouterGroup, dbProvider types.IDBProvider) gin.IRoutes {
 		}
 		schema, _ := getSchema(dbProvider)
 		knownKeys := map[string]bool{}
+		keyTypes := map[string]string{}
 		if schema != nil {
 			extractAllKeys(schema, knownKeys)
+			extractKeyTypes(schema, keyTypes)
 		}
 
 		finalSettings := map[string]any{}
 		customEnv := map[string]string{}
 		for k, v := range settings {
 			if knownKeys[k] || k == "custom_environment" {
-				finalSettings[k] = v
+				if t, ok := keyTypes[k]; ok {
+					finalSettings[k] = coerceValue(v, t)
+				} else {
+					finalSettings[k] = v
+				}
 			} else {
 				customEnv[k] = v
 			}
