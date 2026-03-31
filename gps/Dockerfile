@@ -13,10 +13,12 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-ublox \
     ros-jazzy-ntrip-client \
+    ros-jazzy-rtcm-msgs \
  && rm -rf /var/lib/apt/lists/*
 
 COPY ros2_entrypoint.sh /ros2_entrypoint.sh
 COPY start_gps.sh /start_gps.sh
+COPY f9p_rover.yaml /f9p_rover.yaml
 RUN chmod +x /ros2_entrypoint.sh /start_gps.sh
 
 ENTRYPOINT ["/ros2_entrypoint.sh"]

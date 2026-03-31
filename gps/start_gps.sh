@@ -38,12 +38,25 @@ NTRIP_ENABLED="${NTRIP_ENABLED:-false}"
 echo "[start_gps.sh] GPS port: $GPS_PORT @ ${GPS_BAUD} baud"
 echo "[start_gps.sh] NTRIP enabled: $NTRIP_ENABLED"
 
+set +u
 source /opt/ros/jazzy/setup.bash
+set -u
+
+# Generate runtime params override — only the device path.
+# uart1.baudrate is intentionally omitted: the GPS is USB-connected (/dev/ttyACMx)
+# so physical UART1 baud rate config is irrelevant and causes CFG-PRT failures.
+# The stock launch file hardcodes c94_m8p_rover.yaml and ignores arguments,
+# so we use ros2 run with two --params-file layers instead.
+cat > /tmp/ublox_override.yaml << EOF
+ublox_gps_node:
+  ros__parameters:
+    device: "${GPS_PORT}"
+EOF
 
 # Launch ublox_gps in background
-ros2 launch ublox_gps ublox_gps_node-launch.py \
-  "device_port:=${GPS_PORT}" \
-  "uart1.baudrate:=${GPS_BAUD}" &
+ros2 run ublox_gps ublox_gps_node --ros-args \
+  --params-file /f9p_rover.yaml \
+  --params-file /tmp/ublox_override.yaml &
 GPS_PID=$!
 
 # Launch NTRIP client if enabled
@@ -51,14 +64,15 @@ if [ "$NTRIP_ENABLED" = "true" ]; then
   echo "[start_gps.sh] Starting NTRIP: ${NTRIP_HOST}:${NTRIP_PORT}/${NTRIP_MOUNTPOINT}"
   # Wait for ublox to initialise before sending corrections
   sleep 5
-  ros2 run ntrip_client ntrip_ros \
+  ros2 run ntrip_client ntrip_ros.py \
     --ros-args \
     -p "host:=${NTRIP_HOST}" \
     -p "port:=${NTRIP_PORT}" \
     -p "mountpoint:=${NTRIP_MOUNTPOINT}" \
     -p "username:=${NTRIP_USER}" \
     -p "password:=${NTRIP_PASSWORD}" \
-    -p "authentificate:=true" &
+    -p "authenticate:=true" \
+    -p "rtcm_message_package:=rtcm_msgs" &
   NTRIP_PID=$!
 fi
 

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  FastDDS profile for Mowgli ROS2 multi-container setup.
+
+  Problem: all containers use network_mode: host, but each has its own /dev/shm.
+  FastDDS's default SHM transport fails silently across container boundaries
+  even when the processes share the host network stack.
+
+  Fix: disable SHM, keep only UDPv4 builtin transport so all DDS traffic
+  goes through the loopback UDP path (reliable across container /dev/shm
+  boundaries).
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <participant profile_name="default_participant" is_default_profile="true">
+    <rtps>
+      <builtinTransports>LARGE_DATA_VM_TCP</builtinTransports>
+    </rtps>
+  </participant>
+</profiles>
