@@ -28,8 +28,6 @@ services:
       ros2 launch mowgli_bringup full_system.launch.py
       enable_rosbridge:=true
       enable_foxglove:=true
-      datum_lat:=${DATUM_LAT}
-      datum_lon:=${DATUM_LON}
     volumes:
       - mowgli_maps:/ros2_ws/maps
       - ./config/mowgli:/ros2_ws/config:ro
@@ -41,9 +39,9 @@ services:
         max-size: 10m
 
   # -------------------------------------------------------------------------
-  # GPS — u-blox driver publishes /ublox_gps_node/fix (NavSatFix)
-  # The mowgli container's navsat_to_absolute_pose node converts it to
-  # /gps/absolute_pose for the localization pipeline.
+  # GPS — u-blox driver + NTRIP client (RTK corrections)
+  # Publishes /ublox_gps_node/fix (NavSatFix) on the ROS2 DDS bus.
+  # All config read from mowgli_robot.yaml (gps_port, gps_baudrate, ntrip_*).
   # -------------------------------------------------------------------------
   gps:
     container_name: mowgli-gps
@@ -51,43 +49,10 @@ services:
       context: ./gps
     network_mode: host
     privileged: true
-    devices:
-      - ${GPS_PORT}:${GPS_PORT}
     environment:
       <<: *ros2-env
-    command: >
-      ros2 launch ublox_gps ublox_gps_node-launch.py
-        device_port:=${GPS_PORT}
-        uart1.baudrate:=${GPS_BAUD}
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-file: "3"
-        max-size: 5m
-
-  # -------------------------------------------------------------------------
-  # NTRIP client — feeds RTK corrections to the u-blox receiver via /rtcm
-  # All settings come from .env
-  # -------------------------------------------------------------------------
-  ntrip:
-    container_name: mowgli-ntrip
-    build:
-      context: ./gps
-    network_mode: host
-    environment:
-      <<: *ros2-env
-    command: >
-      ros2 run ntrip_client ntrip_ros
-        --ros-args
-        -p host:=${NTRIP_HOST}
-        -p port:=${NTRIP_PORT}
-        -p mountpoint:=${NTRIP_MOUNTPOINT}
-        -p username:=${NTRIP_USER}
-        -p password:=${NTRIP_PASSWORD}
-        -p authentificate:=true
-    depends_on:
-      - gps
+    volumes:
+      - ./config/mowgli:/config:ro
     restart: unless-stopped
     logging:
       driver: json-file
