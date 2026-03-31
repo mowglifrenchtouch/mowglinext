@@ -13,15 +13,13 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # github.repository is "owner/repo", lower-cased automatically by GHCR
   IMAGE_NAME: ghcr.io/${{ github.repository }}/mowgli-ros2
 
-# ─── Build per arch on native runners, then merge into multi-arch manifest ────
 jobs:
-  # ─── Stage 1: Build each (target × arch) on native runners ─────────────────
+  # ─── Stage 1: Build each (target × arch) via QEMU ──────────────────────────
   build:
     name: Build ${{ matrix.target }} (${{ matrix.arch }})
-    runs-on: ${{ matrix.builder }}
+    runs-on: ubuntu-24.04
 
     strategy:
       fail-fast: false
@@ -29,10 +27,6 @@ jobs:
         target: [runtime, simulation]
         arch: [linux/amd64, linux/arm64]
         include:
-          - arch: linux/amd64
-            builder: ${{ vars.CUSTOM_RUNNER_AMD64 || 'buildjet-4vcpu-ubuntu-2204' }}
-          - arch: linux/arm64
-            builder: ${{ vars.CUSTOM_RUNNER_ARM64 || 'buildjet-4vcpu-ubuntu-2204-arm' }}
           - target: runtime
             suffix: ""
           - target: simulation
@@ -45,6 +39,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
