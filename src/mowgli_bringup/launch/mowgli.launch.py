@@ -100,6 +100,16 @@ def generate_launch_description() -> LaunchDescription:
             {"serial_port": serial_port},
             {"use_sim_time": use_sim_time},
         ],
+        # The node publishes on ~/topic (e.g. /hardware_bridge/wheel_odom)
+        # but the EKF and other nodes expect unprefixed names.
+        remappings=[
+            ("~/imu/data_raw", "/imu/data"),
+            ("~/wheel_odom", "/wheel_odom"),
+            ("~/emergency", "/emergency"),
+            ("~/power", "/power"),
+            ("~/status", "/status"),
+            ("~/cmd_vel", "/hardware_bridge/cmd_vel"),
+        ],
     )
 
     # 3. twist_mux
