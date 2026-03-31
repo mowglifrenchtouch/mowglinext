@@ -25,6 +25,10 @@ RUN git clone --depth 1 \
       https://github.com/ldrobotSensorTeam/ldlidar_stl_ros2.git \
       src/ldlidar_stl_ros2
 
+# Fix missing pthread.h include in upstream source
+RUN sed -i '1i #include <pthread.h>' \
+      src/ldlidar_stl_ros2/ldlidar_driver/src/logger/log_module.cpp
+
 RUN /bin/bash -c "\
     source /opt/ros/jazzy/setup.bash && \
     colcon build \
