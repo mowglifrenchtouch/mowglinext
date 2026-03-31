@@ -82,7 +82,7 @@ mowgli:
 
     # NTRIP (RTK correction stream) — required for cm-level accuracy
     ntrip_enabled: true
-    ntrip_host: "caster.centipede.fr"
+    ntrip_host: "crtk.net"
     ntrip_port: 2101
     ntrip_user: "centipede"
     ntrip_password: "centipede"
