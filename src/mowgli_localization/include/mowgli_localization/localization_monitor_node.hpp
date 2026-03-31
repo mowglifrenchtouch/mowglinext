@@ -38,12 +38,11 @@
 #include <string>
 
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "mowgli_interfaces/msg/absolute_pose.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/int32.hpp"
 #include "std_msgs/msg/string.hpp"
-
-#include "mowgli_interfaces/msg/absolute_pose.hpp"
 
 namespace mowgli_localization
 {
@@ -52,16 +51,16 @@ namespace mowgli_localization
 enum class LocalizationMode : int32_t
 {
   DEAD_RECKONING = 0,
-  GPS_ODOM       = 1,
-  SLAM_ODOM      = 2,
-  SLAM_DOMINANT  = 3,
-  RTK_SLAM       = 4,
+  GPS_ODOM = 1,
+  SLAM_ODOM = 2,
+  SLAM_DOMINANT = 3,
+  RTK_SLAM = 4,
 };
 
 class LocalizationMonitorNode : public rclcpp::Node
 {
 public:
-  explicit LocalizationMonitorNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit LocalizationMonitorNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
   ~LocalizationMonitorNode() override = default;
 
 private:
@@ -76,9 +75,9 @@ private:
   // ---------------------------------------------------------------------------
   // Callbacks
   // ---------------------------------------------------------------------------
-  void on_wheel_odom (nav_msgs::msg::Odometry::ConstSharedPtr msg);
+  void on_wheel_odom(nav_msgs::msg::Odometry::ConstSharedPtr msg);
   void on_absolute_pose(mowgli_interfaces::msg::AbsolutePose::ConstSharedPtr msg);
-  void on_slam_pose   (geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg);
+  void on_slam_pose(geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg);
 
   // ---------------------------------------------------------------------------
   // Timer callback – evaluates state and publishes
@@ -116,22 +115,22 @@ private:
   // Source state
   // ---------------------------------------------------------------------------
   rclcpp::Time last_wheel_odom_stamp_{0, 0, RCL_ROS_TIME};
-  rclcpp::Time last_gps_stamp_       {0, 0, RCL_ROS_TIME};
-  rclcpp::Time last_slam_stamp_      {0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_gps_stamp_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_slam_stamp_{0, 0, RCL_ROS_TIME};
 
   /// True when the last GPS message carried an RTK-fixed or RTK-float flag.
   bool gps_rtk_active_{false};
   /// True when fixed (vs. float).
-  bool gps_rtk_fixed_ {false};
+  bool gps_rtk_fixed_{false};
 
   // ---------------------------------------------------------------------------
   // ROS handles
   // ---------------------------------------------------------------------------
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mode_pub_;
-  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr  mode_id_pub_;
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr mode_id_pub_;
 
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr                    wheel_odom_sub_;
-  rclcpp::Subscription<mowgli_interfaces::msg::AbsolutePose>::SharedPtr       abs_pose_sub_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr wheel_odom_sub_;
+  rclcpp::Subscription<mowgli_interfaces::msg::AbsolutePose>::SharedPtr abs_pose_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr slam_pose_sub_;
 
   rclcpp::TimerBase::SharedPtr publish_timer_;

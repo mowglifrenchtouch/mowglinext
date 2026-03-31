@@ -10,8 +10,9 @@
 
 #pragma once
 
-#include <string>
 #include <cstdint>
+#include <string>
+
 #include <sys/types.h>
 
 namespace mowgli_hardware
@@ -33,16 +34,16 @@ public:
    * @param baud_rate Baud rate; standard values: 9600, 19200, 115200, 460800.
    *                  Defaults to 115200.
    */
-  explicit SerialPort(const std::string & device, int baud_rate = 115200);
+  explicit SerialPort(const std::string& device, int baud_rate = 115200);
 
   /// Destructor — closes the port if still open.
   ~SerialPort();
 
   // Non-copyable; move is allowed.
-  SerialPort(const SerialPort &) = delete;
-  SerialPort & operator=(const SerialPort &) = delete;
-  SerialPort(SerialPort && other) noexcept;
-  SerialPort & operator=(SerialPort && other) noexcept;
+  SerialPort(const SerialPort&) = delete;
+  SerialPort& operator=(const SerialPort&) = delete;
+  SerialPort(SerialPort&& other) noexcept;
+  SerialPort& operator=(SerialPort&& other) noexcept;
 
   /**
    * @brief Open and configure the serial port.
@@ -71,7 +72,7 @@ public:
    * @param max_len Capacity of the destination buffer.
    * @return Number of bytes read (≥ 0), or -1 on error.
    */
-  ssize_t read(uint8_t * buffer, std::size_t max_len);
+  ssize_t read(uint8_t* buffer, std::size_t max_len);
 
   /**
    * @brief Write @p len bytes to the serial port.
@@ -84,10 +85,10 @@ public:
    * @param len  Number of bytes to send.
    * @return Number of bytes written, or -1 on error.
    */
-  ssize_t write(const uint8_t * data, std::size_t len);
+  ssize_t write(const uint8_t* data, std::size_t len);
 
   /// @return The device path this port was constructed with.
-  [[nodiscard]] const std::string & device() const noexcept;
+  [[nodiscard]] const std::string& device() const noexcept;
 
   /// @return The configured baud rate.
   [[nodiscard]] int baud_rate() const noexcept;

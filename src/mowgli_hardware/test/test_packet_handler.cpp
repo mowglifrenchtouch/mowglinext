@@ -19,20 +19,19 @@
 #include <cstring>
 #include <vector>
 
-#include <gtest/gtest.h>
-
 #include "mowgli_hardware/crc16.hpp"
 #include "mowgli_hardware/packet_handler.hpp"
+#include <gtest/gtest.h>
 
-using mowgli_hardware::PacketHandler;
 using mowgli_hardware::crc16_ccitt;
+using mowgli_hardware::PacketHandler;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /// Build a raw payload with a type byte and an optional body.
-static std::vector<uint8_t> make_payload(uint8_t type, const std::vector<uint8_t> & body = {})
+static std::vector<uint8_t> make_payload(uint8_t type, const std::vector<uint8_t>& body = {})
 {
   std::vector<uint8_t> p;
   p.push_back(type);
@@ -51,9 +50,7 @@ TEST(PacketHandlerCrc, AppendCrcProducesCorrectBytes)
   PacketHandler::append_crc(buf, sizeof(buf));
 
   const uint16_t expected = crc16_ccitt(buf, 3u);
-  const uint16_t stored =
-    static_cast<uint16_t>(buf[3]) |
-    (static_cast<uint16_t>(buf[4]) << 8u);
+  const uint16_t stored = static_cast<uint16_t>(buf[3]) | (static_cast<uint16_t>(buf[4]) << 8u);
 
   EXPECT_EQ(stored, expected);
 }
@@ -96,9 +93,11 @@ TEST(PacketHandlerRoundtrip, SimplePayload)
   PacketHandler handler;
 
   std::vector<uint8_t> received_payload;
-  handler.set_callback([&](const uint8_t * data, std::size_t len) {
-    received_payload.assign(data, data + len);
-  });
+  handler.set_callback(
+      [&](const uint8_t* data, std::size_t len)
+      {
+        received_payload.assign(data, data + len);
+      });
 
   const auto payload = make_payload(0x01, {0x10, 0x20, 0x30});
   const auto frame = handler.encode_packet(payload.data(), payload.size());
@@ -108,10 +107,10 @@ TEST(PacketHandlerRoundtrip, SimplePayload)
 
   // received_payload = original payload + 2 CRC bytes appended by encode.
   ASSERT_EQ(received_payload.size(), payload.size() + 2u);
-  EXPECT_EQ(
-    std::vector<uint8_t>(received_payload.begin(),
-      received_payload.begin() + static_cast<std::ptrdiff_t>(payload.size())),
-    payload);
+  EXPECT_EQ(std::vector<uint8_t>(received_payload.begin(),
+                                 received_payload.begin() +
+                                     static_cast<std::ptrdiff_t>(payload.size())),
+            payload);
   EXPECT_EQ(handler.rx_ok(), 1u);
 }
 
@@ -120,9 +119,11 @@ TEST(PacketHandlerRoundtrip, PayloadWithZeroBytes)
   PacketHandler handler;
 
   std::vector<uint8_t> received_payload;
-  handler.set_callback([&](const uint8_t * data, std::size_t len) {
-    received_payload.assign(data, data + len);
-  });
+  handler.set_callback(
+      [&](const uint8_t* data, std::size_t len)
+      {
+        received_payload.assign(data, data + len);
+      });
 
   const auto payload = make_payload(0x02, {0x00, 0x01, 0x00, 0x02, 0x00});
   const auto frame = handler.encode_packet(payload.data(), payload.size());
@@ -130,10 +131,10 @@ TEST(PacketHandlerRoundtrip, PayloadWithZeroBytes)
   handler.feed(frame.data(), frame.size());
 
   ASSERT_EQ(received_payload.size(), payload.size() + 2u);
-  EXPECT_EQ(
-    std::vector<uint8_t>(received_payload.begin(),
-      received_payload.begin() + static_cast<std::ptrdiff_t>(payload.size())),
-    payload);
+  EXPECT_EQ(std::vector<uint8_t>(received_payload.begin(),
+                                 received_payload.begin() +
+                                     static_cast<std::ptrdiff_t>(payload.size())),
+            payload);
 }
 
 TEST(PacketHandlerRoundtrip, MultiplePacketsInOneFeed)
@@ -141,9 +142,11 @@ TEST(PacketHandlerRoundtrip, MultiplePacketsInOneFeed)
   PacketHandler handler;
 
   int callback_count = 0;
-  handler.set_callback([&](const uint8_t *, std::size_t) {
-    ++callback_count;
-  });
+  handler.set_callback(
+      [&](const uint8_t*, std::size_t)
+      {
+        ++callback_count;
+      });
 
   const auto p1 = make_payload(0x01, {0xAA, 0xBB});
   const auto p2 = make_payload(0x02, {0xCC, 0xDD, 0xEE});
@@ -170,13 +173,18 @@ TEST(PacketHandlerRoundtrip, FeedInSmallChunks)
   PacketHandler handler;
 
   int callback_count = 0;
-  handler.set_callback([&](const uint8_t *, std::size_t) { ++callback_count; });
+  handler.set_callback(
+      [&](const uint8_t*, std::size_t)
+      {
+        ++callback_count;
+      });
 
   const auto payload = make_payload(0x42, {0x01, 0x02, 0x03, 0x04});
   const auto frame = handler.encode_packet(payload.data(), payload.size());
 
   // Feed one byte at a time.
-  for (const uint8_t byte : frame) {
+  for (const uint8_t byte : frame)
+  {
     handler.feed(&byte, 1u);
   }
 
@@ -193,14 +201,19 @@ TEST(PacketHandlerErrors, CorruptCrcIsRejected)
   PacketHandler handler;
 
   int callback_count = 0;
-  handler.set_callback([&](const uint8_t *, std::size_t) { ++callback_count; });
+  handler.set_callback(
+      [&](const uint8_t*, std::size_t)
+      {
+        ++callback_count;
+      });
 
   const auto payload = make_payload(0x01, {0xDE, 0xAD, 0xBE, 0xEF});
   auto frame = handler.encode_packet(payload.data(), payload.size());
 
   // Flip a byte inside the COBS payload (between the two 0x00 delimiters).
   // frame[0] = 0x00, frame[1..n-2] = COBS bytes, frame[n-1] = 0x00
-  if (frame.size() > 3u) {
+  if (frame.size() > 3u)
+  {
     frame[2] ^= 0xFFu;
   }
 
@@ -215,7 +228,11 @@ TEST(PacketHandlerErrors, OversizedFrameIsDiscarded)
   PacketHandler handler;
 
   int callback_count = 0;
-  handler.set_callback([&](const uint8_t *, std::size_t) { ++callback_count; });
+  handler.set_callback(
+      [&](const uint8_t*, std::size_t)
+      {
+        ++callback_count;
+      });
 
   // Build a frame that exceeds kMaxPacketBytes raw bytes.
   // Feed: 0x00, then (kMaxPacketBytes + 10) non-zero bytes, then 0x00.
@@ -223,7 +240,8 @@ TEST(PacketHandlerErrors, OversizedFrameIsDiscarded)
   std::vector<uint8_t> frame;
   frame.reserve(oversized + 2u);
   frame.push_back(0x00);
-  for (std::size_t i = 0; i < oversized; ++i) {
+  for (std::size_t i = 0; i < oversized; ++i)
+  {
     frame.push_back(static_cast<uint8_t>((i % 254u) + 1u));  // Never 0.
   }
   frame.push_back(0x00);
@@ -250,7 +268,11 @@ TEST(PacketHandlerErrors, EmptyFrameIsIgnored)
 {
   PacketHandler handler;
   int callback_count = 0;
-  handler.set_callback([&](const uint8_t *, std::size_t) { ++callback_count; });
+  handler.set_callback(
+      [&](const uint8_t*, std::size_t)
+      {
+        ++callback_count;
+      });
 
   // Two consecutive delimiters produce an empty frame; should be silently ignored.
   const uint8_t two_delimiters[2] = {0x00, 0x00};
@@ -267,7 +289,7 @@ TEST(PacketHandlerErrors, EmptyFrameIsIgnored)
 TEST(PacketHandlerCounters, RxOkIncrements)
 {
   PacketHandler handler;
-  handler.set_callback([](const uint8_t *, std::size_t) {});
+  handler.set_callback([](const uint8_t*, std::size_t) {});
 
   const auto payload = make_payload(0x01);
   const auto frame = handler.encode_packet(payload.data(), payload.size());

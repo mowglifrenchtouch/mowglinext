@@ -48,22 +48,21 @@ struct Pose
  * @param wheel_distance  Track width in metres.
  * @return Updated pose.
  */
-Pose integrate_step(
-  Pose pose,
-  double delta_ticks_l,
-  double delta_ticks_r,
-  double ticks_per_meter,
-  double wheel_distance)
+Pose integrate_step(Pose pose,
+                    double delta_ticks_l,
+                    double delta_ticks_r,
+                    double ticks_per_meter,
+                    double wheel_distance)
 {
-  const double d_left   = delta_ticks_l / ticks_per_meter;
-  const double d_right  = delta_ticks_r / ticks_per_meter;
+  const double d_left = delta_ticks_l / ticks_per_meter;
+  const double d_right = delta_ticks_r / ticks_per_meter;
   const double d_center = (d_left + d_right) / 2.0;
-  const double d_theta  = (d_right - d_left) / wheel_distance;
+  const double d_theta = (d_right - d_left) / wheel_distance;
 
-  pose.x     += d_center * std::cos(pose.theta + d_theta / 2.0);
-  pose.y     += d_center * std::sin(pose.theta + d_theta / 2.0);
+  pose.x += d_center * std::cos(pose.theta + d_theta / 2.0);
+  pose.y += d_center * std::sin(pose.theta + d_theta / 2.0);
   pose.theta += d_theta;
-  pose.theta  = std::atan2(std::sin(pose.theta), std::cos(pose.theta));
+  pose.theta = std::atan2(std::sin(pose.theta), std::cos(pose.theta));
 
   return pose;
 }
@@ -75,9 +74,9 @@ Pose integrate_step(
 class WheelOdometryKinematicsTest : public ::testing::Test
 {
 protected:
-  static constexpr double kTicksPerMeter  = 1000.0;
-  static constexpr double kWheelDistance  = 0.35;   // metres
-  static constexpr double kEpsilon        = 1e-9;   // tolerance for doubles
+  static constexpr double kTicksPerMeter = 1000.0;
+  static constexpr double kWheelDistance = 0.35;  // metres
+  static constexpr double kEpsilon = 1e-9;  // tolerance for doubles
 
   Pose start_{};  // default-initialised to origin
 };
@@ -89,14 +88,14 @@ protected:
 TEST_F(WheelOdometryKinematicsTest, StraightLine)
 {
   // Both wheels rotate the same amount → pure forward translation.
-  constexpr double kDistance     = 1.0;     // metres
-  constexpr double kTicks        = kDistance * kTicksPerMeter;
+  constexpr double kDistance = 1.0;  // metres
+  constexpr double kTicks = kDistance * kTicksPerMeter;
 
   const Pose result = integrate_step(start_, kTicks, kTicks, kTicksPerMeter, kWheelDistance);
 
-  EXPECT_NEAR(result.x,     kDistance, kEpsilon);
-  EXPECT_NEAR(result.y,     0.0,       kEpsilon);
-  EXPECT_NEAR(result.theta, 0.0,       kEpsilon);
+  EXPECT_NEAR(result.x, kDistance, kEpsilon);
+  EXPECT_NEAR(result.y, 0.0, kEpsilon);
+  EXPECT_NEAR(result.theta, 0.0, kEpsilon);
 }
 
 // ---------------------------------------------------------------------------
@@ -108,14 +107,14 @@ TEST_F(WheelOdometryKinematicsTest, PureRotation)
   // Equal and opposite ticks → robot spins about its centre.
   // Arc length for a 90° turn (π/2 rad) = radius × angle
   // For pure rotation, both wheels travel an arc of (wheel_distance/2) × angle.
-  constexpr double kAngle    = M_PI / 2.0;       // quarter turn CCW
-  const double     arc       = (kWheelDistance / 2.0) * kAngle;
-  const double     ticks     = arc * kTicksPerMeter;
+  constexpr double kAngle = M_PI / 2.0;  // quarter turn CCW
+  const double arc = (kWheelDistance / 2.0) * kAngle;
+  const double ticks = arc * kTicksPerMeter;
 
   const Pose result = integrate_step(start_, -ticks, ticks, kTicksPerMeter, kWheelDistance);
 
-  EXPECT_NEAR(result.x,     0.0,    kEpsilon);
-  EXPECT_NEAR(result.y,     0.0,    kEpsilon);
+  EXPECT_NEAR(result.x, 0.0, kEpsilon);
+  EXPECT_NEAR(result.y, 0.0, kEpsilon);
   EXPECT_NEAR(result.theta, kAngle, kEpsilon);
 }
 
@@ -127,8 +126,8 @@ TEST_F(WheelOdometryKinematicsTest, ZeroMovement)
 {
   const Pose result = integrate_step(start_, 0.0, 0.0, kTicksPerMeter, kWheelDistance);
 
-  EXPECT_NEAR(result.x,     0.0, kEpsilon);
-  EXPECT_NEAR(result.y,     0.0, kEpsilon);
+  EXPECT_NEAR(result.x, 0.0, kEpsilon);
+  EXPECT_NEAR(result.y, 0.0, kEpsilon);
   EXPECT_NEAR(result.theta, 0.0, kEpsilon);
 }
 
@@ -139,11 +138,11 @@ TEST_F(WheelOdometryKinematicsTest, ZeroMovement)
 TEST_F(WheelOdometryKinematicsTest, LeftArc)
 {
   // Right wheel travels further → positive d_theta → turns left (CCW).
-  constexpr double kLeftTicks  = 500.0;
+  constexpr double kLeftTicks = 500.0;
   constexpr double kRightTicks = 1000.0;
 
-  const Pose result = integrate_step(
-    start_, kLeftTicks, kRightTicks, kTicksPerMeter, kWheelDistance);
+  const Pose result =
+      integrate_step(start_, kLeftTicks, kRightTicks, kTicksPerMeter, kWheelDistance);
 
   // Heading should be positive (CCW).
   EXPECT_GT(result.theta, 0.0);
@@ -159,11 +158,11 @@ TEST_F(WheelOdometryKinematicsTest, LeftArc)
 TEST_F(WheelOdometryKinematicsTest, RightArc)
 {
   // Left wheel travels further → negative d_theta → turns right (CW).
-  constexpr double kLeftTicks  = 1000.0;
+  constexpr double kLeftTicks = 1000.0;
   constexpr double kRightTicks = 500.0;
 
-  const Pose result = integrate_step(
-    start_, kLeftTicks, kRightTicks, kTicksPerMeter, kWheelDistance);
+  const Pose result =
+      integrate_step(start_, kLeftTicks, kRightTicks, kTicksPerMeter, kWheelDistance);
 
   EXPECT_LT(result.theta, 0.0);
   EXPECT_GT(result.x, 0.0);
@@ -187,26 +186,27 @@ TEST_F(WheelOdometryKinematicsTest, QuarterCircleArc)
   //   y = R × (1 - cos(π/2)) = R = 1.0
   //   theta = π/2
 
-  constexpr double kRadius  = 1.0;
-  constexpr double kAngle   = M_PI / 2.0;
+  constexpr double kRadius = 1.0;
+  constexpr double kAngle = M_PI / 2.0;
 
-  const double arc_left  = (kRadius - kWheelDistance / 2.0) * kAngle;
+  const double arc_left = (kRadius - kWheelDistance / 2.0) * kAngle;
   const double arc_right = (kRadius + kWheelDistance / 2.0) * kAngle;
 
   // Integrate in many small steps for numerical accuracy.
   constexpr int kSteps = 1000;
-  const double  dt_l   = (arc_left  * kTicksPerMeter) / kSteps;
-  const double  dt_r   = (arc_right * kTicksPerMeter) / kSteps;
+  const double dt_l = (arc_left * kTicksPerMeter) / kSteps;
+  const double dt_r = (arc_right * kTicksPerMeter) / kSteps;
 
   Pose pose = start_;
-  for (int i = 0; i < kSteps; ++i) {
+  for (int i = 0; i < kSteps; ++i)
+  {
     pose = integrate_step(pose, dt_l, dt_r, kTicksPerMeter, kWheelDistance);
   }
 
   constexpr double kTolerance = 1e-4;  // 0.1 mm — tight enough for 1000-step integration
-  EXPECT_NEAR(pose.x,     kRadius, kTolerance);
-  EXPECT_NEAR(pose.y,     kRadius, kTolerance);
-  EXPECT_NEAR(pose.theta, kAngle,  kTolerance);
+  EXPECT_NEAR(pose.x, kRadius, kTolerance);
+  EXPECT_NEAR(pose.y, kRadius, kTolerance);
+  EXPECT_NEAR(pose.theta, kAngle, kTolerance);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,11 +216,11 @@ TEST_F(WheelOdometryKinematicsTest, QuarterCircleArc)
 TEST_F(WheelOdometryKinematicsTest, ReverseStraightLine)
 {
   constexpr double kDistance = 1.0;
-  constexpr double kTicks    = -(kDistance * kTicksPerMeter);  // negative = backward
+  constexpr double kTicks = -(kDistance * kTicksPerMeter);  // negative = backward
 
   const Pose result = integrate_step(start_, kTicks, kTicks, kTicksPerMeter, kWheelDistance);
 
-  EXPECT_NEAR(result.x,     -kDistance, kEpsilon);
-  EXPECT_NEAR(result.y,     0.0,        kEpsilon);
-  EXPECT_NEAR(result.theta, 0.0,        kEpsilon);
+  EXPECT_NEAR(result.x, -kDistance, kEpsilon);
+  EXPECT_NEAR(result.y, 0.0, kEpsilon);
+  EXPECT_NEAR(result.theta, 0.0, kEpsilon);
 }

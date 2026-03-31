@@ -3,9 +3,8 @@
 //
 // Unit tests for mowgli_nav2_plugins::FailureDetector.
 
-#include <gtest/gtest.h>
-
 #include "mowgli_nav2_plugins/oscillation_detector.hpp"
+#include <gtest/gtest.h>
 
 namespace mowgli_nav2_plugins
 {
@@ -18,23 +17,20 @@ protected:
   FailureDetector detector_;
 
   /// Push n identical (v, omega) samples into the detector.
-  void pushSamples(
-    int n,
-    double v, double omega,
-    double v_eps = 0.1, double omega_eps = 0.1)
+  void pushSamples(int n, double v, double omega, double v_eps = 0.1, double omega_eps = 0.1)
   {
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < n; ++i)
+    {
       detector_.update(v, omega, 1.0, 1.0, 1.0, v_eps, omega_eps);
     }
   }
 
   /// Alternate omega between +omega_val and -omega_val for n pairs.
   void pushAlternating(
-    int n,
-    double v, double omega_val,
-    double v_eps = 0.1, double omega_eps = 0.1)
+      int n, double v, double omega_val, double v_eps = 0.1, double omega_eps = 0.1)
   {
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < n; ++i)
+    {
       const double sign = (i % 2 == 0) ? 1.0 : -1.0;
       detector_.update(v, sign * omega_val, 1.0, 1.0, 1.0, v_eps, omega_eps);
     }
@@ -182,7 +178,7 @@ TEST_F(OscillationDetectorTest, ShrinkingBufferTrimsSamples)
 
 }  // namespace mowgli_nav2_plugins
 
-int main(int argc, char ** argv)
+int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

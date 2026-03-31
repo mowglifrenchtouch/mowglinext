@@ -21,9 +21,8 @@
 #include <numeric>
 #include <vector>
 
-#include <gtest/gtest.h>
-
 #include "mowgli_hardware/cobs.hpp"
+#include <gtest/gtest.h>
 
 using mowgli_hardware::cobs_decode;
 using mowgli_hardware::cobs_encode;
@@ -33,7 +32,7 @@ using mowgli_hardware::cobs_max_encoded_size;
 // Helpers
 // ---------------------------------------------------------------------------
 
-static std::vector<uint8_t> roundtrip(const std::vector<uint8_t> & input)
+static std::vector<uint8_t> roundtrip(const std::vector<uint8_t>& input)
 {
   const std::size_t max_enc = cobs_max_encoded_size(input.size());
   std::vector<uint8_t> encoded(max_enc);
@@ -41,7 +40,8 @@ static std::vector<uint8_t> roundtrip(const std::vector<uint8_t> & input)
   encoded.resize(enc_len);
 
   // The encoded stream must never contain 0x00.
-  for (std::size_t i = 0; i < enc_len; ++i) {
+  for (std::size_t i = 0; i < enc_len; ++i)
+  {
     EXPECT_NE(encoded[i], 0x00u) << "0x00 found in encoded output at index " << i;
   }
 
@@ -149,7 +149,8 @@ TEST(CobsTest, AllNonZero_255Bytes_SplitRun)
 TEST(CobsTest, LargePayload_512Bytes)
 {
   std::vector<uint8_t> input(512);
-  for (std::size_t i = 0; i < input.size(); ++i) {
+  for (std::size_t i = 0; i < input.size(); ++i)
+  {
     // Alternating 0x00 and non-zero to stress the encoder.
     input[i] = (i % 3u == 0u) ? 0x00u : static_cast<uint8_t>(i & 0xFFu);
   }
@@ -205,7 +206,8 @@ TEST(CobsTest, DecodeRejectsOverrun)
 TEST(CobsTest, MaxEncodedSizeIsRespected)
 {
   // For various lengths, the actual encoded size must never exceed the declared max.
-  for (std::size_t n = 0; n <= 512u; ++n) {
+  for (std::size_t n = 0; n <= 512u; ++n)
+  {
     std::vector<uint8_t> input(n, static_cast<uint8_t>(n & 0xFFu));
     const std::size_t max_sz = cobs_max_encoded_size(n);
     std::vector<uint8_t> encoded(max_sz);

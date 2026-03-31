@@ -10,8 +10,6 @@
  *     via NodeOptions() (no external spin required) and injecting known state.
  */
 
-#include <gtest/gtest.h>
-
 #include <chrono>
 #include <memory>
 #include <string>
@@ -20,11 +18,12 @@
 #include "mowgli_monitoring/diagnostics_node.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/nav_sat_status.hpp"
+#include <gtest/gtest.h>
 
-using mowgli_monitoring::DiagLevel;
-using mowgli_monitoring::classify_freshness;
 using mowgli_monitoring::classify_battery;
+using mowgli_monitoring::classify_freshness;
 using mowgli_monitoring::classify_temperature;
+using mowgli_monitoring::DiagLevel;
 using mowgli_monitoring::level_name;
 
 // ===========================================================================
@@ -46,7 +45,7 @@ protected:
 
   // Helper: create a node with isolated naming to avoid interference.
   static std::shared_ptr<mowgli_monitoring::DiagnosticsNode> make_node(
-    const std::string & suffix = "")
+      const std::string& suffix = "")
   {
     rclcpp::NodeOptions opts;
     opts.arguments({"--ros-args", "--remap", "__node:=test_diag_node" + suffix});
@@ -67,8 +66,8 @@ TEST_F(DiagnosticsTest, FreshnessOkWhenBelowWarnThreshold)
 
 TEST_F(DiagnosticsTest, FreshnessWarnAtWarnThreshold)
 {
-  EXPECT_EQ(classify_freshness(5.0,  false, 5.0, 10.0), DiagLevel::WARN);
-  EXPECT_EQ(classify_freshness(7.5,  false, 5.0, 10.0), DiagLevel::WARN);
+  EXPECT_EQ(classify_freshness(5.0, false, 5.0, 10.0), DiagLevel::WARN);
+  EXPECT_EQ(classify_freshness(7.5, false, 5.0, 10.0), DiagLevel::WARN);
   EXPECT_EQ(classify_freshness(9.99, false, 5.0, 10.0), DiagLevel::WARN);
 }
 
@@ -100,8 +99,8 @@ TEST_F(DiagnosticsTest, FreshnessCustomThresholds)
 TEST_F(DiagnosticsTest, BatteryOkAboveWarnThreshold)
 {
   EXPECT_EQ(classify_battery(100.0, 20.0, 10.0), DiagLevel::OK);
-  EXPECT_EQ(classify_battery(50.0,  20.0, 10.0), DiagLevel::OK);
-  EXPECT_EQ(classify_battery(20.1,  20.0, 10.0), DiagLevel::OK);
+  EXPECT_EQ(classify_battery(50.0, 20.0, 10.0), DiagLevel::OK);
+  EXPECT_EQ(classify_battery(20.1, 20.0, 10.0), DiagLevel::OK);
 }
 
 TEST_F(DiagnosticsTest, BatteryWarnAtWarnThreshold)
@@ -114,8 +113,8 @@ TEST_F(DiagnosticsTest, BatteryWarnAtWarnThreshold)
 TEST_F(DiagnosticsTest, BatteryErrorAtOrBelowErrorThreshold)
 {
   EXPECT_EQ(classify_battery(10.0, 20.0, 10.0), DiagLevel::ERROR);
-  EXPECT_EQ(classify_battery(5.0,  20.0, 10.0), DiagLevel::ERROR);
-  EXPECT_EQ(classify_battery(0.0,  20.0, 10.0), DiagLevel::ERROR);
+  EXPECT_EQ(classify_battery(5.0, 20.0, 10.0), DiagLevel::ERROR);
+  EXPECT_EQ(classify_battery(0.0, 20.0, 10.0), DiagLevel::ERROR);
 }
 
 // ===========================================================================
@@ -143,9 +142,9 @@ TEST_F(DiagnosticsTest, EmergencyErrorWhenActiveEmergency)
   // callback indirectly using a published message.  Here we instead test the
   // classification functions directly to avoid requiring a full executor.
   mowgli_interfaces::msg::Emergency em;
-  em.active_emergency  = true;
+  em.active_emergency = true;
   em.latched_emergency = false;
-  em.reason            = "lift detected";
+  em.reason = "lift detected";
 
   // check_emergency reads state_.last_emergency which is set by on_emergency().
   // Simulate by accessing the node's internal state via a friend or through
@@ -158,8 +157,8 @@ TEST_F(DiagnosticsTest, EmergencyErrorWhenActiveEmergency)
   EXPECT_FALSE(em.latched_emergency);
 
   // Validate level_name mapping used by the node for logging.
-  EXPECT_EQ(level_name(DiagLevel::OK),    "OK");
-  EXPECT_EQ(level_name(DiagLevel::WARN),  "WARN");
+  EXPECT_EQ(level_name(DiagLevel::OK), "OK");
+  EXPECT_EQ(level_name(DiagLevel::WARN), "WARN");
   EXPECT_EQ(level_name(DiagLevel::ERROR), "ERROR");
   EXPECT_EQ(level_name(DiagLevel::STALE), "STALE");
 }
@@ -200,32 +199,32 @@ TEST_F(DiagnosticsTest, AllDiagnosticCategoriesPresent)
   const rclcpp::Time t = node->now();
 
   const std::vector<diagnostic_msgs::msg::DiagnosticStatus> statuses = {
-    node->check_hardware_bridge(t),
-    node->check_emergency(),
-    node->check_battery(),
-    node->check_imu(t),
-    node->check_lidar(t),
-    node->check_gps(t),
-    node->check_odometry(t),
-    node->check_motors(),
+      node->check_hardware_bridge(t),
+      node->check_emergency(),
+      node->check_battery(),
+      node->check_imu(t),
+      node->check_lidar(t),
+      node->check_gps(t),
+      node->check_odometry(t),
+      node->check_motors(),
   };
 
   const std::vector<std::string> expected_names = {
-    "Hardware Bridge",
-    "Emergency System",
-    "Battery",
-    "IMU",
-    "LiDAR",
-    "GPS",
-    "Odometry",
-    "Motors",
+      "Hardware Bridge",
+      "Emergency System",
+      "Battery",
+      "IMU",
+      "LiDAR",
+      "GPS",
+      "Odometry",
+      "Motors",
   };
 
   ASSERT_EQ(statuses.size(), expected_names.size());
 
-  for (std::size_t i = 0; i < expected_names.size(); ++i) {
-    EXPECT_EQ(statuses[i].name, expected_names[i])
-      << "Category " << i << " has wrong name";
+  for (std::size_t i = 0; i < expected_names.size(); ++i)
+  {
+    EXPECT_EQ(statuses[i].name, expected_names[i]) << "Category " << i << " has wrong name";
   }
 }
 
@@ -235,19 +234,19 @@ TEST_F(DiagnosticsTest, AllCategoriesHaveHardwareId)
   const rclcpp::Time t = node->now();
 
   const std::vector<diagnostic_msgs::msg::DiagnosticStatus> statuses = {
-    node->check_hardware_bridge(t),
-    node->check_emergency(),
-    node->check_battery(),
-    node->check_imu(t),
-    node->check_lidar(t),
-    node->check_gps(t),
-    node->check_odometry(t),
-    node->check_motors(),
+      node->check_hardware_bridge(t),
+      node->check_emergency(),
+      node->check_battery(),
+      node->check_imu(t),
+      node->check_lidar(t),
+      node->check_gps(t),
+      node->check_odometry(t),
+      node->check_motors(),
   };
 
-  for (const auto & s : statuses) {
-    EXPECT_FALSE(s.hardware_id.empty())
-      << "Category '" << s.name << "' is missing hardware_id";
+  for (const auto& s : statuses)
+  {
+    EXPECT_FALSE(s.hardware_id.empty()) << "Category '" << s.name << "' is missing hardware_id";
   }
 }
 
@@ -257,20 +256,21 @@ TEST_F(DiagnosticsTest, CategoryLevelsAreValidDiagnosticLevels)
   const rclcpp::Time t = node->now();
 
   const std::vector<diagnostic_msgs::msg::DiagnosticStatus> statuses = {
-    node->check_hardware_bridge(t),
-    node->check_emergency(),
-    node->check_battery(),
-    node->check_imu(t),
-    node->check_lidar(t),
-    node->check_gps(t),
-    node->check_odometry(t),
-    node->check_motors(),
+      node->check_hardware_bridge(t),
+      node->check_emergency(),
+      node->check_battery(),
+      node->check_imu(t),
+      node->check_lidar(t),
+      node->check_gps(t),
+      node->check_odometry(t),
+      node->check_motors(),
   };
 
-  for (const auto & s : statuses) {
+  for (const auto& s : statuses)
+  {
     // Valid levels: OK=0, WARN=1, ERROR=2, STALE=3
     EXPECT_LE(s.level, DiagLevel::STALE)
-      << "Category '" << s.name << "' has invalid level: " << static_cast<int>(s.level);
+        << "Category '" << s.name << "' has invalid level: " << static_cast<int>(s.level);
   }
 }
 

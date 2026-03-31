@@ -26,44 +26,52 @@ namespace mowgli_map
 /// Values are cast to float when written into the layer and cast back when read.
 enum class CellType : uint8_t
 {
-  UNKNOWN            = 0,  ///< Not yet classified
-  LAWN               = 1,  ///< Mowable lawn area
+  UNKNOWN = 0,  ///< Not yet classified
+  LAWN = 1,  ///< Mowable lawn area
   OBSTACLE_PERMANENT = 2,  ///< Static obstacle (wall, tree, etc.)
   OBSTACLE_TEMPORARY = 3,  ///< Dynamic obstacle (detected at runtime)
-  NO_GO_ZONE         = 4,  ///< Operator-defined exclusion zone
-  DOCKING_AREA       = 5,  ///< Charging station vicinity
+  NO_GO_ZONE = 4,  ///< Operator-defined exclusion zone
+  DOCKING_AREA = 5,  ///< Charging station vicinity
 };
 
 /// Human-readable name for a CellType value (useful for logging / debug).
 constexpr std::string_view cell_type_name(CellType t) noexcept
 {
-  switch (t) {
-    case CellType::UNKNOWN:            return "UNKNOWN";
-    case CellType::LAWN:               return "LAWN";
-    case CellType::OBSTACLE_PERMANENT: return "OBSTACLE_PERMANENT";
-    case CellType::OBSTACLE_TEMPORARY: return "OBSTACLE_TEMPORARY";
-    case CellType::NO_GO_ZONE:         return "NO_GO_ZONE";
-    case CellType::DOCKING_AREA:       return "DOCKING_AREA";
-    default:                           return "INVALID";
+  switch (t)
+  {
+    case CellType::UNKNOWN:
+      return "UNKNOWN";
+    case CellType::LAWN:
+      return "LAWN";
+    case CellType::OBSTACLE_PERMANENT:
+      return "OBSTACLE_PERMANENT";
+    case CellType::OBSTACLE_TEMPORARY:
+      return "OBSTACLE_TEMPORARY";
+    case CellType::NO_GO_ZONE:
+      return "NO_GO_ZONE";
+    case CellType::DOCKING_AREA:
+      return "DOCKING_AREA";
+    default:
+      return "INVALID";
   }
 }
 
 /// Named layer strings used throughout the package.
 namespace layers
 {
-constexpr std::string_view OCCUPANCY       = "occupancy";
-constexpr std::string_view CLASSIFICATION  = "classification";
-constexpr std::string_view MOW_PROGRESS    = "mow_progress";
-constexpr std::string_view CONFIDENCE      = "confidence";
+constexpr std::string_view OCCUPANCY = "occupancy";
+constexpr std::string_view CLASSIFICATION = "classification";
+constexpr std::string_view MOW_PROGRESS = "mow_progress";
+constexpr std::string_view CONFIDENCE = "confidence";
 }  // namespace layers
 
 /// Default values written when a layer is initialised or cleared.
 namespace defaults
 {
-constexpr float OCCUPANCY      = 0.0F;   ///< free space
-constexpr float CLASSIFICATION = 0.0F;   ///< CellType::UNKNOWN
-constexpr float MOW_PROGRESS   = 0.0F;   ///< unmowed
-constexpr float CONFIDENCE     = 0.0F;   ///< no observations
+constexpr float OCCUPANCY = 0.0F;  ///< free space
+constexpr float CLASSIFICATION = 0.0F;  ///< CellType::UNKNOWN
+constexpr float MOW_PROGRESS = 0.0F;  ///< unmowed
+constexpr float CONFIDENCE = 0.0F;  ///< no observations
 }  // namespace defaults
 
 }  // namespace mowgli_map

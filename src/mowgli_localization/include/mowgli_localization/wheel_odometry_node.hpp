@@ -33,11 +33,10 @@
 
 #include "geometry_msgs/msg/quaternion.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
+#include "mowgli_interfaces/msg/wheel_tick.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "tf2_ros/transform_broadcaster.hpp"
-
-#include "mowgli_interfaces/msg/wheel_tick.hpp"
 
 namespace mowgli_localization
 {
@@ -45,7 +44,7 @@ namespace mowgli_localization
 class WheelOdometryNode : public rclcpp::Node
 {
 public:
-  explicit WheelOdometryNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit WheelOdometryNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
   ~WheelOdometryNode() override = default;
 
 private:

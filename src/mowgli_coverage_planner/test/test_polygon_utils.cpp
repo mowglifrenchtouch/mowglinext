@@ -12,10 +12,9 @@
 #include <cmath>
 #include <vector>
 
-#include "gtest/gtest.h"
-#include "geometry_msgs/msg/polygon.hpp"
 #include "geometry_msgs/msg/point32.hpp"
-
+#include "geometry_msgs/msg/polygon.hpp"
+#include "gtest/gtest.h"
 #include "mowgli_coverage_planner/polygon_utils.hpp"
 
 using namespace mowgli_coverage_planner;  // NOLINT(build/namespaces)
@@ -27,19 +26,11 @@ using namespace mowgli_coverage_planner;  // NOLINT(build/namespaces)
 /// Build a Polygon2D rectangle with corners (x0,y0) → (x1,y1) in CCW order.
 static Polygon2D make_rectangle(double x0, double y0, double x1, double y1)
 {
-  return {
-    {x0, y0},
-    {x1, y0},
-    {x1, y1},
-    {x0, y1}
-  };
+  return {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
 }
 
 /// Build a Polygon2D triangle.
-static Polygon2D make_triangle(
-  double ax, double ay,
-  double bx, double by,
-  double cx, double cy)
+static Polygon2D make_triangle(double ax, double ay, double bx, double by, double cx, double cy)
 {
   return {{ax, ay}, {bx, by}, {cx, cy}};
 }
@@ -165,9 +156,10 @@ TEST(OffsetPolygon, ShrunkPolygonIsInsideOriginal)
   ASSERT_GE(shrunk.size(), 3u);
 
   // Every vertex of the shrunk polygon should be inside the original.
-  for (const auto & v : shrunk) {
+  for (const auto& v : shrunk)
+  {
     EXPECT_TRUE(point_in_polygon(v, sq))
-      << "Vertex (" << v.first << ", " << v.second << ") not inside original";
+        << "Vertex (" << v.first << ", " << v.second << ") not inside original";
   }
 }
 
@@ -203,8 +195,7 @@ TEST(OptimalMowingAngle, WideRectanglePrefersHorizontal)
   // angle = 0 (horizontal swaths → 4/spacing passes) vs angle=90 (vertical → 20/spacing passes).
   // So 0° is optimal (minimum perpendicular extent in y-direction).
   const bool is_zero_or_near = (std::abs(angle_deg) < 10.0 || std::abs(angle_deg - 180.0) < 10.0);
-  EXPECT_TRUE(is_zero_or_near)
-    << "Expected ~0° for wide rectangle, got " << angle_deg << "°";
+  EXPECT_TRUE(is_zero_or_near) << "Expected ~0° for wide rectangle, got " << angle_deg << "°";
 }
 
 TEST(OptimalMowingAngle, TallRectanglePrefersVertical)
@@ -240,9 +231,8 @@ TEST(ClipLineToPolygon, HorizontalLineThroughSquare)
   const auto segments = clip_line_to_polygon({-5.0, 5.0}, {15.0, 5.0}, sq);
 
   ASSERT_EQ(segments.size(), 1u);
-  const double seg_len = std::hypot(
-    segments[0].end.first - segments[0].start.first,
-    segments[0].end.second - segments[0].start.second);
+  const double seg_len = std::hypot(segments[0].end.first - segments[0].start.first,
+                                    segments[0].end.second - segments[0].start.second);
   EXPECT_NEAR(seg_len, 10.0, 0.01);
 }
 
@@ -282,7 +272,8 @@ TEST(ClipLineToPolygon, DiagonalThroughSquare)
 TEST(PolygonConversion, RoundTrip)
 {
   geometry_msgs::msg::Polygon ros_poly;
-  for (auto [x, y] : std::vector<std::pair<float, float>>{{0, 0}, {5, 0}, {5, 3}, {0, 3}}) {
+  for (auto [x, y] : std::vector<std::pair<float, float>>{{0, 0}, {5, 0}, {5, 3}, {0, 3}})
+  {
     geometry_msgs::msg::Point32 pt;
     pt.x = x;
     pt.y = y;
@@ -325,8 +316,5 @@ TEST(RotatePolygon, AreaPreservedAfterRotation)
   const Point2D center = polygon_centroid(sq);
   const Polygon2D rotated = rotate_polygon(sq, M_PI / 4.0, center);
 
-  EXPECT_NEAR(
-    std::abs(polygon_area(rotated)),
-    std::abs(polygon_area(sq)),
-    1e-6);
+  EXPECT_NEAR(std::abs(polygon_area(rotated)), std::abs(polygon_area(sq)), 1e-6);
 }

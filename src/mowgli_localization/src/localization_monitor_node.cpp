@@ -34,19 +34,21 @@ using namespace std::chrono_literals;
 // Constructor
 // ---------------------------------------------------------------------------
 
-LocalizationMonitorNode::LocalizationMonitorNode(const rclcpp::NodeOptions & options)
-: Node("localization_monitor", options)
+LocalizationMonitorNode::LocalizationMonitorNode(const rclcpp::NodeOptions& options)
+    : Node("localization_monitor", options)
 {
   declare_parameters();
   create_publishers();
   create_subscribers();
   create_timer();
 
-  RCLCPP_INFO(
-    get_logger(),
-    "LocalizationMonitorNode started — gps_timeout=%.1f s, lidar_timeout=%.1f s, "
-    "pose_timeout=%.1f s, publish_rate=%.1f Hz",
-    gps_timeout_, lidar_timeout_, pose_timeout_, publish_rate_);
+  RCLCPP_INFO(get_logger(),
+              "LocalizationMonitorNode started — gps_timeout=%.1f s, lidar_timeout=%.1f s, "
+              "pose_timeout=%.1f s, publish_rate=%.1f Hz",
+              gps_timeout_,
+              lidar_timeout_,
+              pose_timeout_,
+              publish_rate_);
 }
 
 // ---------------------------------------------------------------------------
@@ -55,10 +57,10 @@ LocalizationMonitorNode::LocalizationMonitorNode(const rclcpp::NodeOptions & opt
 
 void LocalizationMonitorNode::declare_parameters()
 {
-  gps_timeout_   = declare_parameter<double>("gps_timeout",   2.0);
+  gps_timeout_ = declare_parameter<double>("gps_timeout", 2.0);
   lidar_timeout_ = declare_parameter<double>("lidar_timeout", 1.0);
-  pose_timeout_  = declare_parameter<double>("pose_timeout",  0.5);
-  publish_rate_  = declare_parameter<double>("publish_rate",  10.0);
+  pose_timeout_ = declare_parameter<double>("pose_timeout", 0.5);
+  publish_rate_ = declare_parameter<double>("publish_rate", 10.0);
 }
 
 void LocalizationMonitorNode::create_publishers()
@@ -67,36 +69,48 @@ void LocalizationMonitorNode::create_publishers()
   // subscribers always receive the current mode.
   const auto latched_qos = rclcpp::QoS(1).transient_local();
 
-  mode_pub_    = create_publisher<std_msgs::msg::String>("/localization/mode",    latched_qos);
-  mode_id_pub_ = create_publisher<std_msgs::msg::Int32> ("/localization/mode_id", latched_qos);
+  mode_pub_ = create_publisher<std_msgs::msg::String>("/localization/mode", latched_qos);
+  mode_id_pub_ = create_publisher<std_msgs::msg::Int32>("/localization/mode_id", latched_qos);
 }
 
 void LocalizationMonitorNode::create_subscribers()
 {
-  wheel_odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
-    "/wheel_odom",
-    rclcpp::QoS(10),
-    [this](nav_msgs::msg::Odometry::ConstSharedPtr msg) { on_wheel_odom(msg); });
+  wheel_odom_sub_ =
+      create_subscription<nav_msgs::msg::Odometry>("/wheel_odom",
+                                                   rclcpp::QoS(10),
+                                                   [this](
+                                                       nav_msgs::msg::Odometry::ConstSharedPtr msg)
+                                                   {
+                                                     on_wheel_odom(msg);
+                                                   });
 
   abs_pose_sub_ = create_subscription<mowgli_interfaces::msg::AbsolutePose>(
-    "/gps/absolute_pose",
-    rclcpp::QoS(10),
-    [this](mowgli_interfaces::msg::AbsolutePose::ConstSharedPtr msg) { on_absolute_pose(msg); });
+      "/gps/absolute_pose",
+      rclcpp::QoS(10),
+      [this](mowgli_interfaces::msg::AbsolutePose::ConstSharedPtr msg)
+      {
+        on_absolute_pose(msg);
+      });
 
   slam_pose_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-    "/slam_toolbox/pose",
-    rclcpp::QoS(10),
-    [this](geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg) {
-      on_slam_pose(msg);
-    });
+      "/slam_toolbox/pose",
+      rclcpp::QoS(10),
+      [this](geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg)
+      {
+        on_slam_pose(msg);
+      });
 }
 
 void LocalizationMonitorNode::create_timer()
 {
   const auto period_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-    std::chrono::duration<double>(1.0 / publish_rate_));
+      std::chrono::duration<double>(1.0 / publish_rate_));
 
-  publish_timer_ = create_wall_timer(period_ns, [this]() { on_publish_timer(); });
+  publish_timer_ = create_wall_timer(period_ns,
+                                     [this]()
+                                     {
+                                       on_publish_timer();
+                                     });
 }
 
 // ---------------------------------------------------------------------------
@@ -109,20 +123,19 @@ void LocalizationMonitorNode::on_wheel_odom(nav_msgs::msg::Odometry::ConstShared
 }
 
 void LocalizationMonitorNode::on_absolute_pose(
-  mowgli_interfaces::msg::AbsolutePose::ConstSharedPtr msg)
+    mowgli_interfaces::msg::AbsolutePose::ConstSharedPtr msg)
 {
   using Flags = mowgli_interfaces::msg::AbsolutePose;
 
   last_gps_stamp_ = msg->header.stamp;
 
-  gps_rtk_fixed_  = (msg->flags & Flags::FLAG_GPS_RTK_FIXED) != 0u;
-  gps_rtk_active_ = gps_rtk_fixed_
-    || ((msg->flags & Flags::FLAG_GPS_RTK_FLOAT) != 0u)
-    || ((msg->flags & Flags::FLAG_GPS_RTK)       != 0u);
+  gps_rtk_fixed_ = (msg->flags & Flags::FLAG_GPS_RTK_FIXED) != 0u;
+  gps_rtk_active_ = gps_rtk_fixed_ || ((msg->flags & Flags::FLAG_GPS_RTK_FLOAT) != 0u) ||
+                    ((msg->flags & Flags::FLAG_GPS_RTK) != 0u);
 }
 
 void LocalizationMonitorNode::on_slam_pose(
-  geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg)
+    geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg)
 {
   last_slam_stamp_ = msg->header.stamp;
 }
@@ -137,12 +150,12 @@ void LocalizationMonitorNode::on_publish_timer()
 
   const LocalizationMode mode = evaluate_mode();
 
-  if (mode != prev_mode) {
-    RCLCPP_INFO(
-      get_logger(),
-      "Localization mode change: %s → %s",
-      mode_to_string(prev_mode).c_str(),
-      mode_to_string(mode).c_str());
+  if (mode != prev_mode)
+  {
+    RCLCPP_INFO(get_logger(),
+                "Localization mode change: %s → %s",
+                mode_to_string(prev_mode).c_str(),
+                mode_to_string(mode).c_str());
     prev_mode = mode;
   }
 
@@ -161,24 +174,28 @@ void LocalizationMonitorNode::on_publish_timer()
 
 LocalizationMode LocalizationMonitorNode::evaluate_mode() const
 {
-  const bool gps_fresh   = is_fresh(last_gps_stamp_,        gps_timeout_);
-  const bool lidar_fresh = is_fresh(last_slam_stamp_,       lidar_timeout_);
+  const bool gps_fresh = is_fresh(last_gps_stamp_, gps_timeout_);
+  const bool lidar_fresh = is_fresh(last_slam_stamp_, lidar_timeout_);
 
   // Ordered from best to worst; first matching rule wins.
 
-  if (gps_fresh && gps_rtk_fixed_ && lidar_fresh) {
+  if (gps_fresh && gps_rtk_fixed_ && lidar_fresh)
+  {
     return LocalizationMode::RTK_SLAM;
   }
 
-  if (gps_fresh && gps_rtk_active_ && lidar_fresh) {
+  if (gps_fresh && gps_rtk_active_ && lidar_fresh)
+  {
     return LocalizationMode::SLAM_DOMINANT;
   }
 
-  if (!gps_fresh && lidar_fresh) {
+  if (!gps_fresh && lidar_fresh)
+  {
     return LocalizationMode::SLAM_ODOM;
   }
 
-  if (gps_fresh && gps_rtk_fixed_ && !lidar_fresh) {
+  if (gps_fresh && gps_rtk_fixed_ && !lidar_fresh)
+  {
     return LocalizationMode::GPS_ODOM;
   }
 
@@ -187,21 +204,29 @@ LocalizationMode LocalizationMonitorNode::evaluate_mode() const
 
 std::string LocalizationMonitorNode::mode_to_string(const LocalizationMode mode)
 {
-  switch (mode) {
-    case LocalizationMode::RTK_SLAM:       return "RTK_SLAM";
-    case LocalizationMode::SLAM_DOMINANT:  return "SLAM_DOMINANT";
-    case LocalizationMode::SLAM_ODOM:      return "SLAM_ODOM";
-    case LocalizationMode::GPS_ODOM:       return "GPS_ODOM";
-    case LocalizationMode::DEAD_RECKONING: return "DEAD_RECKONING";
-    default:                               return "UNKNOWN";
+  switch (mode)
+  {
+    case LocalizationMode::RTK_SLAM:
+      return "RTK_SLAM";
+    case LocalizationMode::SLAM_DOMINANT:
+      return "SLAM_DOMINANT";
+    case LocalizationMode::SLAM_ODOM:
+      return "SLAM_ODOM";
+    case LocalizationMode::GPS_ODOM:
+      return "GPS_ODOM";
+    case LocalizationMode::DEAD_RECKONING:
+      return "DEAD_RECKONING";
+    default:
+      return "UNKNOWN";
   }
 }
 
-bool LocalizationMonitorNode::is_fresh(
-  const rclcpp::Time last_stamp, const double timeout_sec) const
+bool LocalizationMonitorNode::is_fresh(const rclcpp::Time last_stamp,
+                                       const double timeout_sec) const
 {
   // A stamp of {0,0} means we have never received a message.
-  if (last_stamp.nanoseconds() == 0) {
+  if (last_stamp.nanoseconds() == 0)
+  {
     return false;
   }
 
@@ -215,7 +240,7 @@ bool LocalizationMonitorNode::is_fresh(
 // main
 // ---------------------------------------------------------------------------
 
-int main(int argc, char ** argv)
+int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<mowgli_localization::LocalizationMonitorNode>());

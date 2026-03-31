@@ -42,7 +42,7 @@ namespace mowgli_simulation
 class GpsDegradationSimNode : public rclcpp::Node
 {
 public:
-  explicit GpsDegradationSimNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit GpsDegradationSimNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
   ~GpsDegradationSimNode() override = default;
 
 private:
@@ -67,7 +67,7 @@ private:
 
   /** Build a new PoseWithCovarianceStamped with inflated covariance and optional drift. */
   geometry_msgs::msg::PoseWithCovarianceStamped degrade_pose(
-    const geometry_msgs::msg::PoseWithCovarianceStamped & input) const;
+      const geometry_msgs::msg::PoseWithCovarianceStamped& input) const;
 
   /** Publish current state on the status topic. */
   void publish_status() const;
@@ -79,20 +79,20 @@ private:
   double normal_duration_sec_{30.0};
   double degraded_duration_sec_{10.0};
   double degradation_covariance_scale_{100.0};
-  bool   enable_position_drift_{true};
+  bool enable_position_drift_{true};
   double drift_stddev_{0.5};
-  bool   enabled_{true};
+  bool enabled_{true};
 
   // ── Runtime state ─────────────────────────────────────────────────────────
   GpsState state_{GpsState::kNormal};
 
   // ── Random number generator for position drift ────────────────────────────
-  mutable std::mt19937                     rng_;
+  mutable std::mt19937 rng_;
   mutable std::normal_distribution<double> drift_dist_;
 
   // ── ROS handles ───────────────────────────────────────────────────────────
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                         status_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_sub_;
   rclcpp::TimerBase::SharedPtr cycle_timer_;
 };

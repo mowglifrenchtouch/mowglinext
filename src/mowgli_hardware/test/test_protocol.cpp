@@ -14,11 +14,10 @@
 #include <cstring>
 #include <vector>
 
-#include <gtest/gtest.h>
-
 #include "mowgli_hardware/crc16.hpp"
 #include "mowgli_hardware/ll_datatypes.hpp"
 #include "mowgli_hardware/packet_handler.hpp"
+#include <gtest/gtest.h>
 
 using namespace mowgli_hardware;
 
@@ -67,15 +66,15 @@ TEST(ProtocolSizes, CmdVelPacketSize)
 
 TEST(ProtocolIds, PacketIdValues)
 {
-  EXPECT_EQ(PACKET_ID_LL_STATUS,               0x01);
-  EXPECT_EQ(PACKET_ID_LL_IMU,                  0x02);
-  EXPECT_EQ(PACKET_ID_LL_UI_EVENT,             0x03);
-  EXPECT_EQ(PACKET_ID_LL_ODOMETRY,             0x04);
+  EXPECT_EQ(PACKET_ID_LL_STATUS, 0x01);
+  EXPECT_EQ(PACKET_ID_LL_IMU, 0x02);
+  EXPECT_EQ(PACKET_ID_LL_UI_EVENT, 0x03);
+  EXPECT_EQ(PACKET_ID_LL_ODOMETRY, 0x04);
   EXPECT_EQ(PACKET_ID_LL_HIGH_LEVEL_CONFIG_REQ, 0x11);
   EXPECT_EQ(PACKET_ID_LL_HIGH_LEVEL_CONFIG_RSP, 0x12);
-  EXPECT_EQ(PACKET_ID_LL_HEARTBEAT,            0x42);
-  EXPECT_EQ(PACKET_ID_LL_HIGH_LEVEL_STATE,     0x43);
-  EXPECT_EQ(PACKET_ID_LL_CMD_VEL,              0x50);
+  EXPECT_EQ(PACKET_ID_LL_HEARTBEAT, 0x42);
+  EXPECT_EQ(PACKET_ID_LL_HIGH_LEVEL_STATE, 0x43);
+  EXPECT_EQ(PACKET_ID_LL_CMD_VEL, 0x50);
 }
 
 // ---------------------------------------------------------------------------
@@ -85,18 +84,18 @@ TEST(ProtocolIds, PacketIdValues)
 TEST(OdometryPacket, FieldOffsetsAreCorrect)
 {
   LlOdometry pkt{};
-  pkt.type            = 0x04;
-  pkt.dt_millis       = 0x1234;
-  pkt.left_ticks      = 0x11223344;
-  pkt.right_ticks     = -42;
-  pkt.left_speed      = 100;
-  pkt.right_speed     = -50;
-  pkt.left_direction  = 1;
+  pkt.type = 0x04;
+  pkt.dt_millis = 0x1234;
+  pkt.left_ticks = 0x11223344;
+  pkt.right_ticks = -42;
+  pkt.left_speed = 100;
+  pkt.right_speed = -50;
+  pkt.left_direction = 1;
   pkt.right_direction = 2;
-  pkt.crc             = 0xABCD;
+  pkt.crc = 0xABCD;
 
   // Verify offsets by examining raw bytes
-  const uint8_t * raw = reinterpret_cast<const uint8_t *>(&pkt);
+  const uint8_t* raw = reinterpret_cast<const uint8_t*>(&pkt);
 
   // type at offset 0
   EXPECT_EQ(raw[0], 0x04);
@@ -145,18 +144,20 @@ TEST(OdometryPacket, FieldOffsetsAreCorrect)
 /// Helper: build a raw payload from a packed struct (without CRC),
 /// encode with PacketHandler, decode by feeding back, verify content.
 template <typename T>
-static void roundtrip_struct(const T & pkt)
+static void roundtrip_struct(const T& pkt)
 {
   PacketHandler handler;
 
   std::vector<uint8_t> received;
-  handler.set_callback([&](const uint8_t * data, std::size_t len) {
-    received.assign(data, data + len);
-  });
+  handler.set_callback(
+      [&](const uint8_t* data, std::size_t len)
+      {
+        received.assign(data, data + len);
+      });
 
   // Build raw payload: struct bytes excluding the CRC field
   constexpr std::size_t payload_len = sizeof(T) - sizeof(uint16_t);
-  const uint8_t * raw = reinterpret_cast<const uint8_t *>(&pkt);
+  const uint8_t* raw = reinterpret_cast<const uint8_t*>(&pkt);
 
   const auto frame = handler.encode_packet(raw, payload_len);
   handler.feed(frame.data(), frame.size());
@@ -178,13 +179,13 @@ static void roundtrip_struct(const T & pkt)
 TEST(ProtocolRoundtrip, OdometryPacket)
 {
   LlOdometry pkt{};
-  pkt.type            = PACKET_ID_LL_ODOMETRY;
-  pkt.dt_millis       = 20;
-  pkt.left_ticks      = 15000;
-  pkt.right_ticks     = 14900;
-  pkt.left_speed      = 42;
-  pkt.right_speed     = -38;
-  pkt.left_direction  = 1;
+  pkt.type = PACKET_ID_LL_ODOMETRY;
+  pkt.dt_millis = 20;
+  pkt.left_ticks = 15000;
+  pkt.right_ticks = 14900;
+  pkt.left_speed = 42;
+  pkt.right_speed = -38;
+  pkt.left_direction = 1;
   pkt.right_direction = 2;
 
   roundtrip_struct(pkt);
@@ -193,18 +194,18 @@ TEST(ProtocolRoundtrip, OdometryPacket)
 TEST(ProtocolRoundtrip, StatusPacket)
 {
   LlStatus pkt{};
-  pkt.type             = PACKET_ID_LL_STATUS;
-  pkt.status_bitmask   = STATUS_BIT_INITIALIZED | STATUS_BIT_RASPI_POWER;
-  pkt.uss_ranges_m[0]  = 1.5f;
-  pkt.uss_ranges_m[1]  = 2.0f;
-  pkt.uss_ranges_m[2]  = 0.0f;
-  pkt.uss_ranges_m[3]  = 0.0f;
-  pkt.uss_ranges_m[4]  = 0.0f;
+  pkt.type = PACKET_ID_LL_STATUS;
+  pkt.status_bitmask = STATUS_BIT_INITIALIZED | STATUS_BIT_RASPI_POWER;
+  pkt.uss_ranges_m[0] = 1.5f;
+  pkt.uss_ranges_m[1] = 2.0f;
+  pkt.uss_ranges_m[2] = 0.0f;
+  pkt.uss_ranges_m[3] = 0.0f;
+  pkt.uss_ranges_m[4] = 0.0f;
   pkt.emergency_bitmask = 0;
-  pkt.v_charge          = 28.5f;
-  pkt.v_system          = 25.2f;
-  pkt.charging_current  = 1.5f;
-  pkt.batt_percentage   = 75;
+  pkt.v_charge = 28.5f;
+  pkt.v_system = 25.2f;
+  pkt.charging_current = 1.5f;
+  pkt.batt_percentage = 75;
 
   roundtrip_struct(pkt);
 }
@@ -212,17 +213,17 @@ TEST(ProtocolRoundtrip, StatusPacket)
 TEST(ProtocolRoundtrip, ImuPacket)
 {
   LlImu pkt{};
-  pkt.type               = PACKET_ID_LL_IMU;
-  pkt.dt_millis          = 20;
+  pkt.type = PACKET_ID_LL_IMU;
+  pkt.dt_millis = 20;
   pkt.acceleration_mss[0] = 0.1f;
   pkt.acceleration_mss[1] = 0.2f;
   pkt.acceleration_mss[2] = 9.81f;
-  pkt.gyro_rads[0]       = 0.01f;
-  pkt.gyro_rads[1]       = -0.02f;
-  pkt.gyro_rads[2]       = 0.005f;
-  pkt.mag_uT[0]          = 30.0f;
-  pkt.mag_uT[1]          = -15.0f;
-  pkt.mag_uT[2]          = 45.0f;
+  pkt.gyro_rads[0] = 0.01f;
+  pkt.gyro_rads[1] = -0.02f;
+  pkt.gyro_rads[2] = 0.005f;
+  pkt.mag_uT[0] = 30.0f;
+  pkt.mag_uT[1] = -15.0f;
+  pkt.mag_uT[2] = 45.0f;
 
   roundtrip_struct(pkt);
 }
@@ -230,8 +231,8 @@ TEST(ProtocolRoundtrip, ImuPacket)
 TEST(ProtocolRoundtrip, UiEventPacket)
 {
   LlUiEvent pkt{};
-  pkt.type           = PACKET_ID_LL_UI_EVENT;
-  pkt.button_id      = 3;
+  pkt.type = PACKET_ID_LL_UI_EVENT;
+  pkt.button_id = 3;
   pkt.press_duration = 1;
 
   roundtrip_struct(pkt);
@@ -240,8 +241,8 @@ TEST(ProtocolRoundtrip, UiEventPacket)
 TEST(ProtocolRoundtrip, HeartbeatPacket)
 {
   LlHeartbeat pkt{};
-  pkt.type                        = PACKET_ID_LL_HEARTBEAT;
-  pkt.emergency_requested         = 0;
+  pkt.type = PACKET_ID_LL_HEARTBEAT;
+  pkt.emergency_requested = 0;
   pkt.emergency_release_requested = 1;
 
   roundtrip_struct(pkt);
@@ -250,9 +251,9 @@ TEST(ProtocolRoundtrip, HeartbeatPacket)
 TEST(ProtocolRoundtrip, HighLevelStatePacket)
 {
   LlHighLevelState pkt{};
-  pkt.type         = PACKET_ID_LL_HIGH_LEVEL_STATE;
+  pkt.type = PACKET_ID_LL_HIGH_LEVEL_STATE;
   pkt.current_mode = 1;
-  pkt.gps_quality  = 95;
+  pkt.gps_quality = 95;
 
   roundtrip_struct(pkt);
 }
@@ -260,8 +261,8 @@ TEST(ProtocolRoundtrip, HighLevelStatePacket)
 TEST(ProtocolRoundtrip, CmdVelPacket)
 {
   LlCmdVel pkt{};
-  pkt.type      = PACKET_ID_LL_CMD_VEL;
-  pkt.linear_x  = 0.35f;
+  pkt.type = PACKET_ID_LL_CMD_VEL;
+  pkt.linear_x = 0.35f;
   pkt.angular_z = -0.15f;
 
   roundtrip_struct(pkt);
@@ -278,19 +279,19 @@ TEST(OdometryPacket, DirectionEncoding)
   pkt.type = PACKET_ID_LL_ODOMETRY;
 
   // Forward
-  pkt.left_direction  = 1;
+  pkt.left_direction = 1;
   pkt.right_direction = 1;
   EXPECT_EQ(pkt.left_direction, 1);
   EXPECT_EQ(pkt.right_direction, 1);
 
   // Reverse
-  pkt.left_direction  = 2;
+  pkt.left_direction = 2;
   pkt.right_direction = 2;
   EXPECT_EQ(pkt.left_direction, 2);
   EXPECT_EQ(pkt.right_direction, 2);
 
   // Stopped
-  pkt.left_direction  = 0;
+  pkt.left_direction = 0;
   pkt.right_direction = 0;
   EXPECT_EQ(pkt.left_direction, 0);
   EXPECT_EQ(pkt.right_direction, 0);
@@ -303,13 +304,13 @@ TEST(OdometryPacket, DirectionEncoding)
 TEST(OdometryPacket, NegativeTicksRoundtrip)
 {
   LlOdometry pkt{};
-  pkt.type            = PACKET_ID_LL_ODOMETRY;
-  pkt.dt_millis       = 20;
-  pkt.left_ticks      = -5000;
-  pkt.right_ticks     = -5100;
-  pkt.left_speed      = -30;
-  pkt.right_speed     = -28;
-  pkt.left_direction  = 2;
+  pkt.type = PACKET_ID_LL_ODOMETRY;
+  pkt.dt_millis = 20;
+  pkt.left_ticks = -5000;
+  pkt.right_ticks = -5100;
+  pkt.left_speed = -30;
+  pkt.right_speed = -28;
+  pkt.left_direction = 2;
   pkt.right_direction = 2;
 
   roundtrip_struct(pkt);
@@ -336,16 +337,16 @@ TEST(StatusBitmask, BitPositions)
 {
   EXPECT_EQ(STATUS_BIT_INITIALIZED, 0x01);
   EXPECT_EQ(STATUS_BIT_RASPI_POWER, 0x02);
-  EXPECT_EQ(STATUS_BIT_CHARGING,    0x04);
-  EXPECT_EQ(STATUS_BIT_RAIN,        0x10);
+  EXPECT_EQ(STATUS_BIT_CHARGING, 0x04);
+  EXPECT_EQ(STATUS_BIT_RAIN, 0x10);
   EXPECT_EQ(STATUS_BIT_SOUND_AVAIL, 0x20);
-  EXPECT_EQ(STATUS_BIT_SOUND_BUSY,  0x40);
-  EXPECT_EQ(STATUS_BIT_UI_AVAIL,    0x80);
+  EXPECT_EQ(STATUS_BIT_SOUND_BUSY, 0x40);
+  EXPECT_EQ(STATUS_BIT_UI_AVAIL, 0x80);
 }
 
 TEST(EmergencyBitmask, BitPositions)
 {
   EXPECT_EQ(EMERGENCY_BIT_LATCH, 0x01);
-  EXPECT_EQ(EMERGENCY_BIT_STOP,  0x02);
-  EXPECT_EQ(EMERGENCY_BIT_LIFT,  0x04);
+  EXPECT_EQ(EMERGENCY_BIT_STOP, 0x02);
+  EXPECT_EQ(EMERGENCY_BIT_LIFT, 0x04);
 }

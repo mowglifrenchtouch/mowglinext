@@ -49,7 +49,7 @@ struct Segment2D
  * @param polygon Closed polygon (vertices listed once; last edge closes to first).
  * @return Signed area in the same units² as the vertex coordinates.
  */
-double polygon_area(const Polygon2D & polygon);
+double polygon_area(const Polygon2D& polygon);
 
 /**
  * @brief Compute the centroid (geometric centre of mass) of a simple polygon.
@@ -59,7 +59,7 @@ double polygon_area(const Polygon2D & polygon);
  * @param polygon Closed polygon with at least 3 vertices.
  * @return Centroid point. Returns {0, 0} for degenerate polygons.
  */
-Point2D polygon_centroid(const Polygon2D & polygon);
+Point2D polygon_centroid(const Polygon2D& polygon);
 
 // ---------------------------------------------------------------------------
 // Point / polygon predicates
@@ -74,7 +74,7 @@ Point2D polygon_centroid(const Polygon2D & polygon);
  * @param polygon Simple, closed polygon (no self-intersections assumed).
  * @return true if @p point is inside @p polygon.
  */
-bool point_in_polygon(const Point2D & point, const Polygon2D & polygon);
+bool point_in_polygon(const Point2D& point, const Polygon2D& polygon);
 
 // ---------------------------------------------------------------------------
 // Polygon transformation
@@ -92,7 +92,7 @@ bool point_in_polygon(const Point2D & point, const Polygon2D & polygon);
  * @param distance Positive value shrinks the polygon; negative expands it.
  * @return Offset polygon. Empty if the offset would collapse the polygon.
  */
-Polygon2D offset_polygon(const Polygon2D & polygon, double distance);
+Polygon2D offset_polygon(const Polygon2D& polygon, double distance);
 
 /**
  * @brief Rotate all vertices of a polygon around a given centre point.
@@ -102,7 +102,7 @@ Polygon2D offset_polygon(const Polygon2D & polygon, double distance);
  * @param center  Centre of rotation.
  * @return Rotated polygon.
  */
-Polygon2D rotate_polygon(const Polygon2D & polygon, double angle_rad, const Point2D & center);
+Polygon2D rotate_polygon(const Polygon2D& polygon, double angle_rad, const Point2D& center);
 
 // ---------------------------------------------------------------------------
 // Line–polygon clipping
@@ -120,10 +120,9 @@ Polygon2D rotate_polygon(const Polygon2D & polygon, double angle_rad, const Poin
  *                    single segment; concave polygons may yield multiple segments).
  * @return Zero or more segments lying inside @p polygon.
  */
-std::vector<Segment2D> clip_line_to_polygon(
-  const Point2D & line_start,
-  const Point2D & line_end,
-  const Polygon2D & polygon);
+std::vector<Segment2D> clip_line_to_polygon(const Point2D& line_start,
+                                            const Point2D& line_end,
+                                            const Polygon2D& polygon);
 
 // ---------------------------------------------------------------------------
 // Coverage planning helpers
@@ -140,7 +139,7 @@ std::vector<Segment2D> clip_line_to_polygon(
  * @param polygon  Area to analyse.
  * @return Optimal mowing angle in radians in [0, π).
  */
-double optimal_mowing_angle(const Polygon2D & polygon);
+double optimal_mowing_angle(const Polygon2D& polygon);
 
 // ---------------------------------------------------------------------------
 // ROS message conversion
@@ -152,7 +151,7 @@ double optimal_mowing_angle(const Polygon2D & polygon);
  * @param msg ROS polygon message.
  * @return Equivalent Polygon2D.
  */
-Polygon2D geometry_polygon_to_points(const geometry_msgs::msg::Polygon & msg);
+Polygon2D geometry_polygon_to_points(const geometry_msgs::msg::Polygon& msg);
 
 /**
  * @brief Convert a Polygon2D back to a ROS geometry_msgs::msg::Polygon.
@@ -162,7 +161,7 @@ Polygon2D geometry_polygon_to_points(const geometry_msgs::msg::Polygon & msg);
  * @param polygon Input polygon.
  * @return Equivalent ROS polygon message.
  */
-geometry_msgs::msg::Polygon points_to_geometry_polygon(const Polygon2D & polygon);
+geometry_msgs::msg::Polygon points_to_geometry_polygon(const Polygon2D& polygon);
 
 }  // namespace mowgli_coverage_planner
 

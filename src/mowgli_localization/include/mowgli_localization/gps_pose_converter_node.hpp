@@ -36,9 +36,8 @@
 #include <memory>
 
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
-#include "rclcpp/rclcpp.hpp"
-
 #include "mowgli_interfaces/msg/absolute_pose.hpp"
+#include "rclcpp/rclcpp.hpp"
 
 namespace mowgli_localization
 {
@@ -46,7 +45,7 @@ namespace mowgli_localization
 class GpsPoseConverterNode : public rclcpp::Node
 {
 public:
-  explicit GpsPoseConverterNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit GpsPoseConverterNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
   ~GpsPoseConverterNode() override = default;
 
 private:
@@ -80,7 +79,7 @@ private:
    * @return     Variance in m² to place on the diagonal, or -1.0 if the fix
    *             quality is too poor to publish.
    */
-  double compute_xy_variance(const mowgli_interfaces::msg::AbsolutePose & msg) const;
+  double compute_xy_variance(const mowgli_interfaces::msg::AbsolutePose& msg) const;
 
   // ---------------------------------------------------------------------------
   // Parameters

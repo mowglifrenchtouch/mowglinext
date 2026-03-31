@@ -6,16 +6,17 @@
 #include <string>
 #include <vector>
 
+#include "geometry_msgs/msg/point32.hpp"
+#include "mowgli_interfaces/msg/emergency.hpp"
+#include "mowgli_interfaces/msg/power.hpp"
+#include "mowgli_interfaces/msg/status.hpp"
+#include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "tf2_ros/buffer.hpp"
 #include "tf2_ros/transform_listener.hpp"
-#include "geometry_msgs/msg/point32.hpp"
-#include "nav_msgs/msg/path.hpp"
-#include "mowgli_interfaces/msg/status.hpp"
-#include "mowgli_interfaces/msg/emergency.hpp"
-#include "mowgli_interfaces/msg/power.hpp"
 
-namespace mowgli_behavior {
+namespace mowgli_behavior
+{
 
 /// Shared context passed to all BehaviorTree nodes via the blackboard.
 ///
@@ -24,7 +25,8 @@ namespace mowgli_behavior {
 /// this struct with:
 ///
 ///   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
-struct BTContext {
+struct BTContext
+{
   /// ROS2 node used by action/service nodes to create clients.
   rclcpp::Node::SharedPtr node;
 
@@ -32,9 +34,9 @@ struct BTContext {
   // Latest sensor state (updated by topic subscribers in the main node)
   // -----------------------------------------------------------------------
 
-  mowgli_interfaces::msg::Status    latest_status;
+  mowgli_interfaces::msg::Status latest_status;
   mowgli_interfaces::msg::Emergency latest_emergency;
-  mowgli_interfaces::msg::Power     latest_power;
+  mowgli_interfaces::msg::Power latest_power;
 
   // -----------------------------------------------------------------------
   // Command state (set by HighLevelControl service handler)
@@ -90,12 +92,14 @@ struct BTContext {
   // opennav_coverage_msgs in the context header.
   // -----------------------------------------------------------------------
 
-  struct Swath {
+  struct Swath
+  {
     geometry_msgs::msg::Point32 start;
     geometry_msgs::msg::Point32 end;
   };
 
-  struct CoveragePlan {
+  struct CoveragePlan
+  {
     std::vector<Swath> swaths;
     std::vector<nav_msgs::msg::Path> turns;  // N-1 turns for N swaths
   };

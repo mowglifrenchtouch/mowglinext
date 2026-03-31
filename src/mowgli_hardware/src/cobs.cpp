@@ -6,8 +6,7 @@
 namespace mowgli_hardware
 {
 
-std::size_t cobs_encode(
-  const uint8_t * input, std::size_t len, uint8_t * output) noexcept
+std::size_t cobs_encode(const uint8_t* input, std::size_t len, uint8_t* output) noexcept
 {
   assert(input != nullptr || len == 0);
   assert(output != nullptr);
@@ -19,16 +18,21 @@ std::size_t cobs_encode(
   // Current run length: counts bytes since the last 0x00 (or start).
   uint8_t code = 1;
 
-  for (std::size_t i = 0; i < len; ++i) {
-    if (input[i] == 0x00) {
+  for (std::size_t i = 0; i < len; ++i)
+  {
+    if (input[i] == 0x00)
+    {
       // Flush current run: write the code byte, start a new run.
       output[code_idx] = code;
       code_idx = out_idx++;
       code = 1;
-    } else {
+    }
+    else
+    {
       output[out_idx++] = input[i];
       ++code;
-      if (code == 0xFF) {
+      if (code == 0xFF)
+      {
         // Run of 254 non-zero bytes: write the max-run code and restart.
         output[code_idx] = code;
         code_idx = out_idx++;
@@ -42,41 +46,46 @@ std::size_t cobs_encode(
   return out_idx;
 }
 
-std::size_t cobs_decode(
-  const uint8_t * input, std::size_t len, uint8_t * output) noexcept
+std::size_t cobs_decode(const uint8_t* input, std::size_t len, uint8_t* output) noexcept
 {
   assert(input != nullptr || len == 0);
   assert(output != nullptr);
 
-  if (len == 0) {
+  if (len == 0)
+  {
     return 0;
   }
 
   std::size_t out_idx = 0;
   std::size_t in_idx = 0;
 
-  while (in_idx < len) {
+  while (in_idx < len)
+  {
     const uint8_t code = input[in_idx];
-    if (code == 0x00) {
+    if (code == 0x00)
+    {
       // 0x00 must not appear in a COBS-encoded stream; signal error.
       return 0;
     }
 
     // Bounds check: the run claims code-1 more bytes exist.
-    if (in_idx + code > len) {
+    if (in_idx + code > len)
+    {
       return 0;
     }
 
     ++in_idx;
 
     // Copy (code - 1) literal bytes.
-    for (uint8_t k = 1; k < code; ++k) {
+    for (uint8_t k = 1; k < code; ++k)
+    {
       output[out_idx++] = input[in_idx++];
     }
 
     // After every run that was not the maximum length (0xFF), and if we have
     // not yet consumed all input, output a 0x00 to restore the original byte.
-    if (code < 0xFF && in_idx < len) {
+    if (code < 0xFF && in_idx < len)
+    {
       output[out_idx++] = 0x00;
     }
   }

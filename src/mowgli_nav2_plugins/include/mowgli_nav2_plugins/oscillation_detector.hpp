@@ -10,9 +10,9 @@
 #ifndef MOWGLI_NAV2_PLUGINS__OSCILLATION_DETECTOR_HPP_
 #define MOWGLI_NAV2_PLUGINS__OSCILLATION_DETECTOR_HPP_
 
-#include <deque>
 #include <cmath>
 #include <cstddef>
+#include <deque>
 
 namespace mowgli_nav2_plugins
 {
@@ -54,10 +54,13 @@ public:
    * @param v_eps         Threshold for mean normalised linear velocity in (0,1).
    * @param omega_eps     Threshold for mean normalised angular velocity in (0,1).
    */
-  void update(
-    double v, double omega,
-    double v_max, double v_backwards_max, double omega_max,
-    double v_eps, double omega_eps);
+  void update(double v,
+              double omega,
+              double v_max,
+              double v_backwards_max,
+              double omega_max,
+              double v_eps,
+              double omega_eps);
 
   /**
    * @brief Return the last computed oscillation decision.
@@ -95,8 +98,8 @@ private:
   static int sign(double x) noexcept;
 
   std::deque<VelMeasurement> buffer_;  ///< Rolling window of measurements.
-  std::size_t capacity_{0};            ///< Maximum window size.
-  bool oscillating_{false};            ///< Current oscillation state.
+  std::size_t capacity_{0};  ///< Maximum window size.
+  bool oscillating_{false};  ///< Current oscillation state.
 };
 
 }  // namespace mowgli_nav2_plugins

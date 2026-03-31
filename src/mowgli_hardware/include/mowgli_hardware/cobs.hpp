@@ -46,8 +46,9 @@ namespace mowgli_hardware
  * @param output Destination buffer (must not overlap @p input).
  * @return Number of bytes written to @p output.
  */
-[[nodiscard]] std::size_t cobs_encode(
-  const uint8_t * input, std::size_t len, uint8_t * output) noexcept;
+[[nodiscard]] std::size_t cobs_encode(const uint8_t* input,
+                                      std::size_t len,
+                                      uint8_t* output) noexcept;
 
 /**
  * @brief COBS-decode @p len bytes from @p input into @p output.
@@ -60,7 +61,8 @@ namespace mowgli_hardware
  * @param output Destination buffer; must be at least @p len bytes.
  * @return Number of decoded bytes written, or 0 on encoding error.
  */
-[[nodiscard]] std::size_t cobs_decode(
-  const uint8_t * input, std::size_t len, uint8_t * output) noexcept;
+[[nodiscard]] std::size_t cobs_decode(const uint8_t* input,
+                                      std::size_t len,
+                                      uint8_t* output) noexcept;
 
 }  // namespace mowgli_hardware

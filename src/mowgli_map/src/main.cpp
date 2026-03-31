@@ -19,7 +19,7 @@
 
 #include "mowgli_map/map_server_node.hpp"
 
-int main(int argc, char ** argv)
+int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
 

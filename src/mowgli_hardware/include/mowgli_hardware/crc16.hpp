@@ -23,6 +23,6 @@ namespace mowgli_hardware
  * @param len  Number of bytes to include in the CRC.
  * @return Computed 16-bit CRC value.
  */
-[[nodiscard]] uint16_t crc16_ccitt(const uint8_t * data, std::size_t len) noexcept;
+[[nodiscard]] uint16_t crc16_ccitt(const uint8_t* data, std::size_t len) noexcept;
 
 }  // namespace mowgli_hardware

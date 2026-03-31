@@ -122,11 +122,19 @@ jobs:
 
       - name: Run cppcheck
         run: |
-          FILES=$(find src/ \( -name "*.cpp" -o -name "*.hpp" \))
+          FILES=$(find src/ \( -name "*.cpp" -o -name "*.hpp" \) -not -path "*/test/*")
           if [ -z "$FILES" ]; then
             echo "No C++ files found — skipping."
             exit 0
           fi
+          echo "$FILES" | xargs cppcheck \
+            --enable=warning,performance,portability \
+            --suppress=missingInclude \
+            --suppress=unmatchedSuppression \
+            --error-exitcode=1 \
+            --xml \
+            2>cppcheck-report.xml
+          # Also print human-readable output
           echo "$FILES" | xargs cppcheck \
             --enable=warning,performance,portability \
             --suppress=missingInclude \
@@ -140,4 +148,5 @@ jobs:
         with:
           name: cppcheck-report
           path: cppcheck-report.xml
+          if-no-files-found: ignore
           retention-days: 7

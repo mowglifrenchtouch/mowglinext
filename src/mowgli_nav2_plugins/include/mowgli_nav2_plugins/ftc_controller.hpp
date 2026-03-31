@@ -6,31 +6,28 @@
 #ifndef MOWGLI_NAV2_PLUGINS__FTC_CONTROLLER_HPP_
 #define MOWGLI_NAV2_PLUGINS__FTC_CONTROLLER_HPP_
 
-#include <string>
-#include <vector>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <vector>
 
-#include <rclcpp/rclcpp.hpp>
-#include <rclcpp_lifecycle/lifecycle_node.hpp>
-
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <nav2_core/controller.hpp>
 #include <nav2_core/goal_checker.hpp>
 #include <nav2_costmap_2d/costmap_2d_ros.hpp>
 #include <nav_msgs/msg/path.hpp>
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include <geometry_msgs/msg/twist_stamped.hpp>
-#include <geometry_msgs/msg/twist.hpp>
-#include <visualization_msgs/msg/marker.hpp>
-
-#include <tf2_ros/buffer.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <tf2/LinearMath/Quaternion.h>  // No .hpp equivalent for LinearMath
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
-
-#include <Eigen/Geometry>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2_ros/buffer.hpp>
 
 #include "mowgli_nav2_plugins/oscillation_detector.hpp"
+#include <Eigen/Geometry>
+#include <visualization_msgs/msg/marker.hpp>
 
 namespace mowgli_nav2_plugins
 {
@@ -55,24 +52,23 @@ public:
 
   // ── nav2_core::Controller interface ──────────────────────────────────────
 
-  void configure(
-    const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
-    std::string name,
-    std::shared_ptr<tf2_ros::Buffer> tf,
-    std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros) override;
+  void configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr& parent,
+                 std::string name,
+                 std::shared_ptr<tf2_ros::Buffer> tf,
+                 std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros) override;
 
   void cleanup() override;
   void activate() override;
   void deactivate() override;
 
-  void setPlan(const nav_msgs::msg::Path & path) override;
+  void setPlan(const nav_msgs::msg::Path& path) override;
 
   geometry_msgs::msg::TwistStamped computeVelocityCommands(
-    const geometry_msgs::msg::PoseStamped & pose,
-    const geometry_msgs::msg::Twist & velocity,
-    nav2_core::GoalChecker * goal_checker) override;
+      const geometry_msgs::msg::PoseStamped& pose,
+      const geometry_msgs::msg::Twist& velocity,
+      nav2_core::GoalChecker* goal_checker) override;
 
-  void setSpeedLimit(const double & speed_limit, const bool & percentage) override;
+  void setSpeedLimit(const double& speed_limit, const bool& percentage) override;
 
 private:
   // ── State machine ─────────────────────────────────────────────────────────
@@ -105,7 +101,7 @@ private:
 
   std::vector<geometry_msgs::msg::PoseStamped> global_plan_;
   Eigen::Affine3d current_control_point_;  ///< Carrot pose in map frame.
-  Eigen::Affine3d local_control_point_;    ///< Carrot pose in base_link frame.
+  Eigen::Affine3d local_control_point_;  ///< Carrot pose in base_link frame.
 
   uint32_t current_index_{0};
   double current_progress_{0.0};
@@ -113,7 +109,7 @@ private:
 
   // ── PID state ────────────────────────────────────────────────────────────
 
-  void calculate_velocity_commands(double dt, geometry_msgs::msg::TwistStamped & cmd_vel);
+  void calculate_velocity_commands(double dt, geometry_msgs::msg::TwistStamped& cmd_vel);
 
   double lat_error_{0.0};
   double lon_error_{0.0};
@@ -130,13 +126,15 @@ private:
   // ── Collision checking ────────────────────────────────────────────────────
 
   bool checkCollision(int max_points);
-  void debugObstacle(
-    visualization_msgs::msg::Marker & obstacle_points,
-    double x, double y, unsigned char cost, int max_ids);
+  void debugObstacle(visualization_msgs::msg::Marker& obstacle_points,
+                     double x,
+                     double y,
+                     unsigned char cost,
+                     int max_ids);
 
   // ── Oscillation detection ─────────────────────────────────────────────────
 
-  bool checkOscillation(const geometry_msgs::msg::TwistStamped & cmd_vel);
+  bool checkOscillation(const geometry_msgs::msg::TwistStamped& cmd_vel);
 
   FailureDetector failure_detector_;
   rclcpp::Time time_last_oscillation_;
@@ -151,23 +149,25 @@ private:
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
-  nav2_costmap_2d::Costmap2D * costmap_map_{nullptr};
+  nav2_costmap_2d::Costmap2D* costmap_map_{nullptr};
 
   std::string plugin_name_;
 
   // Publishers (lifecycle-aware)
-  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr global_point_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr
+      global_point_pub_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr global_plan_pub_;
-  rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::Marker>::SharedPtr obstacle_marker_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::Marker>::SharedPtr
+      obstacle_marker_pub_;
 
   // ── Parameters ────────────────────────────────────────────────────────────
 
   /// Declare all ROS2 parameters and populate the local config struct.
-  void declareParameters(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node);
+  void declareParameters(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
 
   /// Parameter-change callback registered with the node.
   rcl_interfaces::msg::SetParametersResult onParameterChange(
-    const std::vector<rclcpp::Parameter> & params);
+      const std::vector<rclcpp::Parameter>& params);
 
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;
 

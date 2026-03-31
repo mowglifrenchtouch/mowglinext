@@ -21,29 +21,23 @@
 #include <string>
 #include <vector>
 
-#include <grid_map_core/GridMap.hpp>
-#include <grid_map_ros/GridMapRosConverter.hpp>
-
-#include <rclcpp/rclcpp.hpp>
-
 #include <geometry_msgs/msg/point.hpp>
 #include <geometry_msgs/msg/polygon.hpp>
+#include <nav2_msgs/msg/costmap_filter_info.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
-#include <std_srvs/srv/trigger.hpp>
-
-#include <grid_map_msgs/msg/grid_map.hpp>
-
-#include <nav2_msgs/msg/costmap_filter_info.hpp>
-
+#include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 
+#include "mowgli_map/map_types.hpp"
+#include <grid_map_core/GridMap.hpp>
+#include <grid_map_msgs/msg/grid_map.hpp>
+#include <grid_map_ros/GridMapRosConverter.hpp>
 #include <mowgli_interfaces/msg/obstacle_array.hpp>
 #include <mowgli_interfaces/msg/status.hpp>
 #include <mowgli_interfaces/srv/add_mowing_area.hpp>
 #include <mowgli_interfaces/srv/get_mowing_area.hpp>
-
-#include "mowgli_map/map_types.hpp"
+#include <std_srvs/srv/trigger.hpp>
 
 namespace mowgli_map
 {
@@ -64,30 +58,45 @@ class MapServerNode : public rclcpp::Node
 public:
   /// @brief Construct the node, declare parameters, create map, wire up all
   ///        publishers, subscribers, services, and timers.
-  explicit MapServerNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions{});
+  explicit MapServerNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions{});
 
   ~MapServerNode() override = default;
 
   // Non-copyable, non-movable (ROS nodes are singletons in practice)
-  MapServerNode(const MapServerNode &)            = delete;
-  MapServerNode & operator=(const MapServerNode &) = delete;
-  MapServerNode(MapServerNode &&)                 = delete;
-  MapServerNode & operator=(MapServerNode &&)     = delete;
+  MapServerNode(const MapServerNode&) = delete;
+  MapServerNode& operator=(const MapServerNode&) = delete;
+  MapServerNode(MapServerNode&&) = delete;
+  MapServerNode& operator=(MapServerNode&&) = delete;
 
   // ── Accessors used by unit tests ────────────────────────────────────────
 
   /// Direct access to the underlying map (test-only, guarded by map_mutex_).
-  grid_map::GridMap & map() { return map_; }
-  const grid_map::GridMap & map() const { return map_; }
+  grid_map::GridMap& map()
+  {
+    return map_;
+  }
+  const grid_map::GridMap& map() const
+  {
+    return map_;
+  }
 
   /// Mutex guarding the map (test-only).
-  std::mutex & map_mutex() { return map_mutex_; }
+  std::mutex& map_mutex()
+  {
+    return map_mutex_;
+  }
 
   /// Expose decay rate for unit tests.
-  double decay_rate_per_hour() const { return decay_rate_per_hour_; }
+  double decay_rate_per_hour() const
+  {
+    return decay_rate_per_hour_;
+  }
 
   /// Expose mower width for unit tests.
-  double mower_width() const { return mower_width_; }
+  double mower_width() const
+  {
+    return mower_width_;
+  }
 
   /// Run the publish/decay timer callback once (test-only).
   void tick_once(double elapsed_seconds);
@@ -121,25 +130,20 @@ private:
 
   // ── Services ─────────────────────────────────────────────────────────────
 
-  void on_save_map(
-    const std_srvs::srv::Trigger::Request::SharedPtr req,
-    std_srvs::srv::Trigger::Response::SharedPtr res);
+  void on_save_map(const std_srvs::srv::Trigger::Request::SharedPtr req,
+                   std_srvs::srv::Trigger::Response::SharedPtr res);
 
-  void on_load_map(
-    const std_srvs::srv::Trigger::Request::SharedPtr req,
-    std_srvs::srv::Trigger::Response::SharedPtr res);
+  void on_load_map(const std_srvs::srv::Trigger::Request::SharedPtr req,
+                   std_srvs::srv::Trigger::Response::SharedPtr res);
 
-  void on_clear_map(
-    const std_srvs::srv::Trigger::Request::SharedPtr req,
-    std_srvs::srv::Trigger::Response::SharedPtr res);
+  void on_clear_map(const std_srvs::srv::Trigger::Request::SharedPtr req,
+                    std_srvs::srv::Trigger::Response::SharedPtr res);
 
-  void on_add_no_go_zone(
-    const mowgli_interfaces::srv::AddMowingArea::Request::SharedPtr req,
-    mowgli_interfaces::srv::AddMowingArea::Response::SharedPtr res);
+  void on_add_no_go_zone(const mowgli_interfaces::srv::AddMowingArea::Request::SharedPtr req,
+                         mowgli_interfaces::srv::AddMowingArea::Response::SharedPtr res);
 
-  void on_get_mowing_area(
-    const mowgli_interfaces::srv::GetMowingArea::Request::SharedPtr req,
-    mowgli_interfaces::srv::GetMowingArea::Response::SharedPtr res);
+  void on_get_mowing_area(const mowgli_interfaces::srv::GetMowingArea::Request::SharedPtr req,
+                          mowgli_interfaces::srv::GetMowingArea::Response::SharedPtr res);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -157,9 +161,8 @@ private:
   void mark_cells_mowed(double x, double y);
 
   /// Check whether a point is inside a polygon (ray-casting algorithm).
-  static bool point_in_polygon(
-    const geometry_msgs::msg::Point32 & pt,
-    const geometry_msgs::msg::Polygon & polygon) noexcept;
+  static bool point_in_polygon(const geometry_msgs::msg::Point32& pt,
+                               const geometry_msgs::msg::Polygon& polygon) noexcept;
 
   /// Build and publish the keepout OccupancyGrid mask and CostmapFilterInfo.
   /// Outside the mowing boundary → 100 (lethal).  No-go zones → 100.
@@ -173,7 +176,7 @@ private:
 
   /// Compare incoming obstacles to current set and trigger replan if needed.
   void diff_and_update_obstacles(
-    const std::vector<mowgli_interfaces::msg::TrackedObstacle> & incoming);
+      const std::vector<mowgli_interfaces::msg::TrackedObstacle>& incoming);
 
   /// Build and publish the speed OccupancyGrid mask and CostmapFilterInfo.
   /// Cells within one tool_width of the mowing boundary → 50 (50 % speed).
@@ -186,12 +189,13 @@ private:
   void load_areas_from_params();
 
   /// Parse a polygon from "x1,y1;x2,y2;..." string format.
-  static geometry_msgs::msg::Polygon parse_polygon_string(const std::string & s);
+  static geometry_msgs::msg::Polygon parse_polygon_string(const std::string& s);
 
   // ── Area entry ────────────────────────────────────────────────────────────
 
   /// A named area (mowing or navigation) with optional interior obstacles.
-  struct AreaEntry {
+  struct AreaEntry
+  {
     std::string name;
     geometry_msgs::msg::Polygon polygon;
     std::vector<geometry_msgs::msg::Polygon> obstacles;

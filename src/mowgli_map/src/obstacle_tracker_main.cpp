@@ -17,7 +17,7 @@
 
 #include "mowgli_map/obstacle_tracker_node.hpp"
 
-int main(int argc, char ** argv)
+int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<mowgli_map::ObstacleTrackerNode>());

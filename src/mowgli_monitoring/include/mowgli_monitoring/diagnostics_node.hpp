@@ -50,31 +50,31 @@ using DiagLevel = diagnostic_msgs::msg::DiagnosticStatus;
 struct DiagnosticsState
 {
   // Hardware Bridge / Status
-  std::optional<mowgli_interfaces::msg::Status>    last_status{};
-  rclcpp::Time                                     last_status_time{0, 0, RCL_ROS_TIME};
+  std::optional<mowgli_interfaces::msg::Status> last_status{};
+  rclcpp::Time last_status_time{0, 0, RCL_ROS_TIME};
 
   // Emergency
   std::optional<mowgli_interfaces::msg::Emergency> last_emergency{};
 
   // Power / Battery
-  std::optional<mowgli_interfaces::msg::Power>     last_power{};
+  std::optional<mowgli_interfaces::msg::Power> last_power{};
 
   // IMU
   rclcpp::Time last_imu_time{0, 0, RCL_ROS_TIME};
-  bool         imu_ever_received{false};
+  bool imu_ever_received{false};
 
   // LiDAR
   rclcpp::Time last_scan_time{0, 0, RCL_ROS_TIME};
-  bool         scan_ever_received{false};
+  bool scan_ever_received{false};
 
   // Odometry
   rclcpp::Time last_odom_time{0, 0, RCL_ROS_TIME};
-  bool         odom_ever_received{false};
+  bool odom_ever_received{false};
 
   // GPS
   std::optional<sensor_msgs::msg::NavSatFix> last_gps{};
-  rclcpp::Time                               last_gps_time{0, 0, RCL_ROS_TIME};
-  bool                                       gps_ever_received{false};
+  rclcpp::Time last_gps_time{0, 0, RCL_ROS_TIME};
+  bool gps_ever_received{false};
 };
 
 /**
@@ -86,11 +86,7 @@ struct DiagnosticsState
  * @param error_sec Age above which the status becomes ERROR.
  * @return One of DiagLevel::{OK, WARN, ERROR}.
  */
-uint8_t classify_freshness(
-  double age_sec,
-  bool never,
-  double warn_sec,
-  double error_sec);
+uint8_t classify_freshness(double age_sec, bool never, double warn_sec, double error_sec);
 
 /**
  * @brief Classifies a battery percentage against configurable thresholds.
@@ -136,21 +132,24 @@ std::string level_name(uint8_t level);
 class DiagnosticsNode : public rclcpp::Node
 {
 public:
-  explicit DiagnosticsNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit DiagnosticsNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
   ~DiagnosticsNode() override = default;
 
   // Public only for unit-test access — do not call from production code.
-  diagnostic_msgs::msg::DiagnosticStatus check_hardware_bridge(const rclcpp::Time & now) const;
+  diagnostic_msgs::msg::DiagnosticStatus check_hardware_bridge(const rclcpp::Time& now) const;
   diagnostic_msgs::msg::DiagnosticStatus check_emergency() const;
   diagnostic_msgs::msg::DiagnosticStatus check_battery() const;
-  diagnostic_msgs::msg::DiagnosticStatus check_imu(const rclcpp::Time & now) const;
-  diagnostic_msgs::msg::DiagnosticStatus check_lidar(const rclcpp::Time & now) const;
-  diagnostic_msgs::msg::DiagnosticStatus check_gps(const rclcpp::Time & now) const;
-  diagnostic_msgs::msg::DiagnosticStatus check_odometry(const rclcpp::Time & now) const;
+  diagnostic_msgs::msg::DiagnosticStatus check_imu(const rclcpp::Time& now) const;
+  diagnostic_msgs::msg::DiagnosticStatus check_lidar(const rclcpp::Time& now) const;
+  diagnostic_msgs::msg::DiagnosticStatus check_gps(const rclcpp::Time& now) const;
+  diagnostic_msgs::msg::DiagnosticStatus check_odometry(const rclcpp::Time& now) const;
   diagnostic_msgs::msg::DiagnosticStatus check_motors() const;
 
   /// Read-only access to the internal state snapshot (for tests).
-  const DiagnosticsState & state() const {return state_;}
+  const DiagnosticsState& state() const
+  {
+    return state_;
+  }
 
 private:
   // ---- Initialisation helpers -----------------------------------------------
@@ -177,7 +176,7 @@ private:
   // ---- Helpers --------------------------------------------------------------
 
   /// Build a KeyValue pair.
-  static diagnostic_msgs::msg::KeyValue kv(const std::string & key, const std::string & value);
+  static diagnostic_msgs::msg::KeyValue kv(const std::string& key, const std::string& value);
 
   /// Format a float with a fixed number of decimal places.
   static std::string fmt_float(double value, int decimals = 2);
@@ -186,13 +185,13 @@ private:
 
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr pub_diagnostics_;
 
-  rclcpp::Subscription<mowgli_interfaces::msg::Status>::SharedPtr    sub_status_;
+  rclcpp::Subscription<mowgli_interfaces::msg::Status>::SharedPtr sub_status_;
   rclcpp::Subscription<mowgli_interfaces::msg::Emergency>::SharedPtr sub_emergency_;
-  rclcpp::Subscription<mowgli_interfaces::msg::Power>::SharedPtr     sub_power_;
-  rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr             sub_imu_;
-  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr       sub_scan_;
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr           sub_odom_;
-  rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr       sub_gps_;
+  rclcpp::Subscription<mowgli_interfaces::msg::Power>::SharedPtr sub_power_;
+  rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_scan_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;
+  rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr sub_gps_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 

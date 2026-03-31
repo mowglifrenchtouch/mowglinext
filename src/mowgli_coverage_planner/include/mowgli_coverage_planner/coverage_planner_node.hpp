@@ -25,12 +25,11 @@
 #include <vector>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "mowgli_coverage_planner/polygon_utils.hpp"
 #include "mowgli_interfaces/action/plan_coverage.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
-
-#include "mowgli_coverage_planner/polygon_utils.hpp"
 
 namespace mowgli_coverage_planner
 {
@@ -55,7 +54,7 @@ public:
    *
    * @param options Node options forwarded to rclcpp::Node.
    */
-  explicit CoveragePlannerNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit CoveragePlannerNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
 private:
   // -------------------------------------------------------------------------
@@ -67,9 +66,8 @@ private:
    *
    * Always accepts the goal so that the BT node does not have to retry.
    */
-  rclcpp_action::GoalResponse handle_goal(
-    const rclcpp_action::GoalUUID & uuid,
-    std::shared_ptr<const PlanCoverageAction::Goal> goal);
+  rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID& uuid,
+                                          std::shared_ptr<const PlanCoverageAction::Goal> goal);
 
   /**
    * @brief Handle a cancel request.
@@ -77,7 +75,7 @@ private:
    * Accepts the cancellation — the execute thread will check for it.
    */
   rclcpp_action::CancelResponse handle_cancel(
-    const std::shared_ptr<GoalHandlePlanCoverage> goal_handle);
+      const std::shared_ptr<GoalHandlePlanCoverage> goal_handle);
 
   /**
    * @brief Spawn the execute callback on a detached thread.
@@ -113,9 +111,7 @@ private:
    * @param frame   Coordinate frame for the header.
    * @return Path tracing the headland contour(s).
    */
-  nav_msgs::msg::Path generate_outline_path(
-    const Polygon2D & outer,
-    const std::string & frame) const;
+  nav_msgs::msg::Path generate_outline_path(const Polygon2D& outer, const std::string& frame) const;
 
   /**
    * @brief Compute the total Euclidean path length.
@@ -123,7 +119,7 @@ private:
    * @param path Input path (pose sequence).
    * @return Sum of distances between consecutive poses in metres.
    */
-  static double compute_path_length(const nav_msgs::msg::Path & path);
+  static double compute_path_length(const nav_msgs::msg::Path& path);
 
   /**
    * @brief Build a PoseStamped with the given position and heading.
@@ -134,8 +130,10 @@ private:
    * @param frame Coordinate frame id.
    * @return Fully populated PoseStamped.
    */
-  static geometry_msgs::msg::PoseStamped make_pose(
-    double x, double y, double yaw, const std::string & frame);
+  static geometry_msgs::msg::PoseStamped make_pose(double x,
+                                                   double y,
+                                                   double yaw,
+                                                   const std::string& frame);
 
   // -------------------------------------------------------------------------
   // ROS interfaces
@@ -149,13 +147,13 @@ private:
   // Parameters
   // -------------------------------------------------------------------------
 
-  double tool_width_;           ///< Mowing blade / disc width [m].
-  int headland_passes_;         ///< Number of headland perimeter passes.
-  double headland_width_;       ///< Width of one headland pass [m].
-  double default_mow_angle_;    ///< Default mowing angle [deg]; -1 = auto.
-  double path_spacing_;         ///< Distance between parallel swath centrelines [m].
-  double min_turning_radius_;   ///< Minimum robot turning radius for Dubins curves [m].
-  std::string map_frame_;       ///< TF frame for output paths.
+  double tool_width_;  ///< Mowing blade / disc width [m].
+  int headland_passes_;  ///< Number of headland perimeter passes.
+  double headland_width_;  ///< Width of one headland pass [m].
+  double default_mow_angle_;  ///< Default mowing angle [deg]; -1 = auto.
+  double path_spacing_;  ///< Distance between parallel swath centrelines [m].
+  double min_turning_radius_;  ///< Minimum robot turning radius for Dubins curves [m].
+  std::string map_frame_;  ///< TF frame for output paths.
 };
 
 }  // namespace mowgli_coverage_planner

@@ -22,17 +22,18 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-/**
- * @brief Compute CRC-16 CCITT-FALSE over @p len bytes starting at @p data.
- *
- * @param data Pointer to the byte buffer. Must not be NULL if len > 0.
- * @param len  Number of bytes to include in the CRC computation.
- * @return 16-bit CRC value.
- */
-uint16_t crc16_ccitt(const uint8_t *data, size_t len);
+  /**
+   * @brief Compute CRC-16 CCITT-FALSE over @p len bytes starting at @p data.
+   *
+   * @param data Pointer to the byte buffer. Must not be NULL if len > 0.
+   * @param len  Number of bytes to include in the CRC computation.
+   * @return 16-bit CRC value.
+   */
+  uint16_t crc16_ccitt(const uint8_t* data, size_t len);
 
 #ifdef __cplusplus
 } /* extern "C" */

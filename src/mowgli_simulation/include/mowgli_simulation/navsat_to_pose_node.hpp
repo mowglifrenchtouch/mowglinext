@@ -33,7 +33,7 @@ namespace mowgli_simulation
 class NavSatToPoseNode : public rclcpp::Node
 {
 public:
-  explicit NavSatToPoseNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit NavSatToPoseNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
   ~NavSatToPoseNode() override = default;
 
 private:

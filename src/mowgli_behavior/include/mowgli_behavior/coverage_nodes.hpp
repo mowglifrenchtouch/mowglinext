@@ -6,22 +6,21 @@
 
 #include "behaviortree_cpp/behavior_tree.h"
 #include "behaviortree_cpp/bt_factory.h"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_action/rclcpp_action.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
-#include "nav2_msgs/action/follow_path.hpp"
-#include "nav2_msgs/action/navigate_to_pose.hpp"
-#include "nav_msgs/msg/path.hpp"
-
-#include "opennav_coverage_msgs/action/compute_coverage_path.hpp"
-#include "opennav_coverage_msgs/msg/coordinate.hpp"
-#include "opennav_coverage_msgs/msg/coordinates.hpp"
-
 #include "mowgli_behavior/bt_context.hpp"
 #include "mowgli_interfaces/srv/get_mowing_area.hpp"
 #include "mowgli_interfaces/srv/mower_control.hpp"
+#include "nav2_msgs/action/follow_path.hpp"
+#include "nav2_msgs/action/navigate_to_pose.hpp"
+#include "nav_msgs/msg/path.hpp"
+#include "opennav_coverage_msgs/action/compute_coverage_path.hpp"
+#include "opennav_coverage_msgs/msg/coordinate.hpp"
+#include "opennav_coverage_msgs/msg/coordinates.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
 
-namespace mowgli_behavior {
+namespace mowgli_behavior
+{
 
 // ---------------------------------------------------------------------------
 // ComputeCoverage
@@ -34,24 +33,26 @@ namespace mowgli_behavior {
 ///   area_index (uint32_t, default "0") - mowing area index.
 /// Output ports:
 ///   first_swath_start (string) - "x;y;yaw" of the first swath start point.
-class ComputeCoverage : public BT::StatefulActionNode {
+class ComputeCoverage : public BT::StatefulActionNode
+{
 public:
   using CoverageAction = opennav_coverage_msgs::action::ComputeCoveragePath;
   using GoalHandle = rclcpp_action::ClientGoalHandle<CoverageAction>;
 
   ComputeCoverage(const std::string& name, const BT::NodeConfig& config)
-    : BT::StatefulActionNode(name, config) {}
+      : BT::StatefulActionNode(name, config)
+  {
+  }
 
-  static BT::PortsList providedPorts() {
-    return {
-      BT::InputPort<uint32_t>("area_index", 0u, "Mowing area index to plan"),
-      BT::OutputPort<std::string>("first_swath_start", "First swath start as 'x;y;yaw'")
-    };
+  static BT::PortsList providedPorts()
+  {
+    return {BT::InputPort<uint32_t>("area_index", 0u, "Mowing area index to plan"),
+            BT::OutputPort<std::string>("first_swath_start", "First swath start as 'x;y;yaw'")};
   }
 
   BT::NodeStatus onStart() override;
   BT::NodeStatus onRunning() override;
-  void           onHalted() override;
+  void onHalted() override;
 
 private:
   rclcpp_action::Client<CoverageAction>::SharedPtr action_client_;
@@ -77,7 +78,8 @@ private:
 ///
 /// Blade control (SetMowerEnabled) is handled internally:
 ///   ON during swath following, OFF during transit.
-class ExecuteSwathBySwath : public BT::StatefulActionNode {
+class ExecuteSwathBySwath : public BT::StatefulActionNode
+{
 public:
   using Nav2Navigate = nav2_msgs::action::NavigateToPose;
   using Nav2FollowPath = nav2_msgs::action::FollowPath;
@@ -85,18 +87,22 @@ public:
   using FollowGoalHandle = rclcpp_action::ClientGoalHandle<Nav2FollowPath>;
 
   ExecuteSwathBySwath(const std::string& name, const BT::NodeConfig& config)
-    : BT::StatefulActionNode(name, config) {}
+      : BT::StatefulActionNode(name, config)
+  {
+  }
 
-  static BT::PortsList providedPorts() {
+  static BT::PortsList providedPorts()
+  {
     return {};
   }
 
   BT::NodeStatus onStart() override;
   BT::NodeStatus onRunning() override;
-  void           onHalted() override;
+  void onHalted() override;
 
 private:
-  enum class Phase {
+  enum class Phase
+  {
     TRANSIT_TO_SWATH,
     MOWING_SWATH,
     DONE
@@ -104,7 +110,7 @@ private:
 
   /// Build a 2-pose nav_msgs/Path from swath start to end with correct heading.
   nav_msgs::msg::Path swathToPath(const BTContext::Swath& swath,
-                                   const rclcpp::Node::SharedPtr& node) const;
+                                  const rclcpp::Node::SharedPtr& node) const;
 
   /// Send NavigateToPose goal to reach swath start.
   void sendTransitGoal(const BTContext::Swath& swath);

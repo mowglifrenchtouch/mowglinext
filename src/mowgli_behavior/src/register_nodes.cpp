@@ -2,7 +2,8 @@
 #include "mowgli_behavior/condition_nodes.hpp"
 #include "mowgli_behavior/coverage_nodes.hpp"
 
-namespace mowgli_behavior {
+namespace mowgli_behavior
+{
 
 void registerAllNodes(BT::BehaviorTreeFactory& factory)
 {

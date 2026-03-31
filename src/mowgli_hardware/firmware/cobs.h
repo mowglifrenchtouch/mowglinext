@@ -25,7 +25,8 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 /**
@@ -36,42 +37,41 @@ extern "C" {
  * @param raw_len Number of raw (pre-encoding) bytes.
  * @return Maximum number of bytes that cobs_encode() may write.
  */
-#define COBS_MAX_ENCODED_SIZE(raw_len) \
-    ((size_t)(raw_len) + ((size_t)(raw_len) / 254u) + 1u)
+#define COBS_MAX_ENCODED_SIZE(raw_len) ((size_t)(raw_len) + ((size_t)(raw_len) / 254u) + 1u)
 
-/**
- * @brief COBS-encode @p len bytes from @p input into @p output.
- *
- * The caller must ensure @p output is at least COBS_MAX_ENCODED_SIZE(len)
- * bytes. The function does NOT write frame delimiter bytes (0x00); framing
- * is the responsibility of the caller (see mowgli_comms_send()).
- *
- * @p input and @p output must not overlap.
- *
- * @param input   Pointer to the raw data to encode. Must not be NULL.
- * @param len     Number of bytes to encode. May be 0.
- * @param output  Destination buffer. Must not be NULL.
- * @return Number of bytes written to @p output.
- */
-size_t cobs_encode(const uint8_t *input, size_t len, uint8_t *output);
+  /**
+   * @brief COBS-encode @p len bytes from @p input into @p output.
+   *
+   * The caller must ensure @p output is at least COBS_MAX_ENCODED_SIZE(len)
+   * bytes. The function does NOT write frame delimiter bytes (0x00); framing
+   * is the responsibility of the caller (see mowgli_comms_send()).
+   *
+   * @p input and @p output must not overlap.
+   *
+   * @param input   Pointer to the raw data to encode. Must not be NULL.
+   * @param len     Number of bytes to encode. May be 0.
+   * @param output  Destination buffer. Must not be NULL.
+   * @return Number of bytes written to @p output.
+   */
+  size_t cobs_encode(const uint8_t* input, size_t len, uint8_t* output);
 
-/**
- * @brief COBS-decode @p len bytes from @p input into @p output.
- *
- * @p input must not contain any 0x00 bytes; the caller must strip frame
- * delimiters before calling this function.
- *
- * @p output must be at least @p len bytes (decoded data is never larger
- * than the encoded form).
- *
- * @p input and @p output must not overlap.
- *
- * @param input   COBS-encoded data without delimiters. Must not be NULL.
- * @param len     Number of encoded bytes. Must be >= 1.
- * @param output  Destination buffer. Must not be NULL.
- * @return Number of decoded bytes written, or 0 if the input is malformed.
- */
-size_t cobs_decode(const uint8_t *input, size_t len, uint8_t *output);
+  /**
+   * @brief COBS-decode @p len bytes from @p input into @p output.
+   *
+   * @p input must not contain any 0x00 bytes; the caller must strip frame
+   * delimiters before calling this function.
+   *
+   * @p output must be at least @p len bytes (decoded data is never larger
+   * than the encoded form).
+   *
+   * @p input and @p output must not overlap.
+   *
+   * @param input   COBS-encoded data without delimiters. Must not be NULL.
+   * @param len     Number of encoded bytes. Must be >= 1.
+   * @param output  Destination buffer. Must not be NULL.
+   * @return Number of decoded bytes written, or 0 if the input is malformed.
+   */
+  size_t cobs_decode(const uint8_t* input, size_t len, uint8_t* output);
 
 #ifdef __cplusplus
 } /* extern "C" */

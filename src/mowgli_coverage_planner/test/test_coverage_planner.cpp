@@ -21,16 +21,15 @@
 #include <thread>
 #include <vector>
 
-#include "gtest/gtest.h"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_action/rclcpp_action.hpp"
 #include "geometry_msgs/msg/point32.hpp"
 #include "geometry_msgs/msg/polygon.hpp"
-#include "mowgli_interfaces/action/plan_coverage.hpp"
-#include "nav_msgs/msg/path.hpp"
-
+#include "gtest/gtest.h"
 #include "mowgli_coverage_planner/coverage_planner_node.hpp"
 #include "mowgli_coverage_planner/polygon_utils.hpp"
+#include "mowgli_interfaces/action/plan_coverage.hpp"
+#include "nav_msgs/msg/path.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
 
 using mowgli_coverage_planner::CoveragePlannerNode;
 using PlanCoverageAction = mowgli_interfaces::action::PlanCoverage;
@@ -58,25 +57,31 @@ protected:
 
     // Build a minimal client node.
     client_node_ = rclcpp::Node::make_shared("test_client_node");
-    action_client_ = rclcpp_action::create_client<PlanCoverageAction>(
-      client_node_, "/coverage_planner_node/plan_coverage");
+    action_client_ =
+        rclcpp_action::create_client<PlanCoverageAction>(client_node_,
+                                                         "/coverage_planner_node/plan_coverage");
 
     // Spin both nodes on a background thread.
     executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
     executor_->add_node(planner_node_);
     executor_->add_node(client_node_);
 
-    spin_thread_ = std::thread([this]() {executor_->spin();});
+    spin_thread_ = std::thread(
+        [this]()
+        {
+          executor_->spin();
+        });
 
     // Wait for action server to be ready.
     ASSERT_TRUE(action_client_->wait_for_action_server(5s))
-      << "PlanCoverage action server did not become available within 5 s";
+        << "PlanCoverage action server did not become available within 5 s";
   }
 
   void TearDown() override
   {
     executor_->cancel();
-    if (spin_thread_.joinable()) {
+    if (spin_thread_.joinable())
+    {
       spin_thread_.join();
     }
   }
@@ -90,12 +95,10 @@ protected:
   }
 
   /// Build an axis-aligned rectangular polygon (CCW).
-  static geometry_msgs::msg::Polygon make_rectangle(
-    float x0, float y0, float x1, float y1)
+  static geometry_msgs::msg::Polygon make_rectangle(float x0, float y0, float x1, float y1)
   {
     geometry_msgs::msg::Polygon poly;
-    for (auto [x, y] : std::vector<std::pair<float, float>>{
-        {x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}})
+    for (auto [x, y] : std::vector<std::pair<float, float>>{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}})
     {
       geometry_msgs::msg::Point32 pt;
       pt.x = x;
@@ -108,10 +111,10 @@ protected:
 
   /// Send an action goal and block until the result is received.
   std::shared_ptr<const PlanCoverageAction::Result> send_goal(
-    const geometry_msgs::msg::Polygon & boundary,
-    const std::vector<geometry_msgs::msg::Polygon> & obstacles = {},
-    double mow_angle_deg = -1.0,
-    bool skip_outline = false)
+      const geometry_msgs::msg::Polygon& boundary,
+      const std::vector<geometry_msgs::msg::Polygon>& obstacles = {},
+      double mow_angle_deg = -1.0,
+      bool skip_outline = false)
   {
     PlanCoverageAction::Goal goal;
     goal.outer_boundary = boundary;
@@ -125,26 +128,29 @@ protected:
     std::atomic<bool> result_ready{false};
 
     send_goal_options.result_callback =
-      [&result, &result_ready](const GoalHandle::WrappedResult & wr)
-      {
-        result = wr.result;
-        result_ready.store(true);
-      };
+        [&result, &result_ready](const GoalHandle::WrappedResult& wr)
+    {
+      result = wr.result;
+      result_ready.store(true);
+    };
 
     auto goal_handle_future = action_client_->async_send_goal(goal, send_goal_options);
 
     // Wait for goal acceptance.
-    if (goal_handle_future.wait_for(5s) != std::future_status::ready) {
+    if (goal_handle_future.wait_for(5s) != std::future_status::ready)
+    {
       return nullptr;
     }
     auto goal_handle = goal_handle_future.get();
-    if (!goal_handle) {
+    if (!goal_handle)
+    {
       return nullptr;
     }
 
     // Wait for result.
     const auto deadline = std::chrono::steady_clock::now() + 15s;
-    while (!result_ready.load() && std::chrono::steady_clock::now() < deadline) {
+    while (!result_ready.load() && std::chrono::steady_clock::now() < deadline)
+    {
       std::this_thread::sleep_for(50ms);
     }
 
@@ -191,8 +197,7 @@ TEST_F(CoveragePlannerTest, TotalDistanceReasonable)
   const double min_expected = inner_area / path_spacing * 0.5;
 
   EXPECT_GT(res->total_distance, min_expected)
-    << "total_distance=" << res->total_distance
-    << " expected > " << min_expected;
+      << "total_distance=" << res->total_distance << " expected > " << min_expected;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +211,7 @@ TEST_F(CoveragePlannerTest, OutlinePathGeneratedWhenNotSkipped)
   ASSERT_NE(res, nullptr) << "Action goal timed out";
   ASSERT_TRUE(res->success) << res->message;
   EXPECT_GT(res->outline_path.poses.size(), 0u)
-    << "Expected non-empty outline path when skip_outline=false";
+      << "Expected non-empty outline path when skip_outline=false";
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +225,7 @@ TEST_F(CoveragePlannerTest, OutlinePathEmptyWhenSkipped)
   ASSERT_NE(res, nullptr) << "Action goal timed out";
   ASSERT_TRUE(res->success) << res->message;
   EXPECT_EQ(res->outline_path.poses.size(), 0u)
-    << "Expected empty outline path when skip_outline=true";
+      << "Expected empty outline path when skip_outline=true";
 }
 
 // ---------------------------------------------------------------------------
@@ -236,21 +241,18 @@ TEST_F(CoveragePlannerTest, CustomMowAngle45Degrees)
   ASSERT_GT(res->path.poses.size(), 0u);
 
   // Extract yaw from the first pose quaternion.
-  const auto & q = res->path.poses.front().pose.orientation;
-  const double yaw = std::atan2(
-    2.0 * (q.w * q.z + q.x * q.y),
-    1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+  const auto& q = res->path.poses.front().pose.orientation;
+  const double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
 
   // The yaw should be close to +/-45 deg (forward) or +/-135 deg (return pass).
   const double abs_yaw = std::abs(yaw);
   const double pi_4 = M_PI / 4.0;
 
-  const bool near_45_or_135 =
-    (std::abs(abs_yaw - pi_4) < 15.0 * M_PI / 180.0) ||
-    (std::abs(abs_yaw - 3.0 * pi_4) < 15.0 * M_PI / 180.0);
+  const bool near_45_or_135 = (std::abs(abs_yaw - pi_4) < 15.0 * M_PI / 180.0) ||
+                              (std::abs(abs_yaw - 3.0 * pi_4) < 15.0 * M_PI / 180.0);
 
-  EXPECT_TRUE(near_45_or_135)
-    << "Expected yaw near +/-45 deg or +/-135 deg, got " << yaw * 180.0 / M_PI << " deg";
+  EXPECT_TRUE(near_45_or_135) << "Expected yaw near +/-45 deg or +/-135 deg, got "
+                              << yaw * 180.0 / M_PI << " deg";
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +278,9 @@ TEST_F(CoveragePlannerTest, DegeneratePolygonRejected)
 {
   geometry_msgs::msg::Polygon bad_poly;
   geometry_msgs::msg::Point32 pt;
-  pt.x = 0.0f; pt.y = 0.0f; pt.z = 0.0f;
+  pt.x = 0.0f;
+  pt.y = 0.0f;
+  pt.z = 0.0f;
   bad_poly.points.push_back(pt);
   pt.x = 1.0f;
   bad_poly.points.push_back(pt);
@@ -323,14 +327,13 @@ TEST_F(CoveragePlannerTest, BoustrophedonHeadingAlternates)
   ASSERT_NE(res, nullptr) << "Action goal timed out";
   ASSERT_TRUE(res->success) << "Action failed: " << res->message;
 
-  const auto & poses = res->path.poses;
+  const auto& poses = res->path.poses;
   ASSERT_GT(poses.size(), 1u) << "Expected non-empty path";
 
   // Extract yaw from a quaternion (planar rotation about Z).
-  auto quat_to_yaw = [](const geometry_msgs::msg::Quaternion & q) -> double {
-    return std::atan2(
-      2.0 * (q.w * q.z + q.x * q.y),
-      1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+  auto quat_to_yaw = [](const geometry_msgs::msg::Quaternion& q) -> double
+  {
+    return std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
   };
 
   // Swath spacing used by the test fixture is 0.5 m.
@@ -342,13 +345,15 @@ TEST_F(CoveragePlannerTest, BoustrophedonHeadingAlternates)
   int uturn_count = 0;
   int alternation_failures = 0;
 
-  for (size_t i = 1; i < poses.size(); ++i) {
+  for (size_t i = 1; i < poses.size(); ++i)
+  {
     const double dx = poses[i].pose.position.x - poses[i - 1].pose.position.x;
     const double dy = poses[i].pose.position.y - poses[i - 1].pose.position.y;
     const double dist = std::hypot(dx, dy);
 
     // Skip intra-swath steps (very short) and large gaps (shouldn't exist).
-    if (dist < spacing * 0.5 || dist > spacing * 2.0) {
+    if (dist < spacing * 0.5 || dist > spacing * 2.0)
+    {
       continue;
     }
 
@@ -357,31 +362,31 @@ TEST_F(CoveragePlannerTest, BoustrophedonHeadingAlternates)
     const double yaw_prev = quat_to_yaw(poses[i - 1].pose.orientation);
     const double yaw_curr = quat_to_yaw(poses[i].pose.orientation);
     double delta = std::abs(yaw_curr - yaw_prev);
-    while (delta > M_PI) delta = std::abs(delta - 2.0 * M_PI);
+    while (delta > M_PI)
+      delta = std::abs(delta - 2.0 * M_PI);
 
     // Heading should differ by at least 135° (3π/4) at a U-turn.
-    if (delta < M_PI * 3.0 / 4.0) {
+    if (delta < M_PI * 3.0 / 4.0)
+    {
       ++alternation_failures;
-      ADD_FAILURE() << "U-turn at pose " << i
-        << ": heading delta = " << delta * 180.0 / M_PI
-        << "° (expected ≥ 135°)."
-        << "  yaw_prev=" << yaw_prev * 180.0 / M_PI
-        << "° yaw_curr=" << yaw_curr * 180.0 / M_PI << "°";
+      ADD_FAILURE() << "U-turn at pose " << i << ": heading delta = " << delta * 180.0 / M_PI
+                    << "° (expected ≥ 135°)."
+                    << "  yaw_prev=" << yaw_prev * 180.0 / M_PI
+                    << "° yaw_curr=" << yaw_curr * 180.0 / M_PI << "°";
     }
   }
 
-  EXPECT_GT(uturn_count, 0)
-    << "No U-turn boundaries detected — path may contain only one swath "
-       "or swath spacing heuristic needs adjustment";
+  EXPECT_GT(uturn_count, 0) << "No U-turn boundaries detected — path may contain only one swath "
+                               "or swath spacing heuristic needs adjustment";
   EXPECT_EQ(alternation_failures, 0)
-    << alternation_failures << " U-turn(s) did not alternate heading by ~180°";
+      << alternation_failures << " U-turn(s) did not alternate heading by ~180°";
 }
 
 // ---------------------------------------------------------------------------
 // GTest main
 // ---------------------------------------------------------------------------
 
-int main(int argc, char ** argv)
+int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
   ::testing::InitGoogleTest(&argc, argv);

@@ -45,7 +45,7 @@ public:
    * The buffer pointed to by @p data is valid only for the duration of the
    * callback.  Copy if longer retention is needed.
    */
-  using PacketCallback = std::function<void(const uint8_t * data, std::size_t len)>;
+  using PacketCallback = std::function<void(const uint8_t* data, std::size_t len)>;
 
   PacketHandler() = default;
 
@@ -69,7 +69,7 @@ public:
    * @param data Pointer to freshly-read serial bytes.
    * @param len  Number of bytes to process.
    */
-  void feed(const uint8_t * data, std::size_t len);
+  void feed(const uint8_t* data, std::size_t len);
 
   /**
    * @brief Encode a raw payload into a fully-framed COBS packet.
@@ -81,8 +81,7 @@ public:
    * @param len  Payload length in bytes.
    * @return Framed byte vector ready to pass to SerialPort::write().
    */
-  [[nodiscard]] std::vector<uint8_t> encode_packet(
-    const uint8_t * data, std::size_t len) const;
+  [[nodiscard]] std::vector<uint8_t> encode_packet(const uint8_t* data, std::size_t len) const;
 
   /**
    * @brief Verify the CRC-16 appended to a decoded packet.
@@ -94,7 +93,7 @@ public:
    * @param len  Total length including the CRC.
    * @return true if the CRC matches.
    */
-  [[nodiscard]] static bool verify_crc(const uint8_t * data, std::size_t len) noexcept;
+  [[nodiscard]] static bool verify_crc(const uint8_t* data, std::size_t len) noexcept;
 
   /**
    * @brief Compute and write the CRC-16 into the last two bytes of @p data.
@@ -106,23 +105,35 @@ public:
    * @param data Buffer of @p len bytes; last two bytes are overwritten.
    * @param len  Total buffer size including the two CRC bytes.
    */
-  static void append_crc(uint8_t * data, std::size_t len) noexcept;
+  static void append_crc(uint8_t* data, std::size_t len) noexcept;
 
   // ---------------------------------------------------------------------------
   // Diagnostic counters (monotonically increasing, never reset)
   // ---------------------------------------------------------------------------
 
   /// Number of packets successfully decoded and dispatched.
-  [[nodiscard]] uint64_t rx_ok() const noexcept { return rx_ok_; }
+  [[nodiscard]] uint64_t rx_ok() const noexcept
+  {
+    return rx_ok_;
+  }
 
   /// Number of frames discarded due to CRC mismatch.
-  [[nodiscard]] uint64_t rx_crc_errors() const noexcept { return rx_crc_errors_; }
+  [[nodiscard]] uint64_t rx_crc_errors() const noexcept
+  {
+    return rx_crc_errors_;
+  }
 
   /// Number of frames discarded because they exceeded kMaxPacketBytes.
-  [[nodiscard]] uint64_t rx_overflow() const noexcept { return rx_overflow_; }
+  [[nodiscard]] uint64_t rx_overflow() const noexcept
+  {
+    return rx_overflow_;
+  }
 
   /// Number of COBS decoding failures.
-  [[nodiscard]] uint64_t rx_cobs_errors() const noexcept { return rx_cobs_errors_; }
+  [[nodiscard]] uint64_t rx_cobs_errors() const noexcept
+  {
+    return rx_cobs_errors_;
+  }
 
 private:
   /// Process one complete COBS frame (contents of rx_buf_ up to rx_len_).

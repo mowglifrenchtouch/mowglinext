@@ -47,12 +47,11 @@ constexpr double kEps = 1e-9;
  * @return true if a unique intersection exists (lines not parallel).
  */
 bool line_line_intersection(
-  const Point2D & p, const Point2D & d1,
-  const Point2D & q, const Point2D & d2,
-  Point2D & intersection)
+    const Point2D& p, const Point2D& d1, const Point2D& q, const Point2D& d2, Point2D& intersection)
 {
   const double denom = d1.first * d2.second - d1.second * d2.first;
-  if (std::abs(denom) < kEps) {
+  if (std::abs(denom) < kEps)
+  {
     return false;  // parallel
   }
   const double dx = q.first - p.first;
@@ -70,7 +69,8 @@ bool line_line_intersection(
  */
 Polygon2D ensure_ccw(Polygon2D poly)
 {
-  if (polygon_area(poly) < 0.0) {
+  if (polygon_area(poly) < 0.0)
+  {
     std::reverse(poly.begin(), poly.end());
   }
   return poly;
@@ -82,16 +82,17 @@ Polygon2D ensure_ccw(Polygon2D poly)
 // polygon_area
 // ---------------------------------------------------------------------------
 
-double polygon_area(const Polygon2D & polygon)
+double polygon_area(const Polygon2D& polygon)
 {
   const std::size_t n = polygon.size();
-  if (n < 3) {
+  if (n < 3)
+  {
     return 0.0;
   }
   double area = 0.0;
-  for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
-    area += (polygon[j].first + polygon[i].first) *
-            (polygon[j].second - polygon[i].second);
+  for (std::size_t i = 0, j = n - 1; i < n; j = i++)
+  {
+    area += (polygon[j].first + polygon[i].first) * (polygon[j].second - polygon[i].second);
   }
   return area * 0.5;
 }
@@ -100,16 +101,19 @@ double polygon_area(const Polygon2D & polygon)
 // polygon_centroid
 // ---------------------------------------------------------------------------
 
-Point2D polygon_centroid(const Polygon2D & polygon)
+Point2D polygon_centroid(const Polygon2D& polygon)
 {
   const std::size_t n = polygon.size();
-  if (n == 0) {
+  if (n == 0)
+  {
     return {0.0, 0.0};
   }
-  if (n == 1) {
+  if (n == 1)
+  {
     return polygon[0];
   }
-  if (n == 2) {
+  if (n == 2)
+  {
     return {(polygon[0].first + polygon[1].first) * 0.5,
             (polygon[0].second + polygon[1].second) * 0.5};
   }
@@ -118,20 +122,22 @@ Point2D polygon_centroid(const Polygon2D & polygon)
   double cy = 0.0;
   double signed_area = 0.0;
 
-  for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
-    const double a = polygon[j].first * polygon[i].second -
-                     polygon[i].first * polygon[j].second;
+  for (std::size_t i = 0, j = n - 1; i < n; j = i++)
+  {
+    const double a = polygon[j].first * polygon[i].second - polygon[i].first * polygon[j].second;
     signed_area += a;
     cx += (polygon[j].first + polygon[i].first) * a;
     cy += (polygon[j].second + polygon[i].second) * a;
   }
 
   signed_area *= 0.5;
-  if (std::abs(signed_area) < kEps) {
+  if (std::abs(signed_area) < kEps)
+  {
     // Degenerate — fall back to arithmetic mean.
     double sx = 0.0;
     double sy = 0.0;
-    for (const auto & p : polygon) {
+    for (const auto& p : polygon)
+    {
       sx += p.first;
       sy += p.second;
     }
@@ -147,10 +153,11 @@ Point2D polygon_centroid(const Polygon2D & polygon)
 // point_in_polygon  (ray-casting)
 // ---------------------------------------------------------------------------
 
-bool point_in_polygon(const Point2D & point, const Polygon2D & polygon)
+bool point_in_polygon(const Point2D& point, const Polygon2D& polygon)
 {
   const std::size_t n = polygon.size();
-  if (n < 3) {
+  if (n < 3)
+  {
     return false;
   }
 
@@ -158,7 +165,8 @@ bool point_in_polygon(const Point2D & point, const Polygon2D & polygon)
   const double px = point.first;
   const double py = point.second;
 
-  for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
+  for (std::size_t i = 0, j = n - 1; i < n; j = i++)
+  {
     const double xi = polygon[i].first;
     const double yi = polygon[i].second;
     const double xj = polygon[j].first;
@@ -166,10 +174,12 @@ bool point_in_polygon(const Point2D & point, const Polygon2D & polygon)
 
     // Check if the ray cast horizontally from (px, py) crosses this edge.
     const bool crosses_y = ((yi > py) != (yj > py));
-    if (crosses_y) {
+    if (crosses_y)
+    {
       // x-coordinate of the edge at y = py.
       const double x_cross = xj + (py - yj) / (yi - yj) * (xi - xj);
-      if (px < x_cross) {
+      if (px < x_cross)
+      {
         inside = !inside;
       }
     }
@@ -181,10 +191,11 @@ bool point_in_polygon(const Point2D & point, const Polygon2D & polygon)
 // offset_polygon
 // ---------------------------------------------------------------------------
 
-Polygon2D offset_polygon(const Polygon2D & polygon, double distance)
+Polygon2D offset_polygon(const Polygon2D& polygon, double distance)
 {
   const std::size_t n = polygon.size();
-  if (n < 3) {
+  if (n < 3)
+  {
     return {};
   }
 
@@ -199,22 +210,24 @@ Polygon2D offset_polygon(const Polygon2D & polygon, double distance)
 
   struct OffsetEdge
   {
-    Point2D point;      // any point on the offset edge
+    Point2D point;  // any point on the offset edge
     Point2D direction;  // unit direction of the edge
   };
 
   std::vector<OffsetEdge> offset_edges;
   offset_edges.reserve(n);
 
-  for (std::size_t i = 0; i < n; i++) {
-    const Point2D & a = poly[i];
-    const Point2D & b = poly[(i + 1) % n];
+  for (std::size_t i = 0; i < n; i++)
+  {
+    const Point2D& a = poly[i];
+    const Point2D& b = poly[(i + 1) % n];
 
     const double dx = b.first - a.first;
     const double dy = b.second - a.second;
     const double len = std::hypot(dx, dy);
 
-    if (len < kEps) {
+    if (len < kEps)
+    {
       continue;  // degenerate edge — skip
     }
 
@@ -229,7 +242,8 @@ Polygon2D offset_polygon(const Polygon2D & polygon, double distance)
     offset_edges.push_back({shifted_origin, edge_dir});
   }
 
-  if (offset_edges.size() < 3) {
+  if (offset_edges.size() < 3)
+  {
     return {};
   }
 
@@ -238,14 +252,18 @@ Polygon2D offset_polygon(const Polygon2D & polygon, double distance)
   Polygon2D result;
   result.reserve(m);
 
-  for (std::size_t i = 0; i < m; i++) {
-    const OffsetEdge & e0 = offset_edges[i];
-    const OffsetEdge & e1 = offset_edges[(i + 1) % m];
+  for (std::size_t i = 0; i < m; i++)
+  {
+    const OffsetEdge& e0 = offset_edges[i];
+    const OffsetEdge& e1 = offset_edges[(i + 1) % m];
 
     Point2D intersection;
-    if (line_line_intersection(e0.point, e0.direction, e1.point, e1.direction, intersection)) {
+    if (line_line_intersection(e0.point, e0.direction, e1.point, e1.direction, intersection))
+    {
       result.push_back(intersection);
-    } else {
+    }
+    else
+    {
       // Parallel edges — use the point on the next offset edge directly.
       result.push_back(e1.point);
     }
@@ -254,7 +272,8 @@ Polygon2D offset_polygon(const Polygon2D & polygon, double distance)
   // Sanity-check: if the offset collapsed or inverted the polygon, return empty.
   const double original_area = std::abs(polygon_area(poly));
   const double offset_area = std::abs(polygon_area(result));
-  if (offset_area < kEps || (distance > 0.0 && offset_area >= original_area)) {
+  if (offset_area < kEps || (distance > 0.0 && offset_area >= original_area))
+  {
     return {};
   }
 
@@ -265,10 +284,7 @@ Polygon2D offset_polygon(const Polygon2D & polygon, double distance)
 // rotate_polygon
 // ---------------------------------------------------------------------------
 
-Polygon2D rotate_polygon(
-  const Polygon2D & polygon,
-  double angle_rad,
-  const Point2D & center)
+Polygon2D rotate_polygon(const Polygon2D& polygon, double angle_rad, const Point2D& center)
 {
   const double cos_a = std::cos(angle_rad);
   const double sin_a = std::sin(angle_rad);
@@ -276,13 +292,12 @@ Polygon2D rotate_polygon(
   Polygon2D result;
   result.reserve(polygon.size());
 
-  for (const auto & v : polygon) {
+  for (const auto& v : polygon)
+  {
     const double tx = v.first - center.first;
     const double ty = v.second - center.second;
-    result.push_back({
-        center.first + cos_a * tx - sin_a * ty,
-        center.second + sin_a * tx + cos_a * ty
-      });
+    result.push_back(
+        {center.first + cos_a * tx - sin_a * ty, center.second + sin_a * tx + cos_a * ty});
   }
   return result;
 }
@@ -296,13 +311,13 @@ Polygon2D rotate_polygon(
 // winding-order-agnostic and works for both convex and simple concave polygons.
 // ---------------------------------------------------------------------------
 
-std::vector<Segment2D> clip_line_to_polygon(
-  const Point2D & line_start,
-  const Point2D & line_end,
-  const Polygon2D & polygon)
+std::vector<Segment2D> clip_line_to_polygon(const Point2D& line_start,
+                                            const Point2D& line_end,
+                                            const Polygon2D& polygon)
 {
   const std::size_t n = polygon.size();
-  if (n < 3) {
+  if (n < 3)
+  {
     return {};
   }
 
@@ -315,7 +330,8 @@ std::vector<Segment2D> clip_line_to_polygon(
   t_values.push_back(0.0);
   t_values.push_back(1.0);
 
-  for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
+  for (std::size_t i = 0, j = n - 1; i < n; j = i++)
+  {
     // Edge from polygon[j] to polygon[i].
     const double ex = polygon[i].first - polygon[j].first;
     const double ey = polygon[i].second - polygon[j].second;
@@ -325,7 +341,8 @@ std::vector<Segment2D> clip_line_to_polygon(
     // Cross-multiply to get t and s.
     const double denom = dx * ey - dy * ex;
 
-    if (std::abs(denom) < kEps) {
+    if (std::abs(denom) < kEps)
+    {
       continue;  // line is parallel to this edge
     }
 
@@ -336,7 +353,8 @@ std::vector<Segment2D> clip_line_to_polygon(
     const double s = (ox * dy - oy * dx) / denom;
 
     // Only record if the crossing is within the line segment AND on the edge.
-    if (t > kEps && t < 1.0 - kEps && s > -kEps && s < 1.0 + kEps) {
+    if (t > kEps && t < 1.0 - kEps && s > -kEps && s < 1.0 + kEps)
+    {
       t_values.push_back(t);
     }
   }
@@ -345,43 +363,49 @@ std::vector<Segment2D> clip_line_to_polygon(
   std::sort(t_values.begin(), t_values.end());
 
   // Deduplicate very close t-values to avoid zero-length segments.
-  t_values.erase(
-    std::unique(
-      t_values.begin(), t_values.end(),
-      [](double a, double b) {return b - a < kEps;}),
-    t_values.end());
+  t_values.erase(std::unique(t_values.begin(),
+                             t_values.end(),
+                             [](double a, double b)
+                             {
+                               return b - a < kEps;
+                             }),
+                 t_values.end());
 
   // Classify each sub-interval: keep it if its midpoint is inside the polygon.
   std::vector<Segment2D> result;
 
-  for (std::size_t k = 0; k + 1 < t_values.size(); ++k) {
+  for (std::size_t k = 0; k + 1 < t_values.size(); ++k)
+  {
     const double t0 = t_values[k];
     const double t1 = t_values[k + 1];
     const double tm = 0.5 * (t0 + t1);
 
     const Point2D mid = {line_start.first + tm * dx, line_start.second + tm * dy};
 
-    if (point_in_polygon(mid, polygon)) {
-      result.push_back({
-          {line_start.first + t0 * dx, line_start.second + t0 * dy},
-          {line_start.first + t1 * dx, line_start.second + t1 * dy}
-        });
+    if (point_in_polygon(mid, polygon))
+    {
+      result.push_back({{line_start.first + t0 * dx, line_start.second + t0 * dy},
+                        {line_start.first + t1 * dx, line_start.second + t1 * dy}});
     }
   }
 
   // Merge adjacent segments (they arise when a crossing is exactly on a vertex).
-  if (result.size() > 1) {
+  if (result.size() > 1)
+  {
     std::vector<Segment2D> merged;
     merged.push_back(result[0]);
-    for (std::size_t k = 1; k < result.size(); ++k) {
-      auto & last = merged.back();
-      const auto & cur = result[k];
-      const double gap = std::hypot(
-        cur.start.first - last.end.first,
-        cur.start.second - last.end.second);
-      if (gap < kEps * 10.0) {
+    for (std::size_t k = 1; k < result.size(); ++k)
+    {
+      auto& last = merged.back();
+      const auto& cur = result[k];
+      const double gap =
+          std::hypot(cur.start.first - last.end.first, cur.start.second - last.end.second);
+      if (gap < kEps * 10.0)
+      {
         last.end = cur.end;
-      } else {
+      }
+      else
+      {
         merged.push_back(cur);
       }
     }
@@ -395,9 +419,10 @@ std::vector<Segment2D> clip_line_to_polygon(
 // optimal_mowing_angle
 // ---------------------------------------------------------------------------
 
-double optimal_mowing_angle(const Polygon2D & polygon)
+double optimal_mowing_angle(const Polygon2D& polygon)
 {
-  if (polygon.size() < 3) {
+  if (polygon.size() < 3)
+  {
     return 0.0;
   }
 
@@ -412,7 +437,8 @@ double optimal_mowing_angle(const Polygon2D & polygon)
   double min_perp_extent = std::numeric_limits<double>::max();
 
   // Test every 5° in [0°, 180°).
-  for (int deg = 0; deg < 180; deg += 5) {
+  for (int deg = 0; deg < 180; deg += 5)
+  {
     const double angle_rad = deg * kDegToRad;
 
     // Unit vector perpendicular to the mowing direction.
@@ -422,14 +448,16 @@ double optimal_mowing_angle(const Polygon2D & polygon)
     double proj_min = std::numeric_limits<double>::max();
     double proj_max = std::numeric_limits<double>::lowest();
 
-    for (const auto & v : polygon) {
+    for (const auto& v : polygon)
+    {
       const double proj = perp_x * v.first + perp_y * v.second;
       proj_min = std::min(proj_min, proj);
       proj_max = std::max(proj_max, proj);
     }
 
     const double extent = proj_max - proj_min;
-    if (extent < min_perp_extent) {
+    if (extent < min_perp_extent)
+    {
       min_perp_extent = extent;
       best_angle_rad = angle_rad;
     }
@@ -442,21 +470,23 @@ double optimal_mowing_angle(const Polygon2D & polygon)
 // ROS message conversion
 // ---------------------------------------------------------------------------
 
-Polygon2D geometry_polygon_to_points(const geometry_msgs::msg::Polygon & msg)
+Polygon2D geometry_polygon_to_points(const geometry_msgs::msg::Polygon& msg)
 {
   Polygon2D result;
   result.reserve(msg.points.size());
-  for (const auto & pt : msg.points) {
+  for (const auto& pt : msg.points)
+  {
     result.push_back({static_cast<double>(pt.x), static_cast<double>(pt.y)});
   }
   return result;
 }
 
-geometry_msgs::msg::Polygon points_to_geometry_polygon(const Polygon2D & polygon)
+geometry_msgs::msg::Polygon points_to_geometry_polygon(const Polygon2D& polygon)
 {
   geometry_msgs::msg::Polygon msg;
   msg.points.reserve(polygon.size());
-  for (const auto & pt : polygon) {
+  for (const auto& pt : polygon)
+  {
     geometry_msgs::msg::Point32 p;
     p.x = static_cast<float>(pt.first);
     p.y = static_cast<float>(pt.second);

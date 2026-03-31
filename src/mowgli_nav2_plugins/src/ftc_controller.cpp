@@ -19,7 +19,6 @@
 #include <nav2_core/controller_exceptions.hpp>
 #include <nav2_costmap_2d/costmap_2d.hpp>
 #include <nav2_util/node_utils.hpp>
-
 #include <tf2/utils.hpp>
 #include <tf2_ros/transform_listener.hpp>
 
@@ -28,11 +27,10 @@ namespace mowgli_nav2_plugins
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-void FTCController::configure(
-  const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
-  std::string name,
-  std::shared_ptr<tf2_ros::Buffer> tf,
-  std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros)
+void FTCController::configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr& parent,
+                              std::string name,
+                              std::shared_ptr<tf2_ros::Buffer> tf,
+                              std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros)
 {
   node_ = parent;
   plugin_name_ = name;
@@ -41,7 +39,8 @@ void FTCController::configure(
   costmap_map_ = costmap_ros_->getCostmap();
 
   auto node = node_.lock();
-  if (!node) {
+  if (!node)
+  {
     throw std::runtime_error("FTCController: failed to lock lifecycle node during configure");
   }
 
@@ -51,19 +50,19 @@ void FTCController::configure(
   declareParameters(node);
 
   // Publishers (created as lifecycle-aware, activated/deactivated with the node).
-  global_point_pub_ = node->create_publisher<geometry_msgs::msg::PoseStamped>(
-    plugin_name_ + "/global_point", 1);
-  global_plan_pub_ = node->create_publisher<nav_msgs::msg::Path>(
-    plugin_name_ + "/global_plan", rclcpp::QoS(1).transient_local());
-  obstacle_marker_pub_ = node->create_publisher<visualization_msgs::msg::Marker>(
-    plugin_name_ + "/costmap_marker", 10);
+  global_point_pub_ =
+      node->create_publisher<geometry_msgs::msg::PoseStamped>(plugin_name_ + "/global_point", 1);
+  global_plan_pub_ = node->create_publisher<nav_msgs::msg::Path>(plugin_name_ + "/global_plan",
+                                                                 rclcpp::QoS(1).transient_local());
+  obstacle_marker_pub_ =
+      node->create_publisher<visualization_msgs::msg::Marker>(plugin_name_ + "/costmap_marker", 10);
 
   current_state_ = PlannerState::PRE_ROTATE;
   last_time_ = clock_->now();
   time_last_oscillation_ = clock_->now();
 
   failure_detector_.setBufferLength(
-    static_cast<int>(std::round(config_.oscillation_recovery_min_duration * 10.0)));
+      static_cast<int>(std::round(config_.oscillation_recovery_min_duration * 10.0)));
 
   RCLCPP_INFO(logger_, "FTCController: configured as '%s'.", plugin_name_.c_str());
 }
@@ -94,28 +93,31 @@ void FTCController::deactivate()
 
 // ── Parameter handling ────────────────────────────────────────────────────────
 
-void FTCController::declareParameters(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node)
+void FTCController::declareParameters(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
 {
-  auto declare_double = [&](const std::string & key, double default_val) {
-      nav2_util::declare_parameter_if_not_declared(
-        node, plugin_name_ + "." + key,
-        rclcpp::ParameterValue(default_val));
-      return node->get_parameter(plugin_name_ + "." + key).as_double();
-    };
+  auto declare_double = [&](const std::string& key, double default_val)
+  {
+    nav2_util::declare_parameter_if_not_declared(node,
+                                                 plugin_name_ + "." + key,
+                                                 rclcpp::ParameterValue(default_val));
+    return node->get_parameter(plugin_name_ + "." + key).as_double();
+  };
 
-  auto declare_int = [&](const std::string & key, int default_val) {
-      nav2_util::declare_parameter_if_not_declared(
-        node, plugin_name_ + "." + key,
-        rclcpp::ParameterValue(default_val));
-      return static_cast<int>(node->get_parameter(plugin_name_ + "." + key).as_int());
-    };
+  auto declare_int = [&](const std::string& key, int default_val)
+  {
+    nav2_util::declare_parameter_if_not_declared(node,
+                                                 plugin_name_ + "." + key,
+                                                 rclcpp::ParameterValue(default_val));
+    return static_cast<int>(node->get_parameter(plugin_name_ + "." + key).as_int());
+  };
 
-  auto declare_bool = [&](const std::string & key, bool default_val) {
-      nav2_util::declare_parameter_if_not_declared(
-        node, plugin_name_ + "." + key,
-        rclcpp::ParameterValue(default_val));
-      return node->get_parameter(plugin_name_ + "." + key).as_bool();
-    };
+  auto declare_bool = [&](const std::string& key, bool default_val)
+  {
+    nav2_util::declare_parameter_if_not_declared(node,
+                                                 plugin_name_ + "." + key,
+                                                 rclcpp::ParameterValue(default_val));
+    return node->get_parameter(plugin_name_ + "." + key).as_bool();
+  };
 
   // Control point speed
   config_.speed_fast = declare_double("speed_fast", 0.5);
@@ -161,7 +163,7 @@ void FTCController::declareParameters(const rclcpp_lifecycle::LifecycleNode::Sha
   config_.oscillation_v_eps = declare_double("oscillation_v_eps", 5.0);
   config_.oscillation_omega_eps = declare_double("oscillation_omega_eps", 5.0);
   config_.oscillation_recovery_min_duration =
-    declare_double("oscillation_recovery_min_duration", 5.0);
+      declare_double("oscillation_recovery_min_duration", 5.0);
 
   // Obstacles
   config_.check_obstacles = declare_bool("check_obstacles", true);
@@ -170,64 +172,166 @@ void FTCController::declareParameters(const rclcpp_lifecycle::LifecycleNode::Sha
 
   // Register parameter-change callback.
   param_cb_handle_ = node->add_on_set_parameters_callback(
-    [this](const std::vector<rclcpp::Parameter> & params) {
-      return onParameterChange(params);
-    });
+      [this](const std::vector<rclcpp::Parameter>& params)
+      {
+        return onParameterChange(params);
+      });
 }
 
 rcl_interfaces::msg::SetParametersResult FTCController::onParameterChange(
-  const std::vector<rclcpp::Parameter> & params)
+    const std::vector<rclcpp::Parameter>& params)
 {
   rcl_interfaces::msg::SetParametersResult result;
   result.successful = true;
 
-  for (const auto & p : params) {
+  for (const auto& p : params)
+  {
     // Strip the plugin namespace prefix before comparing.
     const std::string prefix = plugin_name_ + ".";
     std::string key = p.get_name();
-    if (key.rfind(prefix, 0) == 0) {
+    if (key.rfind(prefix, 0) == 0)
+    {
       key = key.substr(prefix.size());
     }
 
-    if (key == "speed_fast") {config_.speed_fast = p.as_double();}
-    else if (key == "speed_fast_threshold") {config_.speed_fast_threshold = p.as_double();}
-    else if (key == "speed_fast_threshold_angle") {
+    if (key == "speed_fast")
+    {
+      config_.speed_fast = p.as_double();
+    }
+    else if (key == "speed_fast_threshold")
+    {
+      config_.speed_fast_threshold = p.as_double();
+    }
+    else if (key == "speed_fast_threshold_angle")
+    {
       config_.speed_fast_threshold_angle = p.as_double();
-    } else if (key == "speed_slow") {config_.speed_slow = p.as_double();}
-    else if (key == "speed_angular") {config_.speed_angular = p.as_double();}
-    else if (key == "acceleration") {config_.acceleration = p.as_double();}
-    else if (key == "kp_lon") {config_.kp_lon = p.as_double();}
-    else if (key == "ki_lon") {config_.ki_lon = p.as_double();}
-    else if (key == "ki_lon_max") {config_.ki_lon_max = p.as_double();}
-    else if (key == "kd_lon") {config_.kd_lon = p.as_double();}
-    else if (key == "kp_lat") {config_.kp_lat = p.as_double();}
-    else if (key == "ki_lat") {config_.ki_lat = p.as_double();}
-    else if (key == "ki_lat_max") {config_.ki_lat_max = p.as_double();}
-    else if (key == "kd_lat") {config_.kd_lat = p.as_double();}
-    else if (key == "kp_ang") {config_.kp_ang = p.as_double();}
-    else if (key == "ki_ang") {config_.ki_ang = p.as_double();}
-    else if (key == "ki_ang_max") {config_.ki_ang_max = p.as_double();}
-    else if (key == "kd_ang") {config_.kd_ang = p.as_double();}
-    else if (key == "max_cmd_vel_speed") {config_.max_cmd_vel_speed = p.as_double();}
-    else if (key == "max_cmd_vel_ang") {config_.max_cmd_vel_ang = p.as_double();}
-    else if (key == "max_goal_distance_error") {config_.max_goal_distance_error = p.as_double();}
-    else if (key == "max_goal_angle_error") {config_.max_goal_angle_error = p.as_double();}
-    else if (key == "goal_timeout") {config_.goal_timeout = p.as_double();}
-    else if (key == "max_follow_distance") {config_.max_follow_distance = p.as_double();}
-    else if (key == "forward_only") {config_.forward_only = p.as_bool();}
-    else if (key == "debug_pid") {config_.debug_pid = p.as_bool();}
-    else if (key == "debug_obstacle") {config_.debug_obstacle = p.as_bool();}
-    else if (key == "oscillation_recovery") {config_.oscillation_recovery = p.as_bool();}
-    else if (key == "oscillation_v_eps") {config_.oscillation_v_eps = p.as_double();}
-    else if (key == "oscillation_omega_eps") {config_.oscillation_omega_eps = p.as_double();}
-    else if (key == "oscillation_recovery_min_duration") {
+    }
+    else if (key == "speed_slow")
+    {
+      config_.speed_slow = p.as_double();
+    }
+    else if (key == "speed_angular")
+    {
+      config_.speed_angular = p.as_double();
+    }
+    else if (key == "acceleration")
+    {
+      config_.acceleration = p.as_double();
+    }
+    else if (key == "kp_lon")
+    {
+      config_.kp_lon = p.as_double();
+    }
+    else if (key == "ki_lon")
+    {
+      config_.ki_lon = p.as_double();
+    }
+    else if (key == "ki_lon_max")
+    {
+      config_.ki_lon_max = p.as_double();
+    }
+    else if (key == "kd_lon")
+    {
+      config_.kd_lon = p.as_double();
+    }
+    else if (key == "kp_lat")
+    {
+      config_.kp_lat = p.as_double();
+    }
+    else if (key == "ki_lat")
+    {
+      config_.ki_lat = p.as_double();
+    }
+    else if (key == "ki_lat_max")
+    {
+      config_.ki_lat_max = p.as_double();
+    }
+    else if (key == "kd_lat")
+    {
+      config_.kd_lat = p.as_double();
+    }
+    else if (key == "kp_ang")
+    {
+      config_.kp_ang = p.as_double();
+    }
+    else if (key == "ki_ang")
+    {
+      config_.ki_ang = p.as_double();
+    }
+    else if (key == "ki_ang_max")
+    {
+      config_.ki_ang_max = p.as_double();
+    }
+    else if (key == "kd_ang")
+    {
+      config_.kd_ang = p.as_double();
+    }
+    else if (key == "max_cmd_vel_speed")
+    {
+      config_.max_cmd_vel_speed = p.as_double();
+    }
+    else if (key == "max_cmd_vel_ang")
+    {
+      config_.max_cmd_vel_ang = p.as_double();
+    }
+    else if (key == "max_goal_distance_error")
+    {
+      config_.max_goal_distance_error = p.as_double();
+    }
+    else if (key == "max_goal_angle_error")
+    {
+      config_.max_goal_angle_error = p.as_double();
+    }
+    else if (key == "goal_timeout")
+    {
+      config_.goal_timeout = p.as_double();
+    }
+    else if (key == "max_follow_distance")
+    {
+      config_.max_follow_distance = p.as_double();
+    }
+    else if (key == "forward_only")
+    {
+      config_.forward_only = p.as_bool();
+    }
+    else if (key == "debug_pid")
+    {
+      config_.debug_pid = p.as_bool();
+    }
+    else if (key == "debug_obstacle")
+    {
+      config_.debug_obstacle = p.as_bool();
+    }
+    else if (key == "oscillation_recovery")
+    {
+      config_.oscillation_recovery = p.as_bool();
+    }
+    else if (key == "oscillation_v_eps")
+    {
+      config_.oscillation_v_eps = p.as_double();
+    }
+    else if (key == "oscillation_omega_eps")
+    {
+      config_.oscillation_omega_eps = p.as_double();
+    }
+    else if (key == "oscillation_recovery_min_duration")
+    {
       config_.oscillation_recovery_min_duration = p.as_double();
       failure_detector_.setBufferLength(
-        static_cast<int>(std::round(config_.oscillation_recovery_min_duration * 10.0)));
-    } else if (key == "check_obstacles") {config_.check_obstacles = p.as_bool();}
-    else if (key == "obstacle_lookahead") {
+          static_cast<int>(std::round(config_.oscillation_recovery_min_duration * 10.0)));
+    }
+    else if (key == "check_obstacles")
+    {
+      config_.check_obstacles = p.as_bool();
+    }
+    else if (key == "obstacle_lookahead")
+    {
       config_.obstacle_lookahead = static_cast<int>(p.as_int());
-    } else if (key == "obstacle_footprint") {config_.obstacle_footprint = p.as_bool();}
+    }
+    else if (key == "obstacle_footprint")
+    {
+      config_.obstacle_footprint = p.as_bool();
+    }
   }
 
   // Ensure slow speed is always the safe baseline when parameters change.
@@ -238,7 +342,7 @@ rcl_interfaces::msg::SetParametersResult FTCController::onParameterChange(
 
 // ── setPlan ───────────────────────────────────────────────────────────────────
 
-void FTCController::setPlan(const nav_msgs::msg::Path & path)
+void FTCController::setPlan(const nav_msgs::msg::Path& path)
 {
   current_state_ = PlannerState::PRE_ROTATE;
   state_entered_time_ = clock_->now();
@@ -250,29 +354,41 @@ void FTCController::setPlan(const nav_msgs::msg::Path & path)
 
   // Find the nearest path point to the robot's current position so we don't
   // start from index 0 when the robot is far from the path start.
-  try {
-    const auto base_to_map = tf_buffer_->lookupTransform(
-      "map", "base_link", tf2::TimePointZero, tf2::durationFromSec(0.5));
+  try
+  {
+    const auto base_to_map = tf_buffer_->lookupTransform("map",
+                                                         "base_link",
+                                                         tf2::TimePointZero,
+                                                         tf2::durationFromSec(0.5));
     const double rx = base_to_map.transform.translation.x;
     const double ry = base_to_map.transform.translation.y;
     double best_dist = std::numeric_limits<double>::max();
-    for (uint32_t i = 0; i < global_plan_.size(); ++i) {
+    for (uint32_t i = 0; i < global_plan_.size(); ++i)
+    {
       const double dx = global_plan_[i].pose.position.x - rx;
       const double dy = global_plan_[i].pose.position.y - ry;
       const double d = dx * dx + dy * dy;
-      if (d < best_dist) {
+      if (d < best_dist)
+      {
         best_dist = d;
         current_index_ = i;
       }
     }
     best_dist = std::sqrt(best_dist);
-    RCLCPP_INFO(
-      logger_,
-      "FTCController: setPlan with %zu points, starting at idx=%u (%.2fm from robot at %.2f,%.2f).",
-      global_plan_.size(), current_index_, best_dist, rx, ry);
-  } catch (const tf2::TransformException & ex) {
-    RCLCPP_WARN(
-      logger_, "FTCController: TF lookup in setPlan failed (%s), starting from idx=0.", ex.what());
+    RCLCPP_INFO(logger_,
+                "FTCController: setPlan with %zu points, starting at idx=%u (%.2fm from robot at "
+                "%.2f,%.2f).",
+                global_plan_.size(),
+                current_index_,
+                best_dist,
+                rx,
+                ry);
+  }
+  catch (const tf2::TransformException& ex)
+  {
+    RCLCPP_WARN(logger_,
+                "FTCController: TF lookup in setPlan failed (%s), starting from idx=0.",
+                ex.what());
     current_index_ = 0;
   }
 
@@ -291,65 +407,69 @@ void FTCController::setPlan(const nav_msgs::msg::Path & path)
 
   nav_msgs::msg::Path pub_path;
 
-  if (global_plan_.size() > 2) {
+  if (global_plan_.size() > 2)
+  {
     // Duplicate last point so the carrot can exactly reach goal.
     global_plan_.push_back(global_plan_.back());
     // Give the second-to-last point the same orientation as the one before it,
     // so the final segment has a well-defined heading.
     global_plan_[global_plan_.size() - 2].pose.orientation =
-      global_plan_[global_plan_.size() - 3].pose.orientation;
+        global_plan_[global_plan_.size() - 3].pose.orientation;
 
     pub_path.header = path.header;
     pub_path.poses = global_plan_;
-  } else {
-    RCLCPP_WARN(
-      logger_,
-      "FTCController: global plan has fewer than 3 poses (%zu) - cancelling.",
-      global_plan_.size());
+  }
+  else
+  {
+    RCLCPP_WARN(logger_,
+                "FTCController: global plan has fewer than 3 poses (%zu) - cancelling.",
+                global_plan_.size());
     current_state_ = PlannerState::FINISHED;
     state_entered_time_ = clock_->now();
   }
 
   global_plan_pub_->publish(pub_path);
 
-  RCLCPP_INFO(
-    logger_,
-    "FTCController: received new global plan with %zu points.",
-    path.poses.size());
+  RCLCPP_INFO(logger_,
+              "FTCController: received new global plan with %zu points.",
+              path.poses.size());
 }
 
 // ── setSpeedLimit ─────────────────────────────────────────────────────────────
 
-void FTCController::setSpeedLimit(const double & speed_limit, const bool & percentage)
+void FTCController::setSpeedLimit(const double& speed_limit, const bool& percentage)
 {
   speed_limit_ = speed_limit;
   speed_limit_is_percentage_ = percentage;
 
-  if (speed_limit_ < 0.0) {
+  if (speed_limit_ < 0.0)
+  {
     // Negative means "no limit" — restore original parameter value.
     return;
   }
 
-  if (speed_limit_is_percentage_) {
+  if (speed_limit_is_percentage_)
+  {
     // Treat limit as a fraction [0, 1] of the configured max speed.
-    config_.max_cmd_vel_speed =
-      config_.speed_fast * std::clamp(speed_limit_, 0.0, 1.0);
-  } else {
+    config_.max_cmd_vel_speed = config_.speed_fast * std::clamp(speed_limit_, 0.0, 1.0);
+  }
+  else
+  {
     config_.max_cmd_vel_speed = speed_limit_;
   }
 
-  RCLCPP_INFO(
-    logger_,
-    "FTCController: speed limit set to %.3f (percentage=%s).",
-    speed_limit_, percentage ? "true" : "false");
+  RCLCPP_INFO(logger_,
+              "FTCController: speed limit set to %.3f (percentage=%s).",
+              speed_limit_,
+              percentage ? "true" : "false");
 }
 
 // ── computeVelocityCommands ───────────────────────────────────────────────────
 
 geometry_msgs::msg::TwistStamped FTCController::computeVelocityCommands(
-  const geometry_msgs::msg::PoseStamped & pose,
-  const geometry_msgs::msg::Twist & /*velocity*/,
-  nav2_core::GoalChecker * goal_checker)
+    const geometry_msgs::msg::PoseStamped& pose,
+    const geometry_msgs::msg::Twist& /*velocity*/,
+    nav2_core::GoalChecker* goal_checker)
 {
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header.frame_id = "base_link";
@@ -362,12 +482,13 @@ geometry_msgs::msg::TwistStamped FTCController::computeVelocityCommands(
   // Guard against very large dt on first call or after pauses.
   const double safe_dt = std::min(dt, 0.5);
 
-  if (is_crashed_) {
-    throw nav2_core::ControllerException(
-            "FTCController: robot has crashed / collision detected.");
+  if (is_crashed_)
+  {
+    throw nav2_core::ControllerException("FTCController: robot has crashed / collision detected.");
   }
 
-  if (current_state_ == PlannerState::FINISHED) {
+  if (current_state_ == PlannerState::FINISHED)
+  {
     // Zero velocity — goal reached.
     return cmd_vel;
   }
@@ -375,47 +496,58 @@ geometry_msgs::msg::TwistStamped FTCController::computeVelocityCommands(
   // Reset the Nav2 goal checker so it re-evaluates from scratch each cycle.
   // This prevents stateful goal checkers from latching a spurious "reached"
   // before the FTC state machine has finished following the path.
-  if (goal_checker) {
+  if (goal_checker)
+  {
     goal_checker->reset();
   }
 
   // 1. Advance the carrot; compute lat/lon/angle errors in base_link.
   update_control_point(safe_dt);
 
-  RCLCPP_INFO_THROTTLE(logger_, *clock_, 2000,
-    "FTCController: state=%d idx=%zu/%zu dt=%.4f "
-    "lat=%.3f lon=%.3f ang=%.3f(deg=%.1f) pos=(%.2f,%.2f)",
-    static_cast<int>(current_state_), current_index_, global_plan_.size(),
-    safe_dt, lat_error_, lon_error_, angle_error_,
-    angle_error_ * 180.0 / M_PI,
-    local_control_point_.translation().x(),
-    local_control_point_.translation().y());
+  RCLCPP_INFO_THROTTLE(logger_,
+                       *clock_,
+                       2000,
+                       "FTCController: state=%d idx=%zu/%zu dt=%.4f "
+                       "lat=%.3f lon=%.3f ang=%.3f(deg=%.1f) pos=(%.2f,%.2f)",
+                       static_cast<int>(current_state_),
+                       current_index_,
+                       global_plan_.size(),
+                       safe_dt,
+                       lat_error_,
+                       lon_error_,
+                       angle_error_,
+                       angle_error_ * 180.0 / M_PI,
+                       local_control_point_.translation().x(),
+                       local_control_point_.translation().y());
 
   // 2. Update the state machine.
   const PlannerState new_state = update_planner_state();
-  if (new_state != current_state_) {
-    RCLCPP_INFO(
-      logger_,
-      "FTCController: state transition %d -> %d (idx=%zu, angle_err=%.3f deg).",
-      static_cast<int>(current_state_), static_cast<int>(new_state),
-      current_index_, angle_error_ * 180.0 / M_PI);
+  if (new_state != current_state_)
+  {
+    RCLCPP_INFO(logger_,
+                "FTCController: state transition %d -> %d (idx=%zu, angle_err=%.3f deg).",
+                static_cast<int>(current_state_),
+                static_cast<int>(new_state),
+                current_index_,
+                angle_error_ * 180.0 / M_PI);
     state_entered_time_ = clock_->now();
     current_state_ = new_state;
   }
 
   // 3. Collision check.
-  if (checkCollision(config_.obstacle_lookahead)) {
+  if (checkCollision(config_.obstacle_lookahead))
+  {
     is_crashed_ = true;
-    throw nav2_core::ControllerException(
-            "FTCController: collision detected along lookahead path.");
+    throw nav2_core::ControllerException("FTCController: collision detected along lookahead path.");
   }
 
   // 4. PID velocity computation.
   calculate_velocity_commands(safe_dt, cmd_vel);
 
-  if (is_crashed_) {
+  if (is_crashed_)
+  {
     throw nav2_core::ControllerException(
-            "FTCController: collision detected during velocity computation.");
+        "FTCController: collision detected during velocity computation.");
   }
 
   return cmd_vel;
@@ -430,104 +562,124 @@ double FTCController::time_in_current_state() const
 
 FTCController::PlannerState FTCController::update_planner_state()
 {
-  switch (current_state_) {
+  switch (current_state_)
+  {
     case PlannerState::PRE_ROTATE:
+    {
+      if (time_in_current_state() > config_.goal_timeout)
       {
-        if (time_in_current_state() > config_.goal_timeout) {
-          RCLCPP_ERROR(
-            logger_,
-            "FTCController: timeout (%.1fs) in PRE_ROTATE.", config_.goal_timeout);
-          is_crashed_ = true;
-          return PlannerState::FINISHED;
-        }
-        if (std::abs(angle_error_) * (180.0 / M_PI) < config_.max_goal_angle_error) {
-          RCLCPP_INFO(logger_, "FTCController: PRE_ROTATE done, starting FOLLOWING.");
-          return PlannerState::FOLLOWING;
-        }
+        RCLCPP_ERROR(logger_,
+                     "FTCController: timeout (%.1fs) in PRE_ROTATE.",
+                     config_.goal_timeout);
+        is_crashed_ = true;
+        return PlannerState::FINISHED;
       }
-      break;
+      if (std::abs(angle_error_) * (180.0 / M_PI) < config_.max_goal_angle_error)
+      {
+        RCLCPP_INFO(logger_, "FTCController: PRE_ROTATE done, starting FOLLOWING.");
+        return PlannerState::FOLLOWING;
+      }
+    }
+    break;
 
     case PlannerState::FOLLOWING:
+    {
+      const double distance = local_control_point_.translation().norm();
+      if (distance > config_.max_follow_distance)
       {
-        const double distance = local_control_point_.translation().norm();
-        if (distance > config_.max_follow_distance) {
-          // Instead of aborting, try nearest-point recovery: find the closest
-          // path point to the robot and resync the carrot there.
-          try {
-            const auto base_to_map = tf_buffer_->lookupTransform(
-              "map", "base_link", tf2::TimePointZero, tf2::durationFromSec(0.5));
-            const double rx = base_to_map.transform.translation.x;
-            const double ry = base_to_map.transform.translation.y;
+        // Instead of aborting, try nearest-point recovery: find the closest
+        // path point to the robot and resync the carrot there.
+        try
+        {
+          const auto base_to_map = tf_buffer_->lookupTransform("map",
+                                                               "base_link",
+                                                               tf2::TimePointZero,
+                                                               tf2::durationFromSec(0.5));
+          const double rx = base_to_map.transform.translation.x;
+          const double ry = base_to_map.transform.translation.y;
 
-            double best_dist = std::numeric_limits<double>::max();
-            uint32_t best_idx = current_index_;
-            for (uint32_t i = 0; i < global_plan_.size(); ++i) {
-              const double dx = global_plan_[i].pose.position.x - rx;
-              const double dy = global_plan_[i].pose.position.y - ry;
-              const double d = std::sqrt(dx * dx + dy * dy);
-              if (d < best_dist) {
-                best_dist = d;
-                best_idx = i;
-              }
+          double best_dist = std::numeric_limits<double>::max();
+          uint32_t best_idx = current_index_;
+          for (uint32_t i = 0; i < global_plan_.size(); ++i)
+          {
+            const double dx = global_plan_[i].pose.position.x - rx;
+            const double dy = global_plan_[i].pose.position.y - ry;
+            const double d = std::sqrt(dx * dx + dy * dy);
+            if (d < best_dist)
+            {
+              best_dist = d;
+              best_idx = i;
             }
-            if (best_dist < config_.max_follow_distance) {
-              RCLCPP_WARN(
-                logger_,
-                "FTCController: resyncing carrot idx %u->%u (%.3fm away, was %.3fm).",
-                static_cast<unsigned>(current_index_), best_idx, best_dist, distance);
-              current_index_ = best_idx;
-              current_progress_ = 0.0;
-              tf2::fromMsg(global_plan_[current_index_].pose, current_control_point_);
-            } else {
-              RCLCPP_ERROR(
-                logger_,
-                "FTCController: robot too far from plan (%.3f > %.3f). Aborting.",
-                best_dist, config_.max_follow_distance);
-              is_crashed_ = true;
-              return PlannerState::FINISHED;
-            }
-          } catch (const tf2::TransformException & ex) {
+          }
+          if (best_dist < config_.max_follow_distance)
+          {
+            RCLCPP_WARN(logger_,
+                        "FTCController: resyncing carrot idx %u->%u (%.3fm away, was %.3fm).",
+                        static_cast<unsigned>(current_index_),
+                        best_idx,
+                        best_dist,
+                        distance);
+            current_index_ = best_idx;
+            current_progress_ = 0.0;
+            tf2::fromMsg(global_plan_[current_index_].pose, current_control_point_);
+          }
+          else
+          {
             RCLCPP_ERROR(logger_,
-              "FTCController: TF lookup failed during resync: %s", ex.what());
+                         "FTCController: robot too far from plan (%.3f > %.3f). Aborting.",
+                         best_dist,
+                         config_.max_follow_distance);
             is_crashed_ = true;
             return PlannerState::FINISHED;
           }
         }
-        if (current_index_ == global_plan_.size() - 2) {
-          RCLCPP_INFO(logger_, "FTCController: switching to WAITING_FOR_GOAL_APPROACH.");
-          return PlannerState::WAITING_FOR_GOAL_APPROACH;
+        catch (const tf2::TransformException& ex)
+        {
+          RCLCPP_ERROR(logger_, "FTCController: TF lookup failed during resync: %s", ex.what());
+          is_crashed_ = true;
+          return PlannerState::FINISHED;
         }
       }
-      break;
+      if (current_index_ == global_plan_.size() - 2)
+      {
+        RCLCPP_INFO(logger_, "FTCController: switching to WAITING_FOR_GOAL_APPROACH.");
+        return PlannerState::WAITING_FOR_GOAL_APPROACH;
+      }
+    }
+    break;
 
     case PlannerState::WAITING_FOR_GOAL_APPROACH:
+    {
+      const double distance = local_control_point_.translation().norm();
+      if (time_in_current_state() > config_.goal_timeout)
       {
-        const double distance = local_control_point_.translation().norm();
-        if (time_in_current_state() > config_.goal_timeout) {
-          RCLCPP_WARN(
+        RCLCPP_WARN(
             logger_,
             "FTCController: timeout in WAITING_FOR_GOAL_APPROACH, skipping to POST_ROTATE.");
-          return PlannerState::POST_ROTATE;
-        }
-        if (distance < config_.max_goal_distance_error) {
-          RCLCPP_INFO(logger_, "FTCController: goal position reached, entering POST_ROTATE.");
-          return PlannerState::POST_ROTATE;
-        }
+        return PlannerState::POST_ROTATE;
       }
-      break;
+      if (distance < config_.max_goal_distance_error)
+      {
+        RCLCPP_INFO(logger_, "FTCController: goal position reached, entering POST_ROTATE.");
+        return PlannerState::POST_ROTATE;
+      }
+    }
+    break;
 
     case PlannerState::POST_ROTATE:
+    {
+      if (time_in_current_state() > config_.goal_timeout)
       {
-        if (time_in_current_state() > config_.goal_timeout) {
-          RCLCPP_WARN(logger_, "FTCController: timeout in POST_ROTATE.");
-          return PlannerState::FINISHED;
-        }
-        if (std::abs(angle_error_) * (180.0 / M_PI) < config_.max_goal_angle_error) {
-          RCLCPP_INFO(logger_, "FTCController: POST_ROTATE done.");
-          return PlannerState::FINISHED;
-        }
+        RCLCPP_WARN(logger_, "FTCController: timeout in POST_ROTATE.");
+        return PlannerState::FINISHED;
       }
-      break;
+      if (std::abs(angle_error_) * (180.0 / M_PI) < config_.max_goal_angle_error)
+      {
+        RCLCPP_INFO(logger_, "FTCController: POST_ROTATE done.");
+        return PlannerState::FINISHED;
+      }
+    }
+    break;
 
     case PlannerState::FINISHED:
       break;
@@ -540,7 +692,8 @@ FTCController::PlannerState FTCController::update_planner_state()
 
 double FTCController::distanceLookahead() const
 {
-  if (global_plan_.size() < 2) {
+  if (global_plan_.size() < 2)
+  {
     return 0.0;
   }
 
@@ -548,21 +701,21 @@ double FTCController::distanceLookahead() const
   double lookahead_distance = 0.0;
   Eigen::Affine3d last_straight_point = current_control_point_;
 
-  for (uint32_t i = current_index_ + 1; i < global_plan_.size(); ++i) {
+  for (uint32_t i = current_index_ + 1; i < global_plan_.size(); ++i)
+  {
     Eigen::Affine3d current_point;
     tf2::fromMsg(global_plan_[i].pose, current_point);
 
     const Eigen::Quaternion<double> rot2(current_point.linear());
 
     if (lookahead_distance > config_.speed_fast_threshold ||
-      std::abs(rot2.angularDistance(current_rot)) >
-      config_.speed_fast_threshold_angle * (M_PI / 180.0))
+        std::abs(rot2.angularDistance(current_rot)) >
+            config_.speed_fast_threshold_angle * (M_PI / 180.0))
     {
       break;
     }
 
-    lookahead_distance +=
-      (current_point.translation() - last_straight_point.translation()).norm();
+    lookahead_distance += (current_point.translation() - last_straight_point.translation()).norm();
     last_straight_point = current_point;
   }
 
@@ -571,109 +724,116 @@ double FTCController::distanceLookahead() const
 
 void FTCController::update_control_point(double dt)
 {
-  switch (current_state_) {
+  switch (current_state_)
+  {
     case PlannerState::PRE_ROTATE:
       tf2::fromMsg(global_plan_[current_index_].pose, current_control_point_);
       break;
 
     case PlannerState::FOLLOWING:
+    {
+      // Don't advance the carrot if it's already too far ahead of the robot.
+      // This prevents the carrot from running away when an external component
+      // (e.g. collision_monitor) slows the robot below the carrot's speed.
+      const double carrot_dist = local_control_point_.translation().norm();
+      const double carrot_max_lead = 1.0;  // max metres the carrot may lead
+      if (carrot_dist > carrot_max_lead)
       {
-        // Don't advance the carrot if it's already too far ahead of the robot.
-        // This prevents the carrot from running away when an external component
-        // (e.g. collision_monitor) slows the robot below the carrot's speed.
-        const double carrot_dist = local_control_point_.translation().norm();
-        const double carrot_max_lead = 1.0;  // max metres the carrot may lead
-        if (carrot_dist > carrot_max_lead) {
-          break;  // skip advancement, let robot catch up
-        }
+        break;  // skip advancement, let robot catch up
+      }
 
-        // Compute target speed based on how much straight path lies ahead.
-        const double straight_dist = distanceLookahead();
-        const double target_speed = (straight_dist >= config_.speed_fast_threshold)
-          ? config_.speed_fast
-          : config_.speed_slow;
+      // Compute target speed based on how much straight path lies ahead.
+      const double straight_dist = distanceLookahead();
+      const double target_speed =
+          (straight_dist >= config_.speed_fast_threshold) ? config_.speed_fast : config_.speed_slow;
 
-        // Smooth speed ramp (acceleration / deceleration).
-        if (target_speed > current_movement_speed_) {
-          current_movement_speed_ += dt * config_.acceleration;
-          if (current_movement_speed_ > target_speed) {
-            current_movement_speed_ = target_speed;
-          }
-        } else if (target_speed < current_movement_speed_) {
-          current_movement_speed_ -= dt * config_.acceleration;
-          if (current_movement_speed_ < target_speed) {
-            current_movement_speed_ = target_speed;
-          }
-        }
-
-        double distance_to_move = dt * current_movement_speed_;
-        double angle_to_move = dt * config_.speed_angular * (M_PI / 180.0);
-
-        // Advance the carrot along path segments.
-        Eigen::Affine3d nextPose, currentPose;
-        while (angle_to_move > 0.0 && distance_to_move > 0.0 &&
-          current_index_ < global_plan_.size() - 2)
+      // Smooth speed ramp (acceleration / deceleration).
+      if (target_speed > current_movement_speed_)
+      {
+        current_movement_speed_ += dt * config_.acceleration;
+        if (current_movement_speed_ > target_speed)
         {
-          tf2::fromMsg(global_plan_[current_index_].pose, currentPose);
-          tf2::fromMsg(global_plan_[current_index_ + 1].pose, nextPose);
-
-          const double pose_distance =
-            (nextPose.translation() - currentPose.translation()).norm();
-
-          const Eigen::Quaternion<double> current_rot(currentPose.linear());
-          const Eigen::Quaternion<double> next_rot(nextPose.linear());
-          const double pose_distance_angular = current_rot.angularDistance(next_rot);
-
-          if (pose_distance <= 0.0) {
-            RCLCPP_WARN(logger_, "FTCController: skipping duplicate path point.");
-            ++current_index_;
-            continue;
-          }
-
-          const double remaining_dist = pose_distance * (1.0 - current_progress_);
-          const double remaining_ang  = pose_distance_angular * (1.0 - current_progress_);
-
-          if (remaining_dist < distance_to_move && remaining_ang < angle_to_move) {
-            // Consume this segment completely and move to the next.
-            current_progress_ = 0.0;
-            ++current_index_;
-            distance_to_move -= remaining_dist;
-            angle_to_move    -= remaining_ang;
-          } else {
-            // Partial advancement within this segment.
-            const double progress_distance =
-              (pose_distance * current_progress_ + distance_to_move) / pose_distance;
-            const double progress_angle =
-              (pose_distance_angular * current_progress_ + angle_to_move) /
-              pose_distance_angular;
-
-            current_progress_ = std::min(progress_distance, progress_angle);
-            if (current_progress_ > 1.0) {
-              RCLCPP_WARN(logger_, "FTCController: carrot progress > 1.0 (%.4f).",
-                current_progress_);
-            }
-            distance_to_move = 0.0;
-            angle_to_move    = 0.0;
-          }
+          current_movement_speed_ = target_speed;
         }
+      }
+      else if (target_speed < current_movement_speed_)
+      {
+        current_movement_speed_ -= dt * config_.acceleration;
+        if (current_movement_speed_ < target_speed)
+        {
+          current_movement_speed_ = target_speed;
+        }
+      }
 
-        // SLERP interpolation between the two bounding path points.
+      double distance_to_move = dt * current_movement_speed_;
+      double angle_to_move = dt * config_.speed_angular * (M_PI / 180.0);
+
+      // Advance the carrot along path segments.
+      Eigen::Affine3d nextPose, currentPose;
+      while (angle_to_move > 0.0 && distance_to_move > 0.0 &&
+             current_index_ < global_plan_.size() - 2)
+      {
         tf2::fromMsg(global_plan_[current_index_].pose, currentPose);
         tf2::fromMsg(global_plan_[current_index_ + 1].pose, nextPose);
 
-        const Eigen::Quaternion<double> rot1(currentPose.linear());
-        const Eigen::Quaternion<double> rot2(nextPose.linear());
-        const Eigen::Vector3d trans1 = currentPose.translation();
-        const Eigen::Vector3d trans2 = nextPose.translation();
+        const double pose_distance = (nextPose.translation() - currentPose.translation()).norm();
 
-        Eigen::Affine3d result;
-        result.translation() =
-          (1.0 - current_progress_) * trans1 + current_progress_ * trans2;
-        result.linear() = rot1.slerp(current_progress_, rot2).toRotationMatrix();
+        const Eigen::Quaternion<double> current_rot(currentPose.linear());
+        const Eigen::Quaternion<double> next_rot(nextPose.linear());
+        const double pose_distance_angular = current_rot.angularDistance(next_rot);
 
-        current_control_point_ = result;
+        if (pose_distance <= 0.0)
+        {
+          RCLCPP_WARN(logger_, "FTCController: skipping duplicate path point.");
+          ++current_index_;
+          continue;
+        }
+
+        const double remaining_dist = pose_distance * (1.0 - current_progress_);
+        const double remaining_ang = pose_distance_angular * (1.0 - current_progress_);
+
+        if (remaining_dist < distance_to_move && remaining_ang < angle_to_move)
+        {
+          // Consume this segment completely and move to the next.
+          current_progress_ = 0.0;
+          ++current_index_;
+          distance_to_move -= remaining_dist;
+          angle_to_move -= remaining_ang;
+        }
+        else
+        {
+          // Partial advancement within this segment.
+          const double progress_distance =
+              (pose_distance * current_progress_ + distance_to_move) / pose_distance;
+          const double progress_angle =
+              (pose_distance_angular * current_progress_ + angle_to_move) / pose_distance_angular;
+
+          current_progress_ = std::min(progress_distance, progress_angle);
+          if (current_progress_ > 1.0)
+          {
+            RCLCPP_WARN(logger_, "FTCController: carrot progress > 1.0 (%.4f).", current_progress_);
+          }
+          distance_to_move = 0.0;
+          angle_to_move = 0.0;
+        }
       }
-      break;
+
+      // SLERP interpolation between the two bounding path points.
+      tf2::fromMsg(global_plan_[current_index_].pose, currentPose);
+      tf2::fromMsg(global_plan_[current_index_ + 1].pose, nextPose);
+
+      const Eigen::Quaternion<double> rot1(currentPose.linear());
+      const Eigen::Quaternion<double> rot2(nextPose.linear());
+      const Eigen::Vector3d trans1 = currentPose.translation();
+      const Eigen::Vector3d trans2 = nextPose.translation();
+
+      Eigen::Affine3d result;
+      result.translation() = (1.0 - current_progress_) * trans1 + current_progress_ * trans2;
+      result.linear() = rot1.slerp(current_progress_, rot2).toRotationMatrix();
+
+      current_control_point_ = result;
+    }
+    break;
 
     case PlannerState::POST_ROTATE:
       tf2::fromMsg(global_plan_.back().pose, current_control_point_);
@@ -697,41 +857,44 @@ void FTCController::update_control_point(double dt)
   }
 
   // Transform carrot from map into base_link to get the PID errors.
-  try {
-    const auto map_to_base = tf_buffer_->lookupTransform(
-      "base_link", "map",
-      tf2::TimePointZero,
-      tf2::durationFromSec(1.0));
+  try
+  {
+    const auto map_to_base = tf_buffer_->lookupTransform("base_link",
+                                                         "map",
+                                                         tf2::TimePointZero,
+                                                         tf2::durationFromSec(1.0));
 
     tf2::doTransform(current_control_point_, local_control_point_, map_to_base);
-  } catch (const tf2::TransformException & ex) {
-    throw nav2_core::ControllerException(
-            std::string("FTCController: TF lookup failed: ") + ex.what());
+  }
+  catch (const tf2::TransformException& ex)
+  {
+    throw nav2_core::ControllerException(std::string("FTCController: TF lookup failed: ") +
+                                         ex.what());
   }
 
-  lat_error_   = local_control_point_.translation().y();
-  lon_error_   = local_control_point_.translation().x();
+  lat_error_ = local_control_point_.translation().y();
+  lon_error_ = local_control_point_.translation().x();
   // Extract yaw from rotation matrix using atan2 (reliable for 2D, unlike
   // Eigen::eulerAngles which can give ambiguous results near singularities).
-  const Eigen::Matrix3d & rot = local_control_point_.rotation();
+  const Eigen::Matrix3d& rot = local_control_point_.rotation();
   angle_error_ = std::atan2(rot(1, 0), rot(0, 0));
 }
 
 // ── PID velocity computation ──────────────────────────────────────────────────
 
-void FTCController::calculate_velocity_commands(
-  double dt,
-  geometry_msgs::msg::TwistStamped & cmd_vel)
+void FTCController::calculate_velocity_commands(double dt,
+                                                geometry_msgs::msg::TwistStamped& cmd_vel)
 {
-  if (current_state_ == PlannerState::FINISHED || is_crashed_) {
+  if (current_state_ == PlannerState::FINISHED || is_crashed_)
+  {
     cmd_vel.twist.linear.x = 0.0;
     cmd_vel.twist.angular.z = 0.0;
     return;
   }
 
   // Integrate errors (with windup clamping).
-  i_lon_error_   += lon_error_   * dt;
-  i_lat_error_   += lat_error_   * dt;
+  i_lon_error_ += lon_error_ * dt;
+  i_lat_error_ += lat_error_ * dt;
   i_angle_error_ += angle_error_ * dt;
 
   i_lon_error_ = std::clamp(i_lon_error_, -config_.ki_lon_max, config_.ki_lon_max);
@@ -739,31 +902,34 @@ void FTCController::calculate_velocity_commands(
   i_angle_error_ = std::clamp(i_angle_error_, -config_.ki_ang_max, config_.ki_ang_max);
 
   // Derivative terms.
-  const double d_lat   = (lat_error_   - last_lat_error_)   / dt;
-  const double d_lon   = (lon_error_   - last_lon_error_)   / dt;
+  const double d_lat = (lat_error_ - last_lat_error_) / dt;
+  const double d_lon = (lon_error_ - last_lon_error_) / dt;
   const double d_angle = (angle_error_ - last_angle_error_) / dt;
 
-  last_lat_error_   = lat_error_;
-  last_lon_error_   = lon_error_;
+  last_lat_error_ = lat_error_;
+  last_lon_error_ = lon_error_;
   last_angle_error_ = angle_error_;
 
   // ── Linear velocity (FOLLOWING only) ──────────────────────────────────────
 
-  if (current_state_ == PlannerState::FOLLOWING) {
+  if (current_state_ == PlannerState::FOLLOWING)
+  {
     double lin_speed =
-      lon_error_ * config_.kp_lon +
-      i_lon_error_ * config_.ki_lon +
-      d_lon * config_.kd_lon;
+        lon_error_ * config_.kp_lon + i_lon_error_ * config_.ki_lon + d_lon * config_.kd_lon;
 
-    if (lin_speed < 0.0 && config_.forward_only) {
+    if (lin_speed < 0.0 && config_.forward_only)
+    {
       lin_speed = 0.0;
-    } else {
+    }
+    else
+    {
       lin_speed = std::clamp(lin_speed, -config_.max_cmd_vel_speed, config_.max_cmd_vel_speed);
-
     }
 
     cmd_vel.twist.linear.x = lin_speed;
-  } else {
+  }
+  else
+  {
     cmd_vel.twist.linear.x = 0.0;
   }
 
@@ -772,45 +938,45 @@ void FTCController::calculate_velocity_commands(
   // When reversing, steering must correct in the opposite lateral direction.
   // Use a local adjusted copy so lat_error_ (the member) stays unflipped for
   // the next cycle's derivative computation.
-  const double lat_error_for_steering =
-    (cmd_vel.twist.linear.x < 0.0) ? -lat_error_ : lat_error_;
+  const double lat_error_for_steering = (cmd_vel.twist.linear.x < 0.0) ? -lat_error_ : lat_error_;
 
-  if (current_state_ == PlannerState::FOLLOWING) {
+  if (current_state_ == PlannerState::FOLLOWING)
+  {
     // Combined angle + lateral PID during path following.
-    double ang_speed =
-      angle_error_ * config_.kp_ang +
-      i_angle_error_ * config_.ki_ang +
-      d_angle * config_.kd_ang +
-      lat_error_for_steering * config_.kp_lat +
-      i_lat_error_ * config_.ki_lat +
-      d_lat * config_.kd_lat;
+    double ang_speed = angle_error_ * config_.kp_ang + i_angle_error_ * config_.ki_ang +
+                       d_angle * config_.kd_ang + lat_error_for_steering * config_.kp_lat +
+                       i_lat_error_ * config_.ki_lat + d_lat * config_.kd_lat;
 
     ang_speed = std::clamp(ang_speed, -config_.max_cmd_vel_ang, config_.max_cmd_vel_ang);
     cmd_vel.twist.angular.z = ang_speed;
-  } else {
+  }
+  else
+  {
     // Pure angle PID during rotation states (no lateral contribution).
     double ang_speed =
-      angle_error_ * config_.kp_ang +
-      i_angle_error_ * config_.ki_ang +
-      d_angle * config_.kd_ang;
+        angle_error_ * config_.kp_ang + i_angle_error_ * config_.ki_ang + d_angle * config_.kd_ang;
 
     ang_speed = std::clamp(ang_speed, -config_.max_cmd_vel_ang, config_.max_cmd_vel_ang);
     cmd_vel.twist.angular.z = ang_speed;
 
     // Oscillation override in rotation states.
     const bool is_oscillating = checkOscillation(cmd_vel);
-    if (is_oscillating) {
+    if (is_oscillating)
+    {
       cmd_vel.twist.angular.z = config_.max_cmd_vel_ang;
     }
   }
 
-  if (config_.debug_pid) {
-    RCLCPP_DEBUG(
-      logger_,
-      "FTCController PID | lon_err=%.4f lat_err=%.4f ang_err=%.4f "
-      "lin=%.4f ang=%.4f",
-      lon_error_, lat_error_, angle_error_,
-      cmd_vel.twist.linear.x, cmd_vel.twist.angular.z);
+  if (config_.debug_pid)
+  {
+    RCLCPP_DEBUG(logger_,
+                 "FTCController PID | lon_err=%.4f lat_err=%.4f ang_err=%.4f "
+                 "lin=%.4f ang=%.4f",
+                 lon_error_,
+                 lat_error_,
+                 angle_error_,
+                 cmd_vel.twist.linear.x,
+                 cmd_vel.twist.angular.z);
   }
 }
 
@@ -818,7 +984,8 @@ void FTCController::calculate_velocity_commands(
 
 bool FTCController::checkCollision(int max_points)
 {
-  if (!config_.check_obstacles) {
+  if (!config_.check_obstacles)
+  {
     return false;
   }
 
@@ -829,19 +996,24 @@ bool FTCController::checkCollision(int max_points)
   visualization_msgs::msg::Marker obstacle_marker;
 
   // Clamp lookahead to the available plan length.
-  if (static_cast<std::size_t>(max_points) > global_plan_.size()) {
+  if (static_cast<std::size_t>(max_points) > global_plan_.size())
+  {
     max_points = static_cast<int>(global_plan_.size());
   }
 
   // Check robot footprint at current pose.
-  if (config_.obstacle_footprint) {
+  if (config_.obstacle_footprint)
+  {
     std::vector<geometry_msgs::msg::Point> footprint;
     costmap_ros_->getOrientedFootprint(footprint);
 
-    for (const auto & fp_pt : footprint) {
-      if (costmap_map_->worldToMap(fp_pt.x, fp_pt.y, mx, my)) {
+    for (const auto& fp_pt : footprint)
+    {
+      if (costmap_map_->worldToMap(fp_pt.x, fp_pt.y, mx, my))
+      {
         const unsigned char cost = costmap_map_->getCost(mx, my);
-        if (cost >= nav2_costmap_2d::LETHAL_OBSTACLE) {
+        if (cost >= nav2_costmap_2d::LETHAL_OBSTACLE)
+        {
           RCLCPP_WARN(logger_, "FTCController: lethal footprint collision at current pose.");
           return true;
         }
@@ -850,28 +1022,34 @@ bool FTCController::checkCollision(int max_points)
   }
 
   // Check costmap cells along the lookahead path segments.
-  for (int i = 0; i < max_points; ++i) {
+  for (int i = 0; i < max_points; ++i)
+  {
     std::size_t index = current_index_ + static_cast<std::size_t>(i);
-    if (index >= global_plan_.size()) {
+    if (index >= global_plan_.size())
+    {
       index = global_plan_.size() - 1;
     }
 
-    const auto & pose = global_plan_[index];
+    const auto& pose = global_plan_[index];
 
-    if (costmap_map_->worldToMap(pose.pose.position.x, pose.pose.position.y, mx, my)) {
+    if (costmap_map_->worldToMap(pose.pose.position.x, pose.pose.position.y, mx, my))
+    {
       const unsigned char cost = costmap_map_->getCost(mx, my);
 
-      if (config_.debug_obstacle) {
-        debugObstacle(obstacle_marker, static_cast<double>(mx), static_cast<double>(my),
-          cost, max_points);
+      if (config_.debug_obstacle)
+      {
+        debugObstacle(
+            obstacle_marker, static_cast<double>(mx), static_cast<double>(my), cost, max_points);
       }
 
-      if (cost >= 253u) {
+      if (cost >= 253u)
+      {
         // Lethal or inscribed obstacle — immediate collision.
         RCLCPP_WARN(logger_, "FTCController: lethal obstacle on path (cost=%u).", cost);
         return true;
       }
-      if (cost > 127u && cost > previous_cost) {
+      if (cost > 127u && cost > previous_cost)
+      {
         // Cost increasing toward obstacle — approaching collision.
         RCLCPP_WARN(logger_, "FTCController: possible forward collision on path (cost=%u).", cost);
         return true;
@@ -885,10 +1063,10 @@ bool FTCController::checkCollision(int max_points)
 }
 
 void FTCController::debugObstacle(
-  visualization_msgs::msg::Marker & marker,
-  double x, double y, unsigned char cost, int max_ids)
+    visualization_msgs::msg::Marker& marker, double x, double y, unsigned char cost, int max_ids)
 {
-  if (marker.points.empty()) {
+  if (marker.points.empty())
+  {
     marker.header.frame_id = costmap_ros_->getGlobalFrameID();
     marker.header.stamp = clock_->now();
     marker.action = visualization_msgs::msg::Marker::ADD;
@@ -900,22 +1078,25 @@ void FTCController::debugObstacle(
 
   marker.id = static_cast<int>(marker.points.size()) + 1;
 
-  if (cost < 127u) {
+  if (cost < 127u)
+  {
     marker.color.g = 1.0f;
     marker.color.r = 0.0f;
-  } else if (cost < 255u) {
+  }
+  else if (cost < 255u)
+  {
     marker.color.r = 1.0f;
     marker.color.g = 0.0f;
   }
   marker.color.a = 1.0f;
 
   geometry_msgs::msg::Point p;
-  costmap_map_->mapToWorld(
-    static_cast<unsigned int>(x), static_cast<unsigned int>(y), p.x, p.y);
+  costmap_map_->mapToWorld(static_cast<unsigned int>(x), static_cast<unsigned int>(y), p.x, p.y);
   p.z = 0.0;
   marker.points.push_back(p);
 
-  if (static_cast<int>(marker.points.size()) >= max_ids || cost > 0u) {
+  if (static_cast<int>(marker.points.size()) >= max_ids || cost > 0u)
+  {
     obstacle_marker_pub_->publish(marker);
     marker.points.clear();
   }
@@ -923,39 +1104,45 @@ void FTCController::debugObstacle(
 
 // ── Oscillation detection ─────────────────────────────────────────────────────
 
-bool FTCController::checkOscillation(const geometry_msgs::msg::TwistStamped & cmd_vel)
+bool FTCController::checkOscillation(const geometry_msgs::msg::TwistStamped& cmd_vel)
 {
-  if (!config_.oscillation_recovery) {
+  if (!config_.oscillation_recovery)
+  {
     return false;
   }
 
   const double max_vel_theta = config_.max_cmd_vel_ang;
   const double max_vel_speed = config_.max_cmd_vel_speed;
 
-  failure_detector_.update(
-    cmd_vel.twist.linear.x, cmd_vel.twist.angular.z,
-    max_vel_speed, max_vel_speed, max_vel_theta,
-    config_.oscillation_v_eps, config_.oscillation_omega_eps);
+  failure_detector_.update(cmd_vel.twist.linear.x,
+                           cmd_vel.twist.angular.z,
+                           max_vel_speed,
+                           max_vel_speed,
+                           max_vel_theta,
+                           config_.oscillation_v_eps,
+                           config_.oscillation_omega_eps);
 
   const bool oscillating = failure_detector_.isOscillating();
 
-  if (oscillating) {
-    if (!oscillation_detected_) {
+  if (oscillating)
+  {
+    if (!oscillation_detected_)
+    {
       time_last_oscillation_ = clock_->now();
       oscillation_detected_ = true;
     }
 
-    const double oscillation_duration =
-      (clock_->now() - time_last_oscillation_).seconds();
+    const double oscillation_duration = (clock_->now() - time_last_oscillation_).seconds();
     const bool timeout = oscillation_duration >= config_.oscillation_recovery_min_duration;
 
-    if (timeout) {
-      if (!oscillation_warning_) {
-        RCLCPP_WARN(
-          logger_,
-          "FTCController: oscillation detected for %.1fs. "
-          "Activating recovery (preferring current turn direction).",
-          oscillation_duration);
+    if (timeout)
+    {
+      if (!oscillation_warning_)
+      {
+        RCLCPP_WARN(logger_,
+                    "FTCController: oscillation detected for %.1fs. "
+                    "Activating recovery (preferring current turn direction).",
+                    oscillation_duration);
         oscillation_warning_ = true;
       }
       return true;

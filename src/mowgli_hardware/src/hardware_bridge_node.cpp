@@ -35,22 +35,19 @@
 #include <string>
 #include <vector>
 
-#include "rclcpp/rclcpp.hpp"
-
 #include "geometry_msgs/msg/twist.hpp"
-#include "nav_msgs/msg/odometry.hpp"
-#include "sensor_msgs/msg/imu.hpp"
-#include "std_msgs/msg/header.hpp"
-
+#include "mowgli_hardware/ll_datatypes.hpp"
+#include "mowgli_hardware/packet_handler.hpp"
+#include "mowgli_hardware/serial_port.hpp"
 #include "mowgli_interfaces/msg/emergency.hpp"
 #include "mowgli_interfaces/msg/power.hpp"
 #include "mowgli_interfaces/msg/status.hpp"
 #include "mowgli_interfaces/srv/emergency_stop.hpp"
 #include "mowgli_interfaces/srv/mower_control.hpp"
-
-#include "mowgli_hardware/ll_datatypes.hpp"
-#include "mowgli_hardware/packet_handler.hpp"
-#include "mowgli_hardware/serial_port.hpp"
+#include "nav_msgs/msg/odometry.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "std_msgs/msg/header.hpp"
 
 namespace mowgli_hardware
 {
@@ -60,8 +57,8 @@ using namespace std::chrono_literals;
 class HardwareBridgeNode : public rclcpp::Node
 {
 public:
-  explicit HardwareBridgeNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-  : Node("hardware_bridge", options)
+  explicit HardwareBridgeNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions())
+      : Node("hardware_bridge", options)
   {
     declare_parameters();
     create_publishers();
@@ -81,56 +78,58 @@ private:
   void declare_parameters()
   {
     serial_port_path_ = declare_parameter<std::string>("serial_port", "/dev/ttyUSB0");
-    baud_rate_        = declare_parameter<int>("baud_rate", 115200);
-    heartbeat_rate_   = declare_parameter<double>("heartbeat_rate", 4.0);
-    publish_rate_     = declare_parameter<double>("publish_rate", 100.0);
-    high_level_rate_  = declare_parameter<double>("high_level_rate", 2.0);
+    baud_rate_ = declare_parameter<int>("baud_rate", 115200);
+    heartbeat_rate_ = declare_parameter<double>("heartbeat_rate", 4.0);
+    publish_rate_ = declare_parameter<double>("publish_rate", 100.0);
+    high_level_rate_ = declare_parameter<double>("high_level_rate", 2.0);
 
-    RCLCPP_INFO(
-      get_logger(),
-      "Parameters: serial_port=%s baud_rate=%d heartbeat_rate=%.1f Hz "
-      "publish_rate=%.1f Hz high_level_rate=%.1f Hz",
-      serial_port_path_.c_str(), baud_rate_,
-      heartbeat_rate_, publish_rate_, high_level_rate_);
+    RCLCPP_INFO(get_logger(),
+                "Parameters: serial_port=%s baud_rate=%d heartbeat_rate=%.1f Hz "
+                "publish_rate=%.1f Hz high_level_rate=%.1f Hz",
+                serial_port_path_.c_str(),
+                baud_rate_,
+                heartbeat_rate_,
+                publish_rate_,
+                high_level_rate_);
   }
 
   void create_publishers()
   {
-    pub_status_    = create_publisher<mowgli_interfaces::msg::Status>("~/status", 10);
+    pub_status_ = create_publisher<mowgli_interfaces::msg::Status>("~/status", 10);
     pub_emergency_ = create_publisher<mowgli_interfaces::msg::Emergency>("~/emergency", 10);
-    pub_power_     = create_publisher<mowgli_interfaces::msg::Power>("~/power", 10);
-    pub_imu_       = create_publisher<sensor_msgs::msg::Imu>("~/imu/data_raw", 10);
+    pub_power_ = create_publisher<mowgli_interfaces::msg::Power>("~/power", 10);
+    pub_imu_ = create_publisher<sensor_msgs::msg::Imu>("~/imu/data_raw", 10);
     pub_wheel_odom_ = create_publisher<nav_msgs::msg::Odometry>("~/wheel_odom", 10);
   }
 
   void create_subscribers()
   {
     sub_cmd_vel_ = create_subscription<geometry_msgs::msg::Twist>(
-      "~/cmd_vel", 10,
-      [this](geometry_msgs::msg::Twist::ConstSharedPtr msg) {
-        on_cmd_vel(msg);
-      });
+        "~/cmd_vel",
+        10,
+        [this](geometry_msgs::msg::Twist::ConstSharedPtr msg)
+        {
+          on_cmd_vel(msg);
+        });
   }
 
   void create_services()
   {
     srv_mower_control_ = create_service<mowgli_interfaces::srv::MowerControl>(
-      "~/mower_control",
-      [this](
-        const std::shared_ptr<mowgli_interfaces::srv::MowerControl::Request> req,
-        std::shared_ptr<mowgli_interfaces::srv::MowerControl::Response> res)
-      {
-        on_mower_control(req, res);
-      });
+        "~/mower_control",
+        [this](const std::shared_ptr<mowgli_interfaces::srv::MowerControl::Request> req,
+               std::shared_ptr<mowgli_interfaces::srv::MowerControl::Response> res)
+        {
+          on_mower_control(req, res);
+        });
 
     srv_emergency_stop_ = create_service<mowgli_interfaces::srv::EmergencyStop>(
-      "~/emergency_stop",
-      [this](
-        const std::shared_ptr<mowgli_interfaces::srv::EmergencyStop::Request> req,
-        std::shared_ptr<mowgli_interfaces::srv::EmergencyStop::Response> res)
-      {
-        on_emergency_stop(req, res);
-      });
+        "~/emergency_stop",
+        [this](const std::shared_ptr<mowgli_interfaces::srv::EmergencyStop::Request> req,
+               std::shared_ptr<mowgli_interfaces::srv::EmergencyStop::Response> res)
+        {
+          on_emergency_stop(req, res);
+        });
   }
 
   void open_serial_port()
@@ -138,43 +137,54 @@ private:
     serial_ = std::make_unique<SerialPort>(serial_port_path_, baud_rate_);
 
     packet_handler_.set_callback(
-      [this](const uint8_t * data, std::size_t len) {
-        on_packet_received(data, len);
-      });
+        [this](const uint8_t* data, std::size_t len)
+        {
+          on_packet_received(data, len);
+        });
 
-    if (!serial_->open()) {
-      RCLCPP_ERROR(
-        get_logger(),
-        "Failed to open serial port '%s' at %d baud. "
-        "The node will retry on each read tick.",
-        serial_port_path_.c_str(), baud_rate_);
-    } else {
-      RCLCPP_INFO(
-        get_logger(),
-        "Opened serial port '%s' at %d baud.",
-        serial_port_path_.c_str(), baud_rate_);
+    if (!serial_->open())
+    {
+      RCLCPP_ERROR(get_logger(),
+                   "Failed to open serial port '%s' at %d baud. "
+                   "The node will retry on each read tick.",
+                   serial_port_path_.c_str(),
+                   baud_rate_);
+    }
+    else
+    {
+      RCLCPP_INFO(get_logger(),
+                  "Opened serial port '%s' at %d baud.",
+                  serial_port_path_.c_str(),
+                  baud_rate_);
     }
   }
 
   void create_timers()
   {
     // Serial read / packet dispatch.
-    const auto read_period_ms =
-      std::chrono::milliseconds(static_cast<int>(1000.0 / publish_rate_));
-    timer_read_ = create_wall_timer(
-      read_period_ms, [this]() { read_serial_tick(); });
+    const auto read_period_ms = std::chrono::milliseconds(static_cast<int>(1000.0 / publish_rate_));
+    timer_read_ = create_wall_timer(read_period_ms,
+                                    [this]()
+                                    {
+                                      read_serial_tick();
+                                    });
 
     // Heartbeat.
-    const auto hb_period_ms =
-      std::chrono::milliseconds(static_cast<int>(1000.0 / heartbeat_rate_));
-    timer_heartbeat_ = create_wall_timer(
-      hb_period_ms, [this]() { send_heartbeat(); });
+    const auto hb_period_ms = std::chrono::milliseconds(static_cast<int>(1000.0 / heartbeat_rate_));
+    timer_heartbeat_ = create_wall_timer(hb_period_ms,
+                                         [this]()
+                                         {
+                                           send_heartbeat();
+                                         });
 
     // High-level state.
     const auto hl_period_ms =
-      std::chrono::milliseconds(static_cast<int>(1000.0 / high_level_rate_));
-    timer_high_level_ = create_wall_timer(
-      hl_period_ms, [this]() { send_high_level_state(); });
+        std::chrono::milliseconds(static_cast<int>(1000.0 / high_level_rate_));
+    timer_high_level_ = create_wall_timer(hl_period_ms,
+                                          [this]()
+                                          {
+                                            send_high_level_state();
+                                          });
   }
 
   // ---------------------------------------------------------------------------
@@ -185,8 +195,10 @@ private:
   {
     // If the port was never opened or was closed due to an error, attempt to
     // (re)open it.
-    if (!serial_->is_open()) {
-      if (!serial_->open()) {
+    if (!serial_->is_open())
+    {
+      if (!serial_->open())
+      {
         return;  // Still not open; will retry next tick.
       }
       RCLCPP_INFO(get_logger(), "Serial port re-opened successfully.");
@@ -196,28 +208,30 @@ private:
     uint8_t buf[kReadBufSize];
 
     // Drain all available bytes in one tick.
-    while (true) {
+    while (true)
+    {
       const ssize_t n = serial_->read(buf, kReadBufSize);
-      if (n <= 0) {
+      if (n <= 0)
+      {
         break;
       }
       packet_handler_.feed(buf, static_cast<std::size_t>(n));
     }
   }
 
-  bool send_raw_packet(const uint8_t * data, std::size_t len)
+  bool send_raw_packet(const uint8_t* data, std::size_t len)
   {
-    if (!serial_->is_open()) {
-      RCLCPP_WARN_THROTTLE(
-        get_logger(), *get_clock(), 5000, "Cannot send: serial port not open.");
+    if (!serial_->is_open())
+    {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "Cannot send: serial port not open.");
       return false;
     }
 
     const std::vector<uint8_t> frame = packet_handler_.encode_packet(data, len);
-    const ssize_t written =
-      serial_->write(frame.data(), frame.size());
+    const ssize_t written = serial_->write(frame.data(), frame.size());
 
-    if (written < 0 || static_cast<std::size_t>(written) != frame.size()) {
+    if (written < 0 || static_cast<std::size_t>(written) != frame.size())
+    {
       RCLCPP_WARN(get_logger(), "Short write or error sending packet.");
       return false;
     }
@@ -228,15 +242,17 @@ private:
   // Packet dispatch (STM32 → ROS2)
   // ---------------------------------------------------------------------------
 
-  void on_packet_received(const uint8_t * data, std::size_t len)
+  void on_packet_received(const uint8_t* data, std::size_t len)
   {
-    if (len == 0) {
+    if (len == 0)
+    {
       return;
     }
 
     const auto type = static_cast<PacketId>(data[0]);
 
-    switch (type) {
+    switch (type)
+    {
       case PACKET_ID_LL_STATUS:
         handle_status(data, len);
         break;
@@ -250,15 +266,15 @@ private:
         handle_odometry(data, len);
         break;
       default:
-        RCLCPP_DEBUG(
-          get_logger(), "Unhandled packet type 0x%02X (len=%zu)", data[0], len);
+        RCLCPP_DEBUG(get_logger(), "Unhandled packet type 0x%02X (len=%zu)", data[0], len);
         break;
     }
   }
 
-  void handle_status(const uint8_t * data, std::size_t len)
+  void handle_status(const uint8_t* data, std::size_t len)
   {
-    if (len < sizeof(LlStatus)) {
+    if (len < sizeof(LlStatus))
+    {
       RCLCPP_WARN(get_logger(), "Status packet too short: %zu < %zu", len, sizeof(LlStatus));
       return;
     }
@@ -273,17 +289,17 @@ private:
       auto msg = mowgli_interfaces::msg::Status{};
       msg.stamp = stamp;
       msg.mower_status = (pkt.status_bitmask & STATUS_BIT_INITIALIZED) != 0u
-        ? mowgli_interfaces::msg::Status::MOWER_STATUS_OK
-        : mowgli_interfaces::msg::Status::MOWER_STATUS_INITIALIZING;
-      msg.raspberry_pi_power   = (pkt.status_bitmask & STATUS_BIT_RASPI_POWER)  != 0u;
-      msg.is_charging          = (pkt.status_bitmask & STATUS_BIT_CHARGING)     != 0u;
-      msg.rain_detected        = (pkt.status_bitmask & STATUS_BIT_RAIN)         != 0u;
+                             ? mowgli_interfaces::msg::Status::MOWER_STATUS_OK
+                             : mowgli_interfaces::msg::Status::MOWER_STATUS_INITIALIZING;
+      msg.raspberry_pi_power = (pkt.status_bitmask & STATUS_BIT_RASPI_POWER) != 0u;
+      msg.is_charging = (pkt.status_bitmask & STATUS_BIT_CHARGING) != 0u;
+      msg.rain_detected = (pkt.status_bitmask & STATUS_BIT_RAIN) != 0u;
       msg.sound_module_available = (pkt.status_bitmask & STATUS_BIT_SOUND_AVAIL) != 0u;
-      msg.sound_module_busy    = (pkt.status_bitmask & STATUS_BIT_SOUND_BUSY)   != 0u;
-      msg.ui_board_available   = (pkt.status_bitmask & STATUS_BIT_UI_AVAIL)     != 0u;
+      msg.sound_module_busy = (pkt.status_bitmask & STATUS_BIT_SOUND_BUSY) != 0u;
+      msg.ui_board_available = (pkt.status_bitmask & STATUS_BIT_UI_AVAIL) != 0u;
       // mow_enabled and ESC fields are set by mower_control service state.
-      msg.mow_enabled          = mow_enabled_;
-      msg.esc_power            = mow_enabled_;
+      msg.mow_enabled = mow_enabled_;
+      msg.esc_power = mow_enabled_;
       pub_status_->publish(msg);
     }
 
@@ -292,12 +308,17 @@ private:
       auto msg = mowgli_interfaces::msg::Emergency{};
       msg.stamp = stamp;
       msg.latched_emergency = (pkt.emergency_bitmask & EMERGENCY_BIT_LATCH) != 0u;
-      msg.active_emergency  = pkt.emergency_bitmask != 0u;
-      if ((pkt.emergency_bitmask & EMERGENCY_BIT_STOP) != 0u) {
+      msg.active_emergency = pkt.emergency_bitmask != 0u;
+      if ((pkt.emergency_bitmask & EMERGENCY_BIT_STOP) != 0u)
+      {
         msg.reason = "STOP button";
-      } else if ((pkt.emergency_bitmask & EMERGENCY_BIT_LIFT) != 0u) {
+      }
+      else if ((pkt.emergency_bitmask & EMERGENCY_BIT_LIFT) != 0u)
+      {
         msg.reason = "Lift detected";
-      } else if (msg.active_emergency) {
+      }
+      else if (msg.active_emergency)
+      {
         msg.reason = "Unknown emergency";
       }
       pub_emergency_->publish(msg);
@@ -307,8 +328,8 @@ private:
     {
       auto msg = mowgli_interfaces::msg::Power{};
       msg.stamp = stamp;
-      msg.v_charge      = pkt.v_charge;
-      msg.v_battery     = pkt.v_system;
+      msg.v_charge = pkt.v_charge;
+      msg.v_battery = pkt.v_system;
       msg.charge_current = pkt.charging_current;
       msg.charger_enabled = (pkt.status_bitmask & STATUS_BIT_CHARGING) != 0u;
       msg.charger_status = msg.charger_enabled ? "charging" : "idle";
@@ -316,9 +337,10 @@ private:
     }
   }
 
-  void handle_imu(const uint8_t * data, std::size_t len)
+  void handle_imu(const uint8_t* data, std::size_t len)
   {
-    if (len < sizeof(LlImu)) {
+    if (len < sizeof(LlImu))
+    {
       RCLCPP_WARN(get_logger(), "IMU packet too short: %zu < %zu", len, sizeof(LlImu));
       return;
     }
@@ -327,7 +349,7 @@ private:
     std::memcpy(&pkt, data, sizeof(LlImu));
 
     auto msg = sensor_msgs::msg::Imu{};
-    msg.header.stamp    = now();
+    msg.header.stamp = now();
     msg.header.frame_id = "imu_link";
 
     msg.linear_acceleration.x = static_cast<double>(pkt.acceleration_mss[0]);
@@ -345,26 +367,27 @@ private:
     pub_imu_->publish(msg);
   }
 
-  void handle_ui_event(const uint8_t * data, std::size_t len)
+  void handle_ui_event(const uint8_t* data, std::size_t len)
   {
-    if (len < sizeof(LlUiEvent)) {
-      RCLCPP_WARN(
-        get_logger(), "UI event packet too short: %zu < %zu", len, sizeof(LlUiEvent));
+    if (len < sizeof(LlUiEvent))
+    {
+      RCLCPP_WARN(get_logger(), "UI event packet too short: %zu < %zu", len, sizeof(LlUiEvent));
       return;
     }
 
     LlUiEvent pkt{};
     std::memcpy(&pkt, data, sizeof(LlUiEvent));
 
-    RCLCPP_INFO(
-      get_logger(),
-      "UI button event: button_id=%u duration=%u",
-      pkt.button_id, pkt.press_duration);
+    RCLCPP_INFO(get_logger(),
+                "UI button event: button_id=%u duration=%u",
+                pkt.button_id,
+                pkt.press_duration);
   }
 
-  void handle_odometry(const uint8_t * data, std::size_t len)
+  void handle_odometry(const uint8_t* data, std::size_t len)
   {
-    if (len < sizeof(LlOdometry)) {
+    if (len < sizeof(LlOdometry))
+    {
       RCLCPP_WARN(get_logger(), "Odometry packet too short: %zu < %zu", len, sizeof(LlOdometry));
       return;
     }
@@ -376,52 +399,54 @@ private:
     const double dt_sec = static_cast<double>(pkt.dt_millis) / 1000.0;
 
     // Compute tick deltas since last packet
-    const int32_t d_left  = pkt.left_ticks  - prev_left_ticks_;
+    const int32_t d_left = pkt.left_ticks - prev_left_ticks_;
     const int32_t d_right = pkt.right_ticks - prev_right_ticks_;
-    prev_left_ticks_  = pkt.left_ticks;
+    prev_left_ticks_ = pkt.left_ticks;
     prev_right_ticks_ = pkt.right_ticks;
 
     // Skip the first packet (no valid delta yet)
-    if (!odom_initialized_) {
+    if (!odom_initialized_)
+    {
       odom_initialized_ = true;
       return;
     }
 
     // Convert ticks to metres (TICKS_PER_M = 300.0)
     constexpr double kTicksPerMetre = 300.0;
-    constexpr double kWheelBase     = 0.325;
+    constexpr double kWheelBase = 0.325;
 
-    const double d_left_m  = static_cast<double>(d_left)  / kTicksPerMetre;
+    const double d_left_m = static_cast<double>(d_left) / kTicksPerMetre;
     const double d_right_m = static_cast<double>(d_right) / kTicksPerMetre;
 
     // Differential drive kinematics
     const double d_centre = (d_left_m + d_right_m) / 2.0;
-    const double d_theta  = (d_right_m - d_left_m) / kWheelBase;
+    const double d_theta = (d_right_m - d_left_m) / kWheelBase;
 
     // Velocity (m/s, rad/s)
-    double vx   = 0.0;
+    double vx = 0.0;
     double vyaw = 0.0;
-    if (dt_sec > 0.001) {
-      vx   = d_centre / dt_sec;
-      vyaw = d_theta  / dt_sec;
+    if (dt_sec > 0.001)
+    {
+      vx = d_centre / dt_sec;
+      vyaw = d_theta / dt_sec;
     }
 
     auto msg = nav_msgs::msg::Odometry{};
-    msg.header.stamp    = stamp;
+    msg.header.stamp = stamp;
     msg.header.frame_id = "odom";
-    msg.child_frame_id  = "base_link";
+    msg.child_frame_id = "base_link";
 
     // We only publish velocity, not position (EKF integrates)
-    msg.twist.twist.linear.x  = vx;
+    msg.twist.twist.linear.x = vx;
     msg.twist.twist.angular.z = vyaw;
 
     // Covariance: trust velocities loosely (wheel slip on grass)
     // [vx, vy, vz, wx, wy, wz] - 6x6 row-major
-    msg.twist.covariance[0]  = 0.01;  // vx variance
-    msg.twist.covariance[7]  = 1e6;   // vy (no lateral) - very high = unknown
-    msg.twist.covariance[14] = 1e6;   // vz - unknown
-    msg.twist.covariance[21] = 1e6;   // wx - unknown
-    msg.twist.covariance[28] = 1e6;   // wy - unknown
+    msg.twist.covariance[0] = 0.01;  // vx variance
+    msg.twist.covariance[7] = 1e6;  // vy (no lateral) - very high = unknown
+    msg.twist.covariance[14] = 1e6;  // vz - unknown
+    msg.twist.covariance[21] = 1e6;  // wx - unknown
+    msg.twist.covariance[28] = 1e6;  // wy - unknown
     msg.twist.covariance[35] = 0.05;  // wz variance
 
     pub_wheel_odom_->publish(msg);
@@ -435,27 +460,25 @@ private:
   {
     LlHeartbeat pkt{};
     pkt.type = PACKET_ID_LL_HEARTBEAT;
-    pkt.emergency_requested         = emergency_active_ ? 1u : 0u;
+    pkt.emergency_requested = emergency_active_ ? 1u : 0u;
     pkt.emergency_release_requested = emergency_release_pending_ ? 1u : 0u;
 
     // Consume the one-shot release flag.
     emergency_release_pending_ = false;
 
-    send_raw_packet(
-      reinterpret_cast<const uint8_t *>(&pkt),
-      sizeof(LlHeartbeat) - sizeof(uint16_t));  // CRC appended by encode_packet.
+    send_raw_packet(reinterpret_cast<const uint8_t*>(&pkt),
+                    sizeof(LlHeartbeat) - sizeof(uint16_t));  // CRC appended by encode_packet.
   }
 
   void send_high_level_state()
   {
     LlHighLevelState pkt{};
-    pkt.type         = PACKET_ID_LL_HIGH_LEVEL_STATE;
+    pkt.type = PACKET_ID_LL_HIGH_LEVEL_STATE;
     pkt.current_mode = current_mode_;
-    pkt.gps_quality  = gps_quality_;
+    pkt.gps_quality = gps_quality_;
 
-    send_raw_packet(
-      reinterpret_cast<const uint8_t *>(&pkt),
-      sizeof(LlHighLevelState) - sizeof(uint16_t));
+    send_raw_packet(reinterpret_cast<const uint8_t*>(&pkt),
+                    sizeof(LlHighLevelState) - sizeof(uint16_t));
   }
 
   // ---------------------------------------------------------------------------
@@ -465,30 +488,26 @@ private:
   void on_cmd_vel(geometry_msgs::msg::Twist::ConstSharedPtr msg)
   {
     LlCmdVel pkt{};
-    pkt.type      = PACKET_ID_LL_CMD_VEL;
-    pkt.linear_x  = static_cast<float>(msg->linear.x);
+    pkt.type = PACKET_ID_LL_CMD_VEL;
+    pkt.linear_x = static_cast<float>(msg->linear.x);
     pkt.angular_z = static_cast<float>(msg->angular.z);
 
-    send_raw_packet(
-      reinterpret_cast<const uint8_t *>(&pkt),
-      sizeof(LlCmdVel) - sizeof(uint16_t));
+    send_raw_packet(reinterpret_cast<const uint8_t*>(&pkt), sizeof(LlCmdVel) - sizeof(uint16_t));
   }
 
   // ---------------------------------------------------------------------------
   // Service handlers
   // ---------------------------------------------------------------------------
 
-  void on_mower_control(
-    const std::shared_ptr<mowgli_interfaces::srv::MowerControl::Request> req,
-    std::shared_ptr<mowgli_interfaces::srv::MowerControl::Response> res)
+  void on_mower_control(const std::shared_ptr<mowgli_interfaces::srv::MowerControl::Request> req,
+                        std::shared_ptr<mowgli_interfaces::srv::MowerControl::Response> res)
   {
     mow_enabled_ = (req->mow_enabled != 0u);
 
-    RCLCPP_INFO(
-      get_logger(),
-      "MowerControl: mow_enabled=%s mow_direction=%u",
-      mow_enabled_ ? "true" : "false",
-      req->mow_direction);
+    RCLCPP_INFO(get_logger(),
+                "MowerControl: mow_enabled=%s mow_direction=%u",
+                mow_enabled_ ? "true" : "false",
+                req->mow_direction);
 
     // Send an immediate heartbeat with current emergency state so the STM32
     // picks up the mode change without waiting for the next scheduled tick.
@@ -497,16 +516,18 @@ private:
     res->success = true;
   }
 
-  void on_emergency_stop(
-    const std::shared_ptr<mowgli_interfaces::srv::EmergencyStop::Request> req,
-    std::shared_ptr<mowgli_interfaces::srv::EmergencyStop::Response> res)
+  void on_emergency_stop(const std::shared_ptr<mowgli_interfaces::srv::EmergencyStop::Request> req,
+                         std::shared_ptr<mowgli_interfaces::srv::EmergencyStop::Response> res)
   {
-    if (req->emergency != 0u) {
+    if (req->emergency != 0u)
+    {
       RCLCPP_WARN(get_logger(), "Emergency stop requested via service.");
       emergency_active_ = true;
-    } else {
+    }
+    else
+    {
       RCLCPP_INFO(get_logger(), "Emergency release requested via service.");
-      emergency_active_          = false;
+      emergency_active_ = false;
       emergency_release_pending_ = true;
     }
 
@@ -519,15 +540,15 @@ private:
   // Members: ROS2 interfaces
   // ---------------------------------------------------------------------------
 
-  rclcpp::Publisher<mowgli_interfaces::msg::Status>::SharedPtr    pub_status_;
+  rclcpp::Publisher<mowgli_interfaces::msg::Status>::SharedPtr pub_status_;
   rclcpp::Publisher<mowgli_interfaces::msg::Emergency>::SharedPtr pub_emergency_;
-  rclcpp::Publisher<mowgli_interfaces::msg::Power>::SharedPtr     pub_power_;
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr             pub_imu_;
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr           pub_wheel_odom_;
+  rclcpp::Publisher<mowgli_interfaces::msg::Power>::SharedPtr pub_power_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_imu_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_wheel_odom_;
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_cmd_vel_;
 
-  rclcpp::Service<mowgli_interfaces::srv::MowerControl>::SharedPtr  srv_mower_control_;
+  rclcpp::Service<mowgli_interfaces::srv::MowerControl>::SharedPtr srv_mower_control_;
   rclcpp::Service<mowgli_interfaces::srv::EmergencyStop>::SharedPtr srv_emergency_stop_;
 
   rclcpp::TimerBase::SharedPtr timer_read_;
@@ -539,28 +560,28 @@ private:
   // ---------------------------------------------------------------------------
 
   std::string serial_port_path_;
-  int         baud_rate_{115200};
-  double      heartbeat_rate_{4.0};
-  double      publish_rate_{100.0};
-  double      high_level_rate_{2.0};
+  int baud_rate_{115200};
+  double heartbeat_rate_{4.0};
+  double publish_rate_{100.0};
+  double high_level_rate_{2.0};
 
   std::unique_ptr<SerialPort> serial_;
-  PacketHandler               packet_handler_;
+  PacketHandler packet_handler_;
 
   // ---------------------------------------------------------------------------
   // Members: stateful state communicated to the STM32
   // ---------------------------------------------------------------------------
 
-  bool    emergency_active_{false};
-  bool    emergency_release_pending_{false};
-  bool    mow_enabled_{false};
+  bool emergency_active_{false};
+  bool emergency_release_pending_{false};
+  bool mow_enabled_{false};
   uint8_t current_mode_{0};
   uint8_t gps_quality_{0};
 
   // Odometry state
   int32_t prev_left_ticks_{0};
   int32_t prev_right_ticks_{0};
-  bool    odom_initialized_{false};
+  bool odom_initialized_{false};
 };
 
 }  // namespace mowgli_hardware
@@ -569,7 +590,7 @@ private:
 // main
 // ---------------------------------------------------------------------------
 
-int main(int argc, char ** argv)
+int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<mowgli_hardware::HardwareBridgeNode>());

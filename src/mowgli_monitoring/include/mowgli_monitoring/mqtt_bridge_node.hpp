@@ -65,7 +65,7 @@ namespace mowgli_monitoring
 class IMqttClient
 {
 public:
-  using MessageCallback = std::function<void(const std::string & topic, const std::string & payload)>;
+  using MessageCallback = std::function<void(const std::string& topic, const std::string& payload)>;
 
   virtual ~IMqttClient() = default;
 
@@ -87,10 +87,9 @@ public:
    * @param retain  Whether the broker should retain the last message.
    * @return true if the message was accepted for delivery.
    */
-  virtual bool publish(
-    const std::string & topic,
-    const std::string & payload,
-    bool retain = false) noexcept = 0;
+  virtual bool publish(const std::string& topic,
+                       const std::string& payload,
+                       bool retain = false) noexcept = 0;
 
   /**
    * @brief Subscribe to a topic pattern.
@@ -98,9 +97,7 @@ public:
    * @param callback Invoked on each received message.
    * @return true if the subscription was accepted.
    */
-  virtual bool subscribe(
-    const std::string & topic,
-    MessageCallback callback) noexcept = 0;
+  virtual bool subscribe(const std::string& topic, MessageCallback callback) noexcept = 0;
 
   /**
    * @brief Drive the client network loop (call regularly).
@@ -130,13 +127,10 @@ public:
 
   bool connect() noexcept override;
   void disconnect() noexcept override;
-  bool publish(
-    const std::string & topic,
-    const std::string & payload,
-    bool retain = false) noexcept override;
-  bool subscribe(
-    const std::string & topic,
-    MessageCallback callback) noexcept override;
+  bool publish(const std::string& topic,
+               const std::string& payload,
+               bool retain = false) noexcept override;
+  bool subscribe(const std::string& topic, MessageCallback callback) noexcept override;
   void spin_once() noexcept override;
   bool is_connected() const noexcept override;
 
@@ -163,11 +157,11 @@ public:
   struct Config
   {
     std::string host{"localhost"};
-    int         port{1883};
+    int port{1883};
     std::string username{};
     std::string password{};
     std::string client_id{"mowgli_ros2"};
-    bool        use_ssl{false};
+    bool use_ssl{false};
   };
 
   explicit MosquittoMqttClient(Config config, rclcpp::Logger logger);
@@ -175,13 +169,10 @@ public:
 
   bool connect() noexcept override;
   void disconnect() noexcept override;
-  bool publish(
-    const std::string & topic,
-    const std::string & payload,
-    bool retain = false) noexcept override;
-  bool subscribe(
-    const std::string & topic,
-    MessageCallback callback) noexcept override;
+  bool publish(const std::string& topic,
+               const std::string& payload,
+               bool retain = false) noexcept override;
+  bool subscribe(const std::string& topic, MessageCallback callback) noexcept override;
   void spin_once() noexcept override;
   bool is_connected() const noexcept override;
 
@@ -209,19 +200,21 @@ public:
   /**
    * @brief Primary constructor — creates the MQTT client internally.
    */
-  explicit MqttBridgeNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit MqttBridgeNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
   /**
    * @brief Constructor for tests — accepts an externally provided client.
    */
-  MqttBridgeNode(
-    std::unique_ptr<IMqttClient> client,
-    const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  MqttBridgeNode(std::unique_ptr<IMqttClient> client,
+                 const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
   ~MqttBridgeNode() override = default;
 
   // Exposed for testing.
-  const std::string & topic_prefix() const {return topic_prefix_;}
+  const std::string& topic_prefix() const
+  {
+    return topic_prefix_;
+  }
 
 private:
   // ---- Initialisation -------------------------------------------------------
@@ -242,7 +235,7 @@ private:
 
   // ---- MQTT command callback ------------------------------------------------
 
-  void on_mqtt_command(const std::string & topic, const std::string & payload);
+  void on_mqtt_command(const std::string& topic, const std::string& payload);
 
   // ---- Timer: network loop + rate-limited position --------------------------
 
@@ -250,19 +243,19 @@ private:
 
   // ---- JSON serialisers -----------------------------------------------------
 
-  static std::string serialise_status(const mowgli_interfaces::msg::Status & msg);
-  static std::string serialise_power(const mowgli_interfaces::msg::Power & msg);
-  static std::string serialise_emergency(const mowgli_interfaces::msg::Emergency & msg);
-  static std::string serialise_position(const nav_msgs::msg::Odometry & msg);
-  static std::string serialise_diagnostics(const diagnostic_msgs::msg::DiagnosticArray & msg);
+  static std::string serialise_status(const mowgli_interfaces::msg::Status& msg);
+  static std::string serialise_power(const mowgli_interfaces::msg::Power& msg);
+  static std::string serialise_emergency(const mowgli_interfaces::msg::Emergency& msg);
+  static std::string serialise_position(const nav_msgs::msg::Odometry& msg);
+  static std::string serialise_diagnostics(const diagnostic_msgs::msg::DiagnosticArray& msg);
 
   // ---- Helpers --------------------------------------------------------------
 
   /// Construct the full MQTT topic: "<prefix>/<suffix>".
-  std::string full_topic(const std::string & suffix) const;
+  std::string full_topic(const std::string& suffix) const;
 
   /// Escape a raw string so it is safe inside a JSON string literal.
-  static std::string json_escape(const std::string & raw);
+  static std::string json_escape(const std::string& raw);
 
   // ---- MQTT client ----------------------------------------------------------
 
@@ -270,10 +263,10 @@ private:
 
   // ---- ROS2 interfaces ------------------------------------------------------
 
-  rclcpp::Subscription<mowgli_interfaces::msg::Status>::SharedPtr    sub_status_;
-  rclcpp::Subscription<mowgli_interfaces::msg::Power>::SharedPtr     sub_power_;
+  rclcpp::Subscription<mowgli_interfaces::msg::Status>::SharedPtr sub_status_;
+  rclcpp::Subscription<mowgli_interfaces::msg::Power>::SharedPtr sub_power_;
   rclcpp::Subscription<mowgli_interfaces::msg::Emergency>::SharedPtr sub_emergency_;
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr           sub_odom_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;
   rclcpp::Subscription<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr sub_diagnostics_;
 
   rclcpp::Client<mowgli_interfaces::srv::HighLevelControl>::SharedPtr srv_high_level_;
@@ -283,18 +276,18 @@ private:
   // ---- Parameters -----------------------------------------------------------
 
   std::string mqtt_host_{"localhost"};
-  int         mqtt_port_{1883};
+  int mqtt_port_{1883};
   std::string mqtt_username_{};
   std::string mqtt_password_{};
   std::string mqtt_client_id_{"mowgli_ros2"};
   std::string topic_prefix_{"mowgli"};
-  double      publish_rate_{1.0};
-  bool        use_ssl_{false};
+  double publish_rate_{1.0};
+  bool use_ssl_{false};
 
   // ---- Rate-limiting state --------------------------------------------------
 
   std::optional<nav_msgs::msg::Odometry> pending_odom_{};
-  rclcpp::Time                           last_odom_publish_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_odom_publish_{0, 0, RCL_ROS_TIME};
 };
 
 }  // namespace mowgli_monitoring
