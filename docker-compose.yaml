@@ -21,7 +21,9 @@ services:
     network_mode: host
     privileged: true
     devices:
-      - /dev/ttyUSB0:/dev/ttyUSB0
+      - /dev/mowgli:/dev/mowgli
+      - /dev/gps:/dev/gps
+      - /dev/lidar:/dev/lidar
     environment:
       <<: *ros2-env
     command: >
@@ -93,21 +95,6 @@ services:
       WATCHTOWER_POLL_INTERVAL: "14400"
       WATCHTOWER_DEBUG: "false"
       WATCHTOWER_LABEL_ENABLE: "true"
-    restart: unless-stopped
-
-  # -------------------------------------------------------------------------
-  # Static nginx landing page — served on port 4005
-  # -------------------------------------------------------------------------
-  web:
-    container_name: mowgli-web
-    image: nginx:alpine
-    labels:
-      project: openmower
-      app: web
-    ports:
-      - "4005:80"
-    volumes:
-      - ./web:/usr/share/nginx/html:ro
     restart: unless-stopped
 
 volumes:

@@ -79,14 +79,5 @@ services:
       - ./config/mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     restart: unless-stopped
 
-  web:
-    container_name: mowgli-web
-    image: nginx:alpine
-    ports:
-      - "4005:80"
-    volumes:
-      - ./web:/usr/share/nginx/html:ro
-    restart: unless-stopped
-
 volumes:
   mowgli_maps:

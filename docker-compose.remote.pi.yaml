@@ -33,7 +33,9 @@ services:
     network_mode: host
     privileged: true
     devices:
-      - /dev/ttyUSB0:/dev/ttyUSB0
+      - /dev/mowgli:/dev/mowgli
+      - /dev/gps:/dev/gps
+      - /dev/lidar:/dev/lidar
     environment:
       <<: *ros2-env
     # Hardware-only launch: serial bridge to STM32, GPS, basic TF publishers.

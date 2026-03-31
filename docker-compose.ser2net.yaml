@@ -4,6 +4,7 @@
 # mower board.  The mower Pi must run ser2net and expose:
 #   port 4001 -> /dev/mowgli  (STM32 serial)
 #   port 4002 -> /dev/gps     (GNSS receiver)
+#   port 4003 -> /dev/lidar   (LiDAR serial)
 #
 # socat creates virtual PTYs that the mowgli container reads just like real
 # USB serial devices.
@@ -16,6 +17,9 @@
 #   connection: &gps
 #     accepter: tcp,4002
 #     connector: serialdev,/dev/gps,460800n81
+#   connection: &lidar
+#     accepter: tcp,4003
+#     connector: serialdev,/dev/lidar,230400n81
 #
 # Launch (on the remote brain machine):
 #   docker compose -f docker-compose.ser2net.yaml up -d
@@ -52,6 +56,18 @@ services:
       - /dev:/dev
     restart: unless-stopped
 
+  # socat relay: TCP -> virtual PTY at /dev/lidar (LiDAR)
+  lidar-relay:
+    container_name: mowgli-lidar-relay
+    image: alpine/socat
+    command: >
+      pty,link=/dev/lidar,ignoreof,waitslave,group-late=100,user-late=1000,raw,mode=660,echo=0
+      tcp:${MOWER_IP}:4003
+    privileged: true
+    volumes:
+      - /dev:/dev
+    restart: unless-stopped
+
   mowgli:
     container_name: mowgli-ros2
     image: ${MOWGLI_ROS2_IMAGE}
@@ -70,6 +86,7 @@ services:
     depends_on:
       - mowgli-relay
       - gps-relay
+      - lidar-relay
     restart: unless-stopped
     logging:
       driver: json-file

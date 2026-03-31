@@ -22,87 +22,135 @@ v3 is a complete rewrite of the container deployment.  The ROS1 stack
 | `gui` | OpenMower GUI — Go backend + React frontend | host networking |
 | `mosquitto` | MQTT broker for Home Assistant and telemetry | 1883, 9001 |
 | `watchtower` | Automatic image update polling (gui only) | — |
-| `web` | Static nginx landing page | 4005 |
 
-## Quick start (local, direct serial)
+## Hardware
 
-### 1. Install Docker
+| Device | Symlink | Description |
+|--------|---------|-------------|
+| Mowgli STM32 board | `/dev/mowgli` | Main controller (serial 115200) |
+| u-blox F9P / RTK1010 | `/dev/gps` | GNSS receiver (serial 921600) |
+| youyeetoo FHL-LD19 | `/dev/lidar` | LiDAR scanner (serial 230400) |
+
+## Quick start
+
+### One-line install
+
+```bash
+curl -sSL https://raw.githubusercontent.com/cedbossneo/mowgli-ros2/main/mowgli-docker/install.sh | bash
+```
+
+The install script handles everything: Docker, udev rules, configuration,
+image pull, and startup.  Run it again to upgrade.
+
+### Manual install
+
+#### 1. Install Docker
 
 ```bash
 curl https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# Log out and back in
 ```
 
-### 2. udev rules (so devices get stable symlinks)
+#### 2. Clone this repository
+
+```bash
+git clone https://github.com/cedbossneo/mowgli-ros2.git
+cd mowgli-ros2/mowgli-docker
+```
+
+#### 3. udev rules (stable device symlinks)
 
 Create `/etc/udev/rules.d/50-mowgli.rules`:
 
 ```
 # Mowgli STM32 board
-SUBSYSTEM=="tty", ATTRS{product}=="Mowgli", SYMLINK+="mowgli"
-# simpleRTK2B
-SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", SYMLINK+="gps"
-# RTK1010Board (ESP USB CDC)
-SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001", SYMLINK+="gps"
+SUBSYSTEM=="tty", ATTRS{product}=="Mowgli", SYMLINK+="mowgli", MODE="0666"
+
+# GPS: simpleRTK2B (u-blox F9P)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", SYMLINK+="gps", MODE="0666"
+# GPS: RTK1010Board (ESP USB CDC)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001", SYMLINK+="gps", MODE="0666"
+
+# LiDAR: youyeetoo FHL-LD19 (CP2102 USB-to-UART)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="lidar", MODE="0666"
 ```
 
-Reload: `sudo udevadm control --reload && sudo udevadm trigger`
+Reload:
 
-### 3. Configure
-
-Edit `.env` — in most cases only `MOWER_IP` needs to be set for ser2net mode.
-The image tags default to `:v3`.
-
-If your board appears on a path other than `/dev/ttyUSB0`, create a
-`docker-compose.override.yaml`:
-
-```yaml
-services:
-  mowgli:
-    devices:
-      - /dev/mowgli:/dev/ttyUSB0
+```bash
+sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-### 4. Launch
+Verify:
+
+```bash
+ls -l /dev/mowgli /dev/gps /dev/lidar
+```
+
+> **Note:** If your LD19 uses a CH340 adapter instead of CP2102, replace
+> the LiDAR rule with:
+> `SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="lidar", MODE="0666"`
+>
+> If you have multiple CP2102 devices, disambiguate with:
+> `udevadm info -a /dev/ttyUSBx | grep product`
+
+#### 4. Configure
+
+```bash
+cp .env.example .env
+# Edit .env — set MOWER_IP for ser2net mode
+# Edit config/mowgli/mowgli_robot.yaml — set GPS datum, NTRIP, dock pose
+# Edit config/om/mower_config.sh — set GPS datum, NTRIP for the GUI
+```
+
+#### 5. Launch
 
 ```bash
 docker compose up -d
 ```
 
-The GUI is available on `http://<pi-ip>:4005` (landing page) once the stack is up.
-
 ## Configuration
 
-### GUI settings — `config/om/`
+### `.env` — image tags and network
 
-Place `mower_config.sh` and any GUI-specific config files here.  This directory
-is bind-mounted read-only at `/config` inside the `gui` container.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ROS_DOMAIN_ID` | `0` | DDS domain — must match across all machines |
+| `MOWER_IP` | `10.0.0.161` | Mower Pi IP (ser2net mode only) |
+| `MOWGLI_ROS2_IMAGE` | `ghcr.io/cedbossneo/mowgli-ros2:v3` | ROS2 stack image |
+| `GUI_IMAGE` | `ghcr.io/cedbossneo/openmower-gui:v3` | GUI image |
 
-### ROS2 parameters — `config/mowgli/`
+### `config/mowgli/` — ROS2 parameters
 
-Place YAML parameter override files here.  The directory is bind-mounted
-read-only at `/ros2_ws/config/` inside the `mowgli` container.
+YAML parameter override files, bind-mounted at `/ros2_ws/config/` inside the
+container.  The main file to edit is `mowgli_robot.yaml`.
 
 See [`config/mowgli/README.md`](config/mowgli/README.md) for the full list of
-overrideable files and an example.
+overrideable files.
 
-### MQTT — `config/mqtt/mosquitto.conf`
+### `config/om/` — GUI settings
 
-Standard Mosquitto configuration file.
+`mower_config.sh` and GUI-specific config files, bind-mounted at `/config`
+inside the `gui` container.
+
+### `config/mqtt/` — MQTT broker
+
+Standard `mosquitto.conf`.
 
 ## Foxglove Studio
 
 Foxglove Bridge runs inside the main `mowgli` container on port **8765**.
 Connect Foxglove Studio to `ws://<pi-ip>:8765`.
 
-To run Foxglove Bridge as a separate container (useful if you want to restart
-it independently):
+To run Foxglove Bridge as a separate container:
 
 ```bash
 docker compose -f docker-compose.yaml -f docker-compose.foxglove.yaml up -d
 ```
 
-When using this override, set `enable_foxglove:=false` in the mowgli service
-command inside a `docker-compose.override.yaml` to avoid the port conflict.
+When using this override, set `enable_foxglove:=false` in a
+`docker-compose.override.yaml` to avoid the port conflict.
 
 ## Deployment modes
 
@@ -111,8 +159,12 @@ command inside a `docker-compose.override.yaml` to avoid the port conflict.
 Use when the compute board (Pi running Docker) is separate from the mower
 board, connected via Ethernet.
 
-On the mower Pi, install and configure `ser2net` to expose `/dev/mowgli` on
-TCP port 4001 and `/dev/gps` on TCP port 4002.  Then on the brain machine:
+On the mower Pi, install `ser2net` to expose:
+- `/dev/mowgli` on TCP port 4001
+- `/dev/gps` on TCP port 4002
+- `/dev/lidar` on TCP port 4003
+
+Then on the brain machine:
 
 ```bash
 # Edit .env: set MOWER_IP to the mower Pi's IP
@@ -143,22 +195,26 @@ peer discovery.
 ## Logs
 
 ```bash
-# Follow mowgli ROS2 output
 docker compose logs -f mowgli
-
-# Follow GUI
 docker compose logs -f gui
 ```
 
 ## Updating
 
-Watchtower checks for a new `gui` image every 4 hours.  To update the
-`mowgli` image manually:
+Run the install script again:
 
 ```bash
-docker compose pull mowgli
-docker compose up -d mowgli
+./install.sh
 ```
+
+Or manually:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Watchtower auto-updates the `gui` image every 4 hours.
 
 ## Shutdown
 
