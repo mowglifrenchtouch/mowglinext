@@ -8,7 +8,7 @@ Brings up all subsystems:
   2. navigation.launch.py    — SLAM, dual EKF, Nav2
   3. Behavior tree node       — mowgli_behavior
   4. Map server               — mowgli_map
-  5. Coverage planner          — mowgli_coverage_planner
+  5. Coverage server (optional) — opennav_coverage
   6. Wheel odometry            — mowgli_localization
   7. GPS pose converter        — mowgli_localization
   8. Localization monitor      — mowgli_localization
@@ -68,6 +68,12 @@ def generate_launch_description() -> LaunchDescription:
         description="Absolute path to a pre-built map yaml file (used when slam=false).",
     )
 
+    enable_coverage_arg = DeclareLaunchArgument(
+        "enable_coverage",
+        default_value="false",
+        description="Launch opennav_coverage server when true.",
+    )
+
     enable_mqtt_arg = DeclareLaunchArgument(
         "enable_mqtt",
         default_value="false",
@@ -105,6 +111,7 @@ def generate_launch_description() -> LaunchDescription:
     serial_port = LaunchConfiguration("serial_port")
     slam = LaunchConfiguration("slam")
     map_yaml = LaunchConfiguration("map")
+    enable_coverage = LaunchConfiguration("enable_coverage")
     enable_mqtt = LaunchConfiguration("enable_mqtt")
     enable_foxglove = LaunchConfiguration("enable_foxglove")
     foxglove_port = LaunchConfiguration("foxglove_port")
@@ -185,6 +192,7 @@ def generate_launch_description() -> LaunchDescription:
     # 5. Coverage server (opennav_coverage)
     # ------------------------------------------------------------------
     coverage_server_node = Node(
+        condition=IfCondition(enable_coverage),
         package="opennav_coverage",
         executable="opennav_coverage",
         name="coverage_server",
@@ -196,6 +204,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     coverage_lifecycle_manager = Node(
+        condition=IfCondition(enable_coverage),
         package="nav2_lifecycle_manager",
         executable="lifecycle_manager",
         name="lifecycle_manager_coverage",
@@ -307,7 +316,7 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[
             {
-                "port": foxglove_port,
+                "port": 8765,
                 "address": "0.0.0.0",
                 "send_buffer_limit": 10000000,
                 "num_threads": 0,
@@ -326,7 +335,7 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[
             {
-                "port": rosbridge_port,
+                "port": 9090,
                 "address": "0.0.0.0",
                 "unregister_timeout": 10.0,
                 "max_message_size": 10000000,
@@ -362,6 +371,7 @@ def generate_launch_description() -> LaunchDescription:
             serial_port_arg,
             slam_arg,
             map_arg,
+            enable_coverage_arg,
             enable_mqtt_arg,
             enable_foxglove_arg,
             foxglove_port_arg,
