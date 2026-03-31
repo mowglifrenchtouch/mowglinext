@@ -106,10 +106,8 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", SYMLINK+="g
 # GPS: RTK1010Board (ESP USB CDC)
 SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001", SYMLINK+="gps", MODE="0666"
 
-# LiDAR: youyeetoo FHL-LD19 (CP2102 USB-to-UART)
-SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="lidar", MODE="0666"
-# LiDAR: LD19 with CH340 adapter (uncomment if needed)
-# SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="lidar", MODE="0666"
+# LiDAR: LD19 connected via hardware UART /dev/ttyS1 (230400 baud)
+# No udev rule needed — ttyS1 is a fixed kernel device
 RULES
 )
 
@@ -178,6 +176,14 @@ setup_env() {
       echo "ROS_DOMAIN_ID=0" >> "$env_file"
       needs_update=true
     }
+    grep -q "^LIDAR_PORT=" "$env_file" || {
+      echo "LIDAR_PORT=/dev/ttyS1" >> "$env_file"
+      needs_update=true
+    }
+    grep -q "^LIDAR_BAUD=" "$env_file" || {
+      echo "LIDAR_BAUD=230400" >> "$env_file"
+      needs_update=true
+    }
 
     if $needs_update; then
       warn "Added missing keys to .env"
@@ -195,6 +201,10 @@ ROS_DOMAIN_ID=0
 
 # IP of the mower Pi (only needed for ser2net mode)
 MOWER_IP=10.0.0.161
+
+# LiDAR serial port and baud rate (LD19 on hardware UART)
+LIDAR_PORT=/dev/ttyS1
+LIDAR_BAUD=230400
 
 # Docker images
 MOWGLI_ROS2_IMAGE=$MOWGLI_ROS2_IMAGE_DEFAULT
@@ -340,7 +350,7 @@ pull_and_start() {
 
   # Check if devices exist
   local missing_devices=false
-  for dev in /dev/mowgli /dev/gps /dev/lidar; do
+  for dev in /dev/mowgli /dev/gps /dev/ttyS1; do
     if [ ! -e "$dev" ]; then
       warn "Device $dev not found — plug in the hardware and check udev rules"
       missing_devices=true
@@ -349,7 +359,7 @@ pull_and_start() {
   if $missing_devices; then
     echo ""
     warn "Some devices are missing. The mowgli container may restart until they appear."
-    warn "Check: ls -l /dev/mowgli /dev/gps /dev/lidar"
+    warn "Check: ls -l /dev/mowgli /dev/gps /dev/ttyS1"
   fi
 }
 

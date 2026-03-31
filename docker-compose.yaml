@@ -23,7 +23,6 @@ services:
     devices:
       - /dev/mowgli:/dev/mowgli
       - /dev/gps:/dev/gps
-      - /dev/lidar:/dev/lidar
     environment:
       <<: *ros2-env
     command: >
@@ -39,6 +38,39 @@ services:
       options:
         max-file: "5"
         max-size: 10m
+
+  # -------------------------------------------------------------------------
+  # LiDAR driver — LD19 on hardware UART, publishes /scan (LaserScan)
+  #
+  # Replace this service with a different driver image if you use a different
+  # LiDAR (e.g., rplidar, sllidar), as long as it publishes /scan.
+  # -------------------------------------------------------------------------
+  lidar:
+    container_name: mowgli-lidar
+    build:
+      context: ./lidar
+    network_mode: host
+    privileged: true
+    devices:
+      - ${LIDAR_PORT:-/dev/ttyS1}:${LIDAR_PORT:-/dev/ttyS1}
+    environment:
+      <<: *ros2-env
+    command: >
+      ros2 run ldlidar_stl_ros2 ldlidar_stl_ros2_node
+      --ros-args
+      -p product_name:=LDLiDAR_LD19
+      -p topic_name:=scan
+      -p frame_id:=lidar_link
+      -p port_name:=${LIDAR_PORT:-/dev/ttyS1}
+      -p port_baudrate:=${LIDAR_BAUD:-230400}
+      -p laser_scan_dir:=true
+      -p enable_angle_crop_func:=false
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 5m
 
   # -------------------------------------------------------------------------
   # OpenMower GUI — Go backend + React frontend
