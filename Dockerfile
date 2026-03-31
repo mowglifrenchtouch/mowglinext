@@ -46,6 +46,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-foxglove-bridge \
     # Rosbridge (WebSocket bridge for openmower-gui)
     ros-jazzy-rosbridge-suite \
+    # u-blox message definitions (for foxglove_bridge schema resolution)
+    ros-jazzy-ublox-msgs \
+    ros-jazzy-nmea-msgs \
     # tinyxml2 (required at runtime by BehaviorTree.CPP and opennav_coverage)
     libtinyxml2-dev \
     # Rotation shim controller for transit navigation
