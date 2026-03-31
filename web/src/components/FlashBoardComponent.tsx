@@ -11,7 +11,6 @@ import {
     Input,
     NumberPicker,
     Select,
-    Submit
 } from "@formily/antd-v5";
 import {StyledTerminal} from "./StyledTerminal.tsx";
 import Terminal, {ColorMode, TerminalOutput} from "react-terminal-ui";
@@ -76,7 +75,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
         },
     }), [])
     const guiApi = useApi();
-    const {notification} = App.useApp();
+    const {notification, modal} = App.useApp();
     const [data, setData] = useState<string[]>()
     const abortControllerRef = useRef<AbortController | null>(null);
     const [isFlashing, setIsFlashing] = useState(false);
@@ -197,7 +196,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
         }
     };
     const flashFirmware = (values: Config) => {
-        Modal.confirm({
+        modal.confirm({
             title: "Confirm firmware flash",
             content: (
                 <div>
@@ -540,7 +539,16 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
                 zIndex: 50,
             }}>
                 <FormButtonGroup>
-                    <Submit loading={form.loading} onSubmit={flashFirmware}>Flash Firmware</Submit>
+                    <Button type="primary" loading={isFlashing} onClick={() => {
+                        form.submit(flashFirmware).catch((err: unknown) => {
+                            if (err instanceof Error) {
+                                notification.error({
+                                    message: "Validation failed",
+                                    description: err.message,
+                                });
+                            }
+                        });
+                    }}>Flash Firmware</Button>
                     <Button onClick={props.onNext}>Skip</Button>
                 </FormButtonGroup>
             </Col> </Row>

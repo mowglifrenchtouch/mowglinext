@@ -1,5 +1,4 @@
 import React, {useState} from 'react';
-import {Submit} from '@formily/antd-v5'
 import {CheckCircleOutlined} from '@ant-design/icons'
 import {useThemeMode} from "../theme/ThemeContext.tsx";
 import {Button, Card, Col, Row, Steps, Typography} from "antd";
@@ -49,12 +48,14 @@ const SetupWizard: React.FC = () => {
                     <SettingsComponent contentStyle={{height: '55vh'}} actions={(form, save, restartOM, restartGUI) => {
                         return [
                             <Button onClick={handlePrevious}>Previous</Button>,
-                            <Submit loading={form.loading} onSubmit={async (values: SettingsConfig) => {
-                                await save(values);
-                                await restartOM();
-                                await restartGUI();
-                                handleNext();
-                            }}>Save and restart</Submit>,
+                            <Button type="primary" loading={form.loading} onClick={() => {
+                                form.submit(async (values: SettingsConfig) => {
+                                    await save(values);
+                                    await restartOM();
+                                    await restartGUI();
+                                    handleNext();
+                                }).catch(() => {});
+                            }}>Save and restart</Button>,
                         ]
                     }}/>
                 </Card>

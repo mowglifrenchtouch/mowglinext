@@ -1,10 +1,9 @@
 import { Col, Row, Tabs } from "antd";
 import { SettingsComponent } from "../components/SettingsComponent.tsx";
 import { SchemaSettingsComponent } from "../components/SchemaSettingsComponent.tsx";
-import { Submit } from "@formily/antd-v5";
 import AsyncButton from "../components/AsyncButton.tsx";
 import { useApi } from "../hooks/useApi.ts";
-import { App } from "antd";
+import { App, Button } from "antd";
 
 export const SettingsPage = () => {
     const guiApi = useApi();
@@ -65,9 +64,11 @@ export const SettingsPage = () => {
             children: (
                 <SettingsComponent
                     actions={(form, save, restartOM, restartGUI) => [
-                        <Submit key="save" loading={form.loading} onSubmit={save}>
+                        <Button key="save" type="primary" loading={form.loading} onClick={() => {
+                            form.submit(save).catch(() => {});
+                        }}>
                             Save settings
-                        </Submit>,
+                        </Button>,
                         <AsyncButton key="restart-om" onAsyncClick={restartOM}>
                             Restart OpenMower
                         </AsyncButton>,
