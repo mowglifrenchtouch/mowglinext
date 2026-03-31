@@ -167,7 +167,7 @@ RUN /bin/bash -c "\
     source /opt/ros/jazzy/setup.bash && \
     source install/setup.bash && \
     colcon build \
-      --cmake-args -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DFields2Cover_DIR=/usr/local/cmake/fields2cover \
+      --cmake-args -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTING=OFF -DFields2Cover_DIR=/usr/local/cmake/fields2cover \
       --parallel-workers \$(nproc) \
       --event-handlers console_cohesion+ \
     "
