@@ -20,9 +20,11 @@ from launch.actions import (
     DeclareLaunchArgument,
     GroupAction,
     IncludeLaunchDescription,
+    LogInfo,
+    OpaqueFunction,
     TimerAction,
 )
-from launch.conditions import IfCondition, LaunchConfigurationEquals
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetParameter
@@ -141,70 +143,74 @@ def generate_launch_description() -> LaunchDescription:
 
     # ------------------------------------------------------------------
     # 1. slam_toolbox  (only when slam=true)
-    #    Three mutually exclusive sub-groups select the correct launch file
-    #    and parameter set depending on slam_mode.
+    #
+    #    Uses an OpaqueFunction to check at launch time whether the saved
+    #    map file exists.  If the requested mode is 'lifelong' or
+    #    'localization' but the .posegraph file is missing, we fall back
+    #    to 'mapping' mode so slam_toolbox doesn't crash on first run.
     #
     #    mapping mode     → online_async_launch.py  (builds a new map)
     #    localization mode → localization_launch.py  (read-only pose graph)
     #    lifelong mode    → online_async_launch.py   (loads saved map +
     #                        keeps adding new scans — map improves over time)
     # ------------------------------------------------------------------
-    slam_toolbox_mapping = GroupAction(
-        condition=IfCondition(slam),
-        actions=[
-            GroupAction(
-                condition=LaunchConfigurationEquals("slam_mode", "mapping"),
-                actions=[
-                    IncludeLaunchDescription(
-                        PythonLaunchDescriptionSource(
-                            os.path.join(
-                                slam_toolbox_dir, "launch", "online_async_launch.py"
-                            )
-                        ),
-                        launch_arguments={
-                            "use_sim_time": use_sim_time,
-                            "slam_params_file": mapping_slam_params,
-                        }.items(),
-                    ),
-                ],
-            ),
-            GroupAction(
-                condition=LaunchConfigurationEquals("slam_mode", "localization"),
-                actions=[
-                    IncludeLaunchDescription(
-                        PythonLaunchDescriptionSource(
-                            os.path.join(
-                                slam_toolbox_dir, "launch", "localization_launch.py"
-                            )
-                        ),
-                        launch_arguments={
-                            "use_sim_time": use_sim_time,
-                            "slam_params_file": localization_slam_params,
-                        }.items(),
-                    ),
-                ],
-            ),
-            GroupAction(
-                condition=LaunchConfigurationEquals("slam_mode", "lifelong"),
-                actions=[
-                    IncludeLaunchDescription(
-                        PythonLaunchDescriptionSource(
-                            os.path.join(
-                                slam_toolbox_dir, "launch", "online_async_launch.py"
-                            )
-                        ),
-                        launch_arguments={
-                            "use_sim_time": use_sim_time,
-                            "slam_params_file": lifelong_slam_params,
-                        }.items(),
-                    ),
-                ],
-            ),
-        ],
-    )
+    def _launch_slam_toolbox(context):
+        resolved_mode = context.launch_configurations["slam_mode"]
+        resolved_map = context.launch_configurations["map_file_name"]
+        resolved_slam = context.launch_configurations["slam"]
+        resolved_sim = context.launch_configurations["use_sim_time"]
 
-    # Keep the old name so the LaunchDescription list below stays unchanged.
-    slam_toolbox_launch = slam_toolbox_mapping
+        # If slam is disabled, return nothing
+        if resolved_slam.lower() not in ("true", "1", "yes"):
+            return []
+
+        # Check if the saved posegraph file exists
+        posegraph_file = resolved_map + ".posegraph"
+        map_exists = os.path.isfile(posegraph_file)
+
+        effective_mode = resolved_mode
+        if not map_exists and resolved_mode in ("lifelong", "localization"):
+            effective_mode = "mapping"
+
+        actions = []
+        if not map_exists and resolved_mode != "mapping":
+            actions.append(
+                LogInfo(msg=(
+                    f"[navigation.launch.py] Map file '{posegraph_file}' not found. "
+                    f"Falling back from '{resolved_mode}' to 'mapping' mode."
+                ))
+            )
+
+        # Select the correct launch file and params
+        if effective_mode == "localization":
+            launch_file = os.path.join(
+                slam_toolbox_dir, "launch", "localization_launch.py"
+            )
+            params = localization_slam_params
+        elif effective_mode == "mapping":
+            launch_file = os.path.join(
+                slam_toolbox_dir, "launch", "online_async_launch.py"
+            )
+            params = mapping_slam_params
+        else:  # lifelong
+            launch_file = os.path.join(
+                slam_toolbox_dir, "launch", "online_async_launch.py"
+            )
+            params = lifelong_slam_params
+
+        actions.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(launch_file),
+                launch_arguments={
+                    "use_sim_time": resolved_sim,
+                    "slam_params_file": params,
+                }.items(),
+            )
+        )
+
+        return actions
+
+    slam_toolbox_launch = OpaqueFunction(function=_launch_slam_toolbox)
 
     # ------------------------------------------------------------------
     # 2. robot_localization – odom EKF
