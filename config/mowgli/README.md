@@ -54,6 +54,6 @@ than the default, add a `devices` override in a `docker-compose.override.yaml`:
 services:
   mowgli:
     devices:
-      - /dev/ttyUSB0:/dev/ttyUSB0
+      - /dev/mowgli:/dev/mowgli
       - /dev/ttyUSB1:/dev/gps
 ```

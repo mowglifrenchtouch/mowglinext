@@ -3,7 +3,7 @@
 # Run this on the Raspberry Pi (or Jetson, etc.) that is physically attached
 # to the mower board via USB serial.  It launches only the hardware bridge
 # node (mowgli.launch.py) which:
-#   - Reads STM32 telemetry from /dev/ttyUSB0 (or /dev/mowgli via udev)
+#   - Reads STM32 telemetry from /dev/mowgli (or /dev/mowgli via udev)
 #   - Reads GNSS from /dev/gps
 #   - Publishes odometry, IMU, and motor feedback as ROS2 topics
 #   - Accepts velocity commands and blade control from the nav stack
