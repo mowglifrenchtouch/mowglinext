@@ -3,9 +3,15 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"log"
+	"os"
+	"os/signal"
+	"reflect"
+	"syscall"
+	"time"
+
 	"github.com/brutella/hap/accessory"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/dynamic_reconfigure"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/mower_msgs"
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/mowgli"
 	types2 "github.com/cedbossneo/openmower-gui/pkg/types"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
@@ -13,13 +19,6 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/xerrors"
-	"reflect"
-	"time"
-
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 type MqttProvider struct {
@@ -89,22 +88,22 @@ func (hc *MqttProvider) launchServer() {
 }
 
 func (hc *MqttProvider) subscribeToRos() {
-	hc.subscribeToRosTopic("/mower_logic/current_state", "mqtt-mower-logic")
-	hc.subscribeToRosTopic("/ll/mower_status", "mqtt-mower-status")
-	hc.subscribeToRosTopic("/xbot_positioning/xb_pose", "mqtt-pose")
-	hc.subscribeToRosTopic("/ll/position/gps", "mqtt-gps")
-	hc.subscribeToRosTopic("/ll/imu/data_raw", "mqtt-imu")
-	hc.subscribeToRosTopic("/xbot_positioning/wheel_ticks_in", "mqtt-ticks")
-	hc.subscribeToRosTopic("/xbot_monitoring/map", "mqtt-map")
-	hc.subscribeToRosTopic("/slic3r_coverage_planner/path_marker_array", "mqtt-path")
-	hc.subscribeToRosTopic("/move_base_flex/FTCPlanner/global_plan", "mqtt-plan")
-	hc.subscribeToRosTopic("/mowing_path", "mqtt-mowing-path")
+	hc.subscribeToRosTopic("highLevelStatus", "mqtt-mower-logic")
+	hc.subscribeToRosTopic("status", "mqtt-mower-status")
+	hc.subscribeToRosTopic("pose", "mqtt-pose")
+	hc.subscribeToRosTopic("gps", "mqtt-gps")
+	hc.subscribeToRosTopic("imu", "mqtt-imu")
+	hc.subscribeToRosTopic("ticks", "mqtt-ticks")
+	hc.subscribeToRosTopic("map", "mqtt-map")
+	hc.subscribeToRosTopic("path", "mqtt-path")
+	hc.subscribeToRosTopic("plan", "mqtt-plan")
+	hc.subscribeToRosTopic("mowingPath", "mqtt-mowing-path")
 }
 
 func (hc *MqttProvider) subscribeToRosTopic(topic string, id string) {
 	err := hc.rosProvider.Subscribe(topic, id, func(msg []byte) {
 		time.Sleep(500 * time.Millisecond)
-		err := hc.server.Publish(hc.prefix+topic, msg, true, 0)
+		err := hc.server.Publish(hc.prefix+"/"+topic, msg, true, 0)
 		if err != nil {
 			logrus.Error(xerrors.Errorf("Failed to publish to %s: %w", topic, err))
 		}
@@ -115,28 +114,30 @@ func (hc *MqttProvider) subscribeToRosTopic(topic string, id string) {
 }
 
 func (hc *MqttProvider) subscribeToMqtt() {
-	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/mower_service/high_level_control", &mower_msgs.HighLevelControlSrv{}, &mower_msgs.HighLevelControlSrvReq{}, &mower_msgs.HighLevelControlSrvRes{})
-	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/ll/_service/emergency", &mower_msgs.EmergencyStopSrv{}, &mower_msgs.EmergencyStopSrvReq{}, &mower_msgs.EmergencyStopSrvRes{})
-	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/mower_logic/set_parameters", &dynamic_reconfigure.Reconfigure{}, &dynamic_reconfigure.ReconfigureReq{}, &dynamic_reconfigure.ReconfigureRes{})
-	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/ll/_service/mow_enabled", &mower_msgs.MowerControlSrv{}, &mower_msgs.MowerControlSrvReq{}, &mower_msgs.MowerControlSrvRes{})
-	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/mower_service/start_in_area", &mower_msgs.StartInAreaSrv{}, &mower_msgs.StartInAreaSrvReq{}, &mower_msgs.StartInAreaSrvRes{})
+	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/behavior_tree_node/high_level_control", &mowgli.HighLevelControlReq{}, &mowgli.HighLevelControlRes{})
+	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/hardware_bridge/emergency_stop", &mowgli.EmergencyStopReq{}, &mowgli.EmergencyStopRes{})
+	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/hardware_bridge/mower_control", &mowgli.MowerControlReq{}, &mowgli.MowerControlRes{})
+	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/behavior_tree_node/start_in_area", &mowgli.StartInAreaReq{}, &mowgli.StartInAreaRes{})
 }
 
-func subscribeToMqttCall[SRV any, REQ any, RES any](server *mqtt.Server, rosProvider types2.IRosProvider, prefix, topic string, srv SRV, req REQ, res RES) {
-	err := server.Subscribe(prefix+"/call"+topic, 1, func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet) {
-		logrus.Info("Received " + topic)
+// subscribeToMqttCall wires an MQTT subscription to a ROS2 service call.
+// When a message arrives on prefix+"/call"+service the payload is unmarshalled
+// into a new instance of REQ and forwarded to the service via rosbridge.
+func subscribeToMqttCall[REQ any, RES any](server *mqtt.Server, rosProvider types2.IRosProvider, prefix, service string, req REQ, res RES) {
+	err := server.Subscribe(prefix+"/call"+service, 1, func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet) {
+		logrus.Info("Received " + service)
 		var newReq = reflect.New(reflect.TypeOf(req).Elem()).Interface()
 		err := json.Unmarshal(pk.Payload, newReq)
 		if err != nil {
-			logrus.Error(xerrors.Errorf("Failed to unmarshal %s: %w", topic, err))
+			logrus.Error(xerrors.Errorf("Failed to unmarshal %s: %w", service, err))
 			return
 		}
-		err = rosProvider.CallService(context.Background(), topic, srv, newReq, res)
+		err = rosProvider.CallService(context.Background(), service, newReq, res)
 		if err != nil {
-			logrus.Error(xerrors.Errorf("Failed to call %s: %w", topic, err))
+			logrus.Error(xerrors.Errorf("Failed to call %s: %w", service, err))
 		}
 	})
 	if err != nil {
-		logrus.Error(xerrors.Errorf("Failed to subscribe to %s: %w", topic, err))
+		logrus.Error(xerrors.Errorf("Failed to subscribe to %s: %w", service, err))
 	}
 }

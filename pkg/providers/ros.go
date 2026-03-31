@@ -3,640 +3,396 @@ package providers
 import (
 	"context"
 	"encoding/json"
-	"github.com/bluenviron/goroslib/v2"
-	"github.com/bluenviron/goroslib/v2/pkg/msgs/geometry_msgs"
-	"github.com/bluenviron/goroslib/v2/pkg/msgs/nav_msgs"
-	"github.com/bluenviron/goroslib/v2/pkg/msgs/sensor_msgs"
-	"github.com/bluenviron/goroslib/v2/pkg/msgs/visualization_msgs"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/mower_msgs"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/std_msgs"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/xbot_msgs"
-	"math"
+	"sync"
+	"time"
+
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/geometry"
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/mowgli"
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/nav"
+	"github.com/cedbossneo/openmower-gui/pkg/rosbridge"
 	types2 "github.com/cedbossneo/openmower-gui/pkg/types"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/simplify"
 	"github.com/samber/lo"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/xerrors"
-	"sync"
-	"time"
 )
 
-type RosSubscriber struct {
-	Topic       string
-	Id          string
-	mtx         *sync.Mutex
-	cb          func(msg []byte)
-	nextMessage []byte
-	close       chan bool
+// topicDef maps a logical subscribe key to a ROS2 topic name and message type.
+// The frontend and internal routes always use logical keys; the ROS2 topic name
+// is only used when sending the rosbridge subscribe op.
+type topicDef struct {
+	ROS2Topic string
+	MsgType   string
 }
 
+// topicMap maps logical keys (used by SubscriberRoute and internal code) to
+// their corresponding ROS2 topics and message types.
+// Virtual topics (map, mowingPath) have an empty MsgType and are never sent to
+// rosbridge; they are populated by internal logic instead.
+var topicMap = map[string]topicDef{
+	"status":        {"/hardware_bridge/status", "mowgli_interfaces/msg/Status"},
+	"highLevelStatus": {"/behavior_tree_node/high_level_status", "mowgli_interfaces/msg/HighLevelStatus"},
+	"gps":           {"/gps/fix", "sensor_msgs/msg/NavSatFix"},
+	"pose":          {"/odom", "nav_msgs/msg/Odometry"},
+	"imu":           {"/hardware_bridge/imu/data_raw", "sensor_msgs/msg/Imu"},
+	"ticks":         {"/hardware_bridge/wheel_odom", "nav_msgs/msg/Odometry"},
+	"map":           {"", ""},                                                      // virtual – populated via map_server services
+	"path":          {"/coverage_planner_node/coverage_path", "nav_msgs/msg/Path"},
+	"plan":          {"/plan", "nav_msgs/msg/Path"},                                // Nav2 global plan
+	"mowingPath":    {"", ""},                                                      // virtual – populated by initMowingPathTracking
+	"power":         {"/hardware_bridge/power", "mowgli_interfaces/msg/Power"},
+	"emergency":     {"/hardware_bridge/emergency", "mowgli_interfaces/msg/Emergency"},
+	"dockingSensor": {"/mower/docking_sensor", "mowgli_interfaces/msg/DockingSensor"},
+	"lidar":         {"/scan", "sensor_msgs/msg/LaserScan"},
+	"diagnostics":   {"/diagnostics", "diagnostic_msgs/msg/DiagnosticArray"},
+}
+
+// ---------------------------------------------------------------------------
+// RosSubscriber – single fan-out worker for one (topic, id) pair
+// ---------------------------------------------------------------------------
+
+// RosSubscriber delivers messages from a ROS2 topic to one registered callback.
+// It runs a background goroutine that drains a single-slot mailbox so that a
+// slow consumer cannot stall the rosbridge read pump or other subscribers.
+type RosSubscriber struct {
+	Topic string
+	Id    string
+
+	mtx         sync.Mutex
+	cb          func(msg []byte)
+	nextMessage []byte
+	close       chan struct{}
+}
+
+// NewRosSubscriber creates and starts a RosSubscriber. The caller must eventually
+// call Close to release the background goroutine.
 func NewRosSubscriber(topic, id string, cb func(msg []byte)) *RosSubscriber {
 	r := &RosSubscriber{
-		cb:    cb,
 		Topic: topic,
 		Id:    id,
-		mtx:   &sync.Mutex{},
-		close: make(chan bool),
+		cb:    cb,
+		close: make(chan struct{}),
 	}
-	go r.Run()
+	go r.run()
 	return r
 }
 
+// Publish stores msg as the next message to be delivered. If a previous message
+// has not yet been consumed it is silently overwritten (drop-oldest semantics).
 func (r *RosSubscriber) Publish(msg []byte) {
 	r.mtx.Lock()
-	defer r.mtx.Unlock()
 	r.nextMessage = msg
+	r.mtx.Unlock()
 }
 
+// Close stops the background goroutine. It is safe to call from any goroutine.
 func (r *RosSubscriber) Close() {
-	r.close <- true
+	close(r.close)
 }
 
-func (r *RosSubscriber) Run() {
+// run is the delivery loop. It polls the mailbox at 100 ms intervals when idle.
+func (r *RosSubscriber) run() {
 	for {
 		select {
 		case <-r.close:
 			return
 		default:
-			r.mtx.Lock()
-			messageToProcess := r.nextMessage
-			r.nextMessage = nil
-			r.mtx.Unlock()
-			r.processMessage(messageToProcess)
+		}
+
+		r.mtx.Lock()
+		msg := r.nextMessage
+		r.nextMessage = nil
+		r.mtx.Unlock()
+
+		if msg != nil {
+			r.cb(msg)
+		} else {
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }
 
-func (r *RosSubscriber) processMessage(messageToProcess []byte) {
-	if messageToProcess != nil {
-		r.cb(messageToProcess)
-	} else {
-		time.Sleep(100 * time.Millisecond)
-	}
-}
+// ---------------------------------------------------------------------------
+// RosProvider – IRosProvider implementation backed by rosbridge WebSocket
+// ---------------------------------------------------------------------------
 
+// RosProvider implements types2.IRosProvider using a rosbridge v2 WebSocket
+// client. All topic access uses logical keys defined in topicMap; the actual
+// ROS2 topic names are an internal concern.
 type RosProvider struct {
-	node                      *goroslib.Node
-	mtx                       sync.Mutex
-	statusSubscriber          *goroslib.Subscriber
-	highLevelStatusSubscriber *goroslib.Subscriber
-	gpsSubscriber             *goroslib.Subscriber
-	imuSubscriber             *goroslib.Subscriber
-	ticksSubscriber           *goroslib.Subscriber
-	mapSubscriber             *goroslib.Subscriber
-	pathSubscriber            *goroslib.Subscriber
-	currentPathSubscriber     *goroslib.Subscriber
-	poseSubscriber            *goroslib.Subscriber
-	powerSubscriber           *goroslib.Subscriber
-	emergencySubscriber       *goroslib.Subscriber
-	dockingSensorSubscriber   *goroslib.Subscriber
-	lidarSubscriber           *goroslib.Subscriber
-	subscribers               map[string]map[string]*RosSubscriber
-	lastMessage               map[string][]byte
-	mowingPaths               []*nav_msgs.Path
-	mowingPath                *nav_msgs.Path
-	mowingPathOrigin          orb.LineString
-	dbProvider                types2.IDBProvider
+	client *rosbridge.Client
+
+	mtx         sync.Mutex
+	subscribers map[string]map[string]*RosSubscriber // logicalKey -> id -> subscriber
+	lastMessage map[string][]byte                     // logicalKey -> last JSON bytes
+
+	// Mowing path state (guarded by mtx)
+	mowingPaths      []*nav.Path
+	mowingPath       *nav.Path
+	mowingPathOrigin orb.LineString
+
+	dbProvider types2.IDBProvider
 }
 
-func (p *RosProvider) getNode() (*goroslib.Node, error) {
-	var err error
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	if p.node != nil {
-		return p.node, err
-	}
-
-	nodeName, err := p.dbProvider.Get("system.ros.nodeName")
-	if err != nil {
-		return nil, err
-	}
-	masterUri, err := p.dbProvider.Get("system.ros.masterUri")
-	if err != nil {
-		return nil, err
-	}
-	nodeHost, err := p.dbProvider.Get("system.ros.nodeHost")
-	if err != nil {
-		return nil, err
-	}
-	p.node, err = goroslib.NewNode(goroslib.NodeConf{
-		Name:          string(nodeName),
-		MasterAddress: string(masterUri),
-		Host:          string(nodeHost),
-		ReadTimeout:   time.Minute,
-		WriteTimeout:  time.Minute,
-	})
-	return p.node, err
-
-}
-
+// NewRosProvider constructs a RosProvider, reads the rosbridge URL from the
+// database (falling back to ws://localhost:9090), and connects asynchronously.
+// The returned value is ready to use immediately; Subscribe calls made before
+// the connection is established will be fulfilled once the connection comes up
+// via the rosbridge client's reconnect loop.
 func NewRosProvider(dbProvider types2.IDBProvider) types2.IRosProvider {
+	rosbridgeURL := "ws://localhost:9090"
+	if url, err := dbProvider.Get("system.ros.rosbridgeUrl"); err == nil && len(url) > 0 {
+		rosbridgeURL = string(url)
+	}
+
 	r := &RosProvider{
-		dbProvider: dbProvider,
+		client:      rosbridge.NewClient(rosbridgeURL),
+		subscribers: make(map[string]map[string]*RosSubscriber),
+		lastMessage: make(map[string][]byte),
+		dbProvider:  dbProvider,
 	}
-	err := r.initSubscribers()
-	if err != nil {
-		logrus.Error(err)
-		return r
-	}
-	err = r.initMowingPathSubscriber()
-	if err != nil {
-		logrus.Error(err)
-		return r
-	}
+
 	go func() {
-		for range time.Tick(20 * time.Second) {
-			node, err := r.getNode()
-			if err != nil {
-				logrus.Error(xerrors.Errorf("failed to get node: %w", err))
-				continue
-			}
-			_, err = node.NodePing("rosout")
-			if err != nil {
-				logrus.Error(xerrors.Errorf("failed to ping node: %w, restarting node", err))
-				r.resetSubscribers()
-			} else {
-				err = r.initSubscribers()
-				if err != nil {
-					logrus.Error(xerrors.Errorf("failed to init subscribers: %w", err))
-				}
-				err = r.initMowingPathSubscriber()
-				if err != nil {
-					logrus.Error(xerrors.Errorf("failed to init mowing path subscriber: %w", err))
-				}
-			}
+		if err := r.client.Connect(context.Background()); err != nil {
+			logrus.Errorf("RosProvider: rosbridge initial connect failed: %v", err)
+			// The rosbridge client's reconnect loop will keep retrying; we
+			// still proceed so that subscriptions are registered and will be
+			// re-sent on reconnect.
 		}
+		r.initRosbridgeSubscriptions()
+		r.initMowingPathTracking()
 	}()
+
 	return r
 }
 
-func (p *RosProvider) resetSubscribers() {
-	if p.node != nil {
-		p.node.Close()
+// initRosbridgeSubscriptions sends subscribe ops to rosbridge for every
+// real (non-virtual) topic in topicMap. Shape-changing topics are passed
+// through dedicated adapter functions (defined in transform.go); all other
+// topics receive a generic snake_case → PascalCase key rename.
+func (r *RosProvider) initRosbridgeSubscriptions() {
+	adapters := map[string]func([]byte) ([]byte, error){
+		"gps":   adaptGPS,
+		"pose":  adaptPose,
+		"ticks": adaptTicks,
 	}
-	p.currentPathSubscriber.Close()
-	p.gpsSubscriber.Close()
-	p.highLevelStatusSubscriber.Close()
-	p.imuSubscriber.Close()
-	p.mapSubscriber.Close()
-	p.pathSubscriber.Close()
-	p.statusSubscriber.Close()
-	p.ticksSubscriber.Close()
-	p.poseSubscriber.Close()
-	if p.powerSubscriber != nil {
-		p.powerSubscriber.Close()
-	}
-	if p.emergencySubscriber != nil {
-		p.emergencySubscriber.Close()
-	}
-	if p.dockingSensorSubscriber != nil {
-		p.dockingSensorSubscriber.Close()
-	}
-	if p.lidarSubscriber != nil {
-		p.lidarSubscriber.Close()
-	}
-	p.node = nil
-	p.currentPathSubscriber = nil
-	p.gpsSubscriber = nil
-	p.highLevelStatusSubscriber = nil
-	p.imuSubscriber = nil
-	p.mapSubscriber = nil
-	p.pathSubscriber = nil
-	p.statusSubscriber = nil
-	p.ticksSubscriber = nil
-	p.poseSubscriber = nil
-	p.powerSubscriber = nil
-	p.emergencySubscriber = nil
-	p.dockingSensorSubscriber = nil
-	p.lidarSubscriber = nil
-	p.mowingPaths = []*nav_msgs.Path{}
-	p.mowingPath = nil
-	p.mowingPathOrigin = nil
-	xbPose := p.subscribers["/xbot_positioning/xb_pose"]
-	if xbPose != nil {
-		for _, sub := range xbPose {
-			sub.Close()
-		}
-	}
-}
 
-func (p *RosProvider) initMowingPathSubscriber() error {
-	err := p.Subscribe("/xbot_positioning/xb_pose", "gui", func(msg []byte) {
-		p.mtx.Lock()
-		defer p.mtx.Unlock()
-		var pose xbot_msgs.AbsolutePose
-		err := json.Unmarshal(msg, &pose)
-		if err != nil {
-			logrus.Error(xerrors.Errorf("failed to unmarshal pose: %w", err))
-			return
+	for logicalKey, def := range topicMap {
+		if def.MsgType == "" {
+			continue
 		}
-		hlsLastMessage, ok := p.lastMessage["/mower_logic/current_state"]
-		if ok {
-			var highLevelStatus mower_msgs.HighLevelStatus
-			err := json.Unmarshal(hlsLastMessage, &highLevelStatus)
-			if err != nil {
-				logrus.Error(xerrors.Errorf("failed to unmarshal high level status: %w", err))
-				return
-			}
-			switch highLevelStatus.StateName {
-			case "MOWING":
-				sLastMessage, ok := p.lastMessage["/ll/mower_status"]
-				if ok {
-					var status mower_msgs.Status
-					err := json.Unmarshal(sLastMessage, &status)
-					if err != nil {
-						logrus.Error(xerrors.Errorf("failed to unmarshal status: %w", err))
-						return
-					}
-					if status.MowerMotorRpm > 0 {
-						if p.mowingPath == nil {
-							p.mowingPath = &nav_msgs.Path{}
-							p.mowingPathOrigin = orb.LineString{}
-							p.mowingPaths = append(p.mowingPaths, p.mowingPath)
-						}
-						p.mowingPathOrigin = append(p.mowingPathOrigin, orb.Point{
-							pose.Pose.Pose.Position.X, pose.Pose.Pose.Position.Y,
-						})
-						if len(p.mowingPathOrigin)%5 == 0 {
-							// low threshold just removes the colinear point
-							reduced := simplify.DouglasPeucker(0.03).LineString(p.mowingPathOrigin.Clone())
-							p.mowingPath.Poses = lo.Map(reduced, func(p orb.Point, idx int) geometry_msgs.PoseStamped {
-								return geometry_msgs.PoseStamped{
-									Pose: geometry_msgs.Pose{
-										Position: geometry_msgs.Point{
-											X: p[0],
-											Y: p[1],
-										},
-									},
-								}
-							})
-						}
-						msgJson, _ := json.Marshal(p.mowingPaths)
-						p.lastMessage["/mowing_path"] = msgJson
-						subscribers, hasSubscriber := p.subscribers["/mowing_path"]
-						if hasSubscriber {
-							for _, cb := range subscribers {
-								cb.Publish(msgJson)
-							}
-						}
-					} else {
-						p.mowingPath = nil
-						p.mowingPathOrigin = nil
-					}
+		key := logicalKey // capture for closure
+
+		if adapt, ok := adapters[key]; ok {
+			fn := adapt // capture
+			err := r.client.Subscribe(def.ROS2Topic, def.MsgType, "gui-"+key, func(msg json.RawMessage) {
+				converted, err := fn([]byte(msg))
+				if err != nil {
+					logrus.Errorf("RosProvider: adapt %s: %v", key, err)
+					return
 				}
-				break
-			default:
-				p.mowingPaths = []*nav_msgs.Path{}
-				p.mowingPath = nil
-				p.mowingPathOrigin = nil
+				r.fanOut(key, converted)
+			})
+			if err != nil {
+				logrus.Errorf("RosProvider: subscribe %s (%s): %v", def.ROS2Topic, key, err)
+			} else {
+				logrus.Infof("RosProvider: subscribed to %s as '%s'", def.ROS2Topic, key)
 			}
-		}
-	})
-	return err
-}
-
-func (p *RosProvider) CallService(ctx context.Context, srvName string, srv any, req any, res any) error {
-	rosNode, err := p.getNode()
-	if err != nil {
-		return err
-	}
-	serviceClient, err := goroslib.NewServiceClient(goroslib.ServiceClientConf{
-		Node: rosNode,
-		Name: srvName,
-		Srv:  srv,
-	})
-	if err != nil {
-		return err
-	}
-	defer serviceClient.Close()
-	err = serviceClient.CallContext(ctx, req, res)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (p *RosProvider) Subscribe(topic string, id string, cb func(msg []byte)) error {
-	err := p.initSubscribers()
-	if err != nil {
-		return err
-	}
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	subscriber, hasSubscriber := p.subscribers[topic]
-	if !hasSubscriber {
-		p.subscribers[topic] = make(map[string]*RosSubscriber)
-		subscriber, _ = p.subscribers[topic]
-	}
-	_, hasCallback := subscriber[id]
-	if !hasCallback {
-		subscriber[id] = NewRosSubscriber(topic, id, cb)
-	}
-	lastMessage, hasLastMessage := p.lastMessage[topic]
-	if hasLastMessage {
-		subscriber[id].Publish(lastMessage)
-	}
-	return nil
-}
-
-func (p *RosProvider) Publisher(topic string, obj interface{}) (*goroslib.Publisher, error) {
-	rosNode, err := p.getNode()
-	if err != nil {
-		return nil, err
-	}
-	publisher, err := goroslib.NewPublisher(goroslib.PublisherConf{
-		Node:  rosNode,
-		Topic: topic,
-		Msg:   obj,
-	})
-	return publisher, nil
-}
-
-func (p *RosProvider) UnSubscribe(topic string, id string) {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	_, hasSubscriber := p.subscribers[topic][id]
-	if hasSubscriber {
-		p.subscribers[topic][id].Close()
-		delete(p.subscribers[topic], id)
-	}
-}
-
-func (p *RosProvider) initSubscribers() error {
-	node, err := p.getNode()
-	if err != nil {
-		return err
-	}
-	if p.subscribers == nil {
-		p.subscribers = make(map[string]map[string]*RosSubscriber)
-	}
-	if p.lastMessage == nil {
-		p.lastMessage = make(map[string][]byte)
-	}
-	if p.statusSubscriber == nil {
-		p.statusSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/ll/mower_status",
-			Callback:  cbHandler[*mower_msgs.Status](p, "/ll/mower_status"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /ll/mower_status")
-	}
-	if p.highLevelStatusSubscriber == nil {
-		p.highLevelStatusSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/mower_logic/current_state",
-			Callback:  cbHandler[*mower_msgs.HighLevelStatus](p, "/mower_logic/current_state"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /mower_logic/current_state")
-	}
-	if p.gpsSubscriber == nil {
-		p.gpsSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/ll/position/gps",
-			Callback:  cbHandler[*xbot_msgs.AbsolutePose](p, "/ll/position/gps"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /ll/position/gps")
-	}
-	if p.poseSubscriber == nil {
-		p.poseSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/xbot_positioning/xb_pose",
-			Callback:  cbHandler[*xbot_msgs.AbsolutePose](p, "/xbot_positioning/xb_pose"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /xbot_positioning/xb_pose")
-	}
-	if p.imuSubscriber == nil {
-		p.imuSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/ll/imu/data_raw",
-			Callback:  cbHandler[*sensor_msgs.Imu](p, "/ll/imu/data_raw"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /ll/imu/data_raw")
-	}
-	if p.ticksSubscriber == nil {
-		p.ticksSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/xbot_positioning/wheel_ticks_in",
-			Callback:  cbHandler[*xbot_msgs.WheelTick](p, "/xbot_positioning/wheel_ticks_in"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /xbot_positioning/wheel_ticks_in")
-	}
-	if p.mapSubscriber == nil {
-		p.mapSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/mower_map_service/json_map",
-			Callback:  p.jsonMapHandler,
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /mower_map_service/json_map")
-	}
-	if p.pathSubscriber == nil {
-		p.pathSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/slic3r_coverage_planner/path_marker_array",
-			Callback:  cbHandler[*visualization_msgs.MarkerArray](p, "/slic3r_coverage_planner/path_marker_array"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /slic3r_coverage_planner/path_marker_array")
-	}
-	if p.currentPathSubscriber == nil {
-		p.currentPathSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/move_base_flex/FTCPlanner/global_plan",
-			Callback:  cbHandler[*nav_msgs.Path](p, "/move_base_flex/FTCPlanner/global_plan"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /move_base_flex/FTCPlanner/global_plan")
-	}
-	if p.powerSubscriber == nil {
-		p.powerSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/ll/power",
-			Callback:  cbHandler[*mower_msgs.Power](p, "/ll/power"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /ll/power")
-	}
-	if p.emergencySubscriber == nil {
-		p.emergencySubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/ll/emergency",
-			Callback:  cbHandler[*mower_msgs.Emergency](p, "/ll/emergency"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /ll/emergency")
-	}
-	if p.dockingSensorSubscriber == nil {
-		p.dockingSensorSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/mower/docking_sensor",
-			Callback:  cbHandler[*mower_msgs.DockingSensor](p, "/mower/docking_sensor"),
-			QueueSize: 1,
-		})
-		logrus.Info("Subscribed to /mower/docking_sensor")
-	}
-	if p.lidarSubscriber == nil {
-		p.lidarSubscriber, _ = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/scan",
-			Callback:  cbHandler[*sensor_msgs.LaserScan](p, "/scan"),
-			QueueSize: 1,
-		})
-		if p.lidarSubscriber != nil {
-			logrus.Info("Subscribed to /scan")
-		}
-	}
-	return nil
-}
-
-func cbHandler[T any](p *RosProvider, topic string) func(msg T) {
-	return func(msg T) {
-		p.mtx.Lock()
-		defer p.mtx.Unlock()
-		msgJson, err := json.Marshal(msg)
-		if err != nil {
-			logrus.Error(xerrors.Errorf("failed to marshal message: %w", err))
-			return
-		}
-		p.lastMessage[topic] = msgJson
-		subscribers, hasSubscriber := p.subscribers[topic]
-		if hasSubscriber {
-			for _, cb := range subscribers {
-				cb.Publish(msgJson)
+		} else {
+			err := r.client.Subscribe(def.ROS2Topic, def.MsgType, "gui-"+key, func(msg json.RawMessage) {
+				converted, err := snakeToPascalJSON([]byte(msg))
+				if err != nil {
+					logrus.Errorf("RosProvider: transform %s: %v", key, err)
+					r.fanOut(key, []byte(msg)) // fallback
+					return
+				}
+				r.fanOut(key, converted)
+			})
+			if err != nil {
+				logrus.Errorf("RosProvider: subscribe %s (%s): %v", def.ROS2Topic, key, err)
+			} else {
+				logrus.Infof("RosProvider: subscribed to %s as '%s'", def.ROS2Topic, key)
 			}
 		}
 	}
 }
 
-// jsonMapPoint represents a point in the JSON map format
-type jsonMapPoint struct {
-	X float64 `json:"x"`
-	Y float64 `json:"y"`
+// fanOut stores msg as the latest value for logicalKey and delivers it to all
+// registered RosSubscribers for that key. The caller must not hold mtx.
+func (r *RosProvider) fanOut(logicalKey string, msg []byte) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.lastMessage[logicalKey] = msg
+	for _, sub := range r.subscribers[logicalKey] {
+		sub.Publish(msg)
+	}
 }
 
-// jsonMapArea represents an area in the JSON map format
-type jsonMapArea struct {
-	ID         string                 `json:"id"`
-	Properties map[string]interface{} `json:"properties"`
-	Outline    []jsonMapPoint         `json:"outline"`
+// initMowingPathTracking registers an internal subscriber on the "pose"
+// logical key. It records the mower's position while the blade motor is
+// running (MOWING state) and publishes the accumulated path list to the
+// virtual "mowingPath" key.
+func (r *RosProvider) initMowingPathTracking() {
+	err := r.Subscribe("pose", "gui-mowing-path-tracker", func(msg []byte) {
+		r.mtx.Lock()
+		defer r.mtx.Unlock()
+		r.processMowingPathUpdate(msg)
+	})
+	if err != nil {
+		logrus.Errorf("RosProvider: failed to init mowing path tracking: %v", err)
+	}
 }
 
-// jsonDockingStation represents a docking station in the JSON map format
-type jsonDockingStation struct {
-	ID         string            `json:"id"`
-	Properties map[string]interface{} `json:"properties"`
-	Position   jsonMapPoint      `json:"position"`
-	Heading    float64           `json:"heading"`
-}
-
-// jsonMapData represents the full JSON map from mower_map_service
-type jsonMapData struct {
-	Areas           []jsonMapArea        `json:"areas"`
-	DockingStations []jsonDockingStation `json:"docking_stations"`
-}
-
-func (p *RosProvider) jsonMapHandler(msg *std_msgs.String) {
-	var mapData jsonMapData
-	if err := json.Unmarshal([]byte(msg.Data), &mapData); err != nil {
-		logrus.Error(xerrors.Errorf("failed to parse JSON map: %w", err))
+// processMowingPathUpdate is called for every odometry message while the
+// internal subscriber goroutine holds mtx. It updates mowingPaths and fans
+// out the result to "mowingPath" subscribers.
+//
+// Callers must hold r.mtx.
+func (r *RosProvider) processMowingPathUpdate(msg []byte) {
+	// Require high-level state to be MOWING.
+	hlsData, ok := r.lastMessage["highLevelStatus"]
+	if !ok {
+		return
+	}
+	var hls mowgli.HighLevelStatus
+	if err := json.Unmarshal(hlsData, &hls); err != nil {
+		logrus.Errorf("RosProvider: unmarshal HighLevelStatus: %v", err)
 		return
 	}
 
-	// Convert to xbot_msgs.Map format
-	var result xbot_msgs.Map
-
-	// Calculate map bounds
-	minX, minY := math.MaxFloat64, math.MaxFloat64
-	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
-
-	// The JSON areas are flat: mow/nav/obstacle entries in order.
-	// Obstacles follow their parent mowing area (implicit ordering from mower_map_service).
-	// We need to reconstruct the nested structure the frontend expects.
-	var lastMowIndex int = -1
-
-	for _, area := range mapData.Areas {
-		areaType, _ := area.Properties["type"].(string)
-
-		outlineToPolygon := func(outline []jsonMapPoint) geometry_msgs.Polygon {
-			var poly geometry_msgs.Polygon
-			for _, pt := range outline {
-				poly.Points = append(poly.Points, geometry_msgs.Point32{
-					X: float32(pt.X), Y: float32(pt.Y), Z: 0,
-				})
-			}
-			return poly
-		}
-
-		switch areaType {
-		case "obstacle":
-			// Attach to the last mowing area
-			if lastMowIndex >= 0 && lastMowIndex < len(result.WorkingArea) {
-				result.WorkingArea[lastMowIndex].Obstacles = append(
-					result.WorkingArea[lastMowIndex].Obstacles,
-					outlineToPolygon(area.Outline),
-				)
-			}
-		case "nav":
-			var mapArea xbot_msgs.MapArea
-			if name, ok := area.Properties["name"].(string); ok {
-				mapArea.Name = name
-			}
-			mapArea.Area = outlineToPolygon(area.Outline)
-			result.NavigationAreas = append(result.NavigationAreas, mapArea)
-		default: // "mow" or any other type treated as mowing area
-			var mapArea xbot_msgs.MapArea
-			if name, ok := area.Properties["name"].(string); ok {
-				mapArea.Name = name
-			}
-			mapArea.Area = outlineToPolygon(area.Outline)
-			result.WorkingArea = append(result.WorkingArea, mapArea)
-			lastMowIndex = len(result.WorkingArea) - 1
-		}
-
-		// Update bounds from all area types
-		for _, pt := range area.Outline {
-			if pt.X < minX { minX = pt.X }
-			if pt.X > maxX { maxX = pt.X }
-			if pt.Y < minY { minY = pt.Y }
-			if pt.Y > maxY { maxY = pt.Y }
-		}
-	}
-
-	if minX != math.MaxFloat64 {
-		result.MapWidth = maxX - minX
-		result.MapHeight = maxY - minY
-		result.MapCenterX = (minX + maxX) / 2
-		result.MapCenterY = (minY + maxY) / 2
-	}
-
-	if len(mapData.DockingStations) > 0 {
-		dock := mapData.DockingStations[0]
-		result.DockX = dock.Position.X
-		result.DockY = dock.Position.Y
-		result.DockHeading = dock.Heading
-	}
-
-	// Publish as the topic the GUI expects
-	const topic = "/xbot_monitoring/map"
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	msgJson, err := json.Marshal(result)
-	if err != nil {
-		logrus.Error(xerrors.Errorf("failed to marshal map: %w", err))
+	if hls.StateName != "MOWING" {
+		// Any non-MOWING state resets the accumulated path.
+		r.mowingPaths = []*nav.Path{}
+		r.mowingPath = nil
+		r.mowingPathOrigin = nil
 		return
 	}
-	p.lastMessage[topic] = msgJson
-	subscribers, hasSubscriber := p.subscribers[topic]
-	if hasSubscriber {
-		for _, cb := range subscribers {
-			cb.Publish(msgJson)
+
+	// Require blade motor to be spinning.
+	statusData, ok := r.lastMessage["status"]
+	if !ok {
+		return
+	}
+	var status mowgli.Status
+	if err := json.Unmarshal(statusData, &status); err != nil {
+		logrus.Errorf("RosProvider: unmarshal Status: %v", err)
+		return
+	}
+
+	if status.MowerMotorRpm <= 0 {
+		// Motor stopped – end the current segment but keep previous segments.
+		r.mowingPath = nil
+		r.mowingPathOrigin = nil
+		return
+	}
+
+	// Parse the pose message for the current position. The "pose" key is now
+	// stored as AbsolutePose PascalCase JSON (produced by adaptPose).
+	var pose mowgli.AbsolutePose
+	if err := json.Unmarshal(msg, &pose); err != nil {
+		logrus.Errorf("RosProvider: unmarshal AbsolutePose: %v", err)
+		return
+	}
+
+	// Start a new path segment if needed.
+	if r.mowingPath == nil {
+		r.mowingPath = &nav.Path{}
+		r.mowingPathOrigin = orb.LineString{}
+		r.mowingPaths = append(r.mowingPaths, r.mowingPath)
+	}
+
+	r.mowingPathOrigin = append(r.mowingPathOrigin, orb.Point{
+		pose.Pose.Pose.Position.X,
+		pose.Pose.Pose.Position.Y,
+	})
+
+	// Simplify every 5 points to keep the payload compact.
+	if len(r.mowingPathOrigin)%5 == 0 {
+		reduced := simplify.DouglasPeucker(0.03).LineString(r.mowingPathOrigin.Clone())
+		r.mowingPath.Poses = lo.Map(reduced, func(p orb.Point, _ int) geometry.PoseStamped {
+			return geometry.PoseStamped{
+				Pose: geometry.Pose{
+					Position: geometry.Point{X: p[0], Y: p[1]},
+				},
+			}
+		})
+	}
+
+	pathJSON, err := json.Marshal(r.mowingPaths)
+	if err != nil {
+		logrus.Errorf("RosProvider: marshal mowingPaths: %v", err)
+		return
+	}
+	r.lastMessage["mowingPath"] = pathJSON
+	for _, sub := range r.subscribers["mowingPath"] {
+		sub.Publish(pathJSON)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IRosProvider implementation
+// ---------------------------------------------------------------------------
+
+// CallService calls a ROS2 service via rosbridge and unmarshals the response
+// into res (ignored when res is nil).
+func (r *RosProvider) CallService(ctx context.Context, service string, req any, res any) error {
+	result, err := r.client.CallService(ctx, service, req)
+	if err != nil {
+		return err
+	}
+	if res != nil {
+		if err := json.Unmarshal(result, res); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// Subscribe registers cb to receive JSON messages on the given logical topic
+// key. If a message was already received for this key, cb is invoked
+// immediately with the cached value.
+func (r *RosProvider) Subscribe(topic string, id string, cb func(msg []byte)) error {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	if r.subscribers[topic] == nil {
+		r.subscribers[topic] = make(map[string]*RosSubscriber)
+	}
+	if _, exists := r.subscribers[topic][id]; !exists {
+		r.subscribers[topic][id] = NewRosSubscriber(topic, id, cb)
+	}
+
+	// Replay the most recent message so the subscriber is immediately usable.
+	if last, ok := r.lastMessage[topic]; ok {
+		r.subscribers[topic][id].Publish(last)
+	}
+	return nil
+}
+
+// UnSubscribe stops and removes the subscriber identified by (topic, id).
+func (r *RosProvider) UnSubscribe(topic string, id string) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	subs, ok := r.subscribers[topic]
+	if !ok {
+		return
+	}
+	sub, exists := subs[id]
+	if !exists {
+		return
+	}
+	sub.Close()
+	delete(subs, id)
+}
+
+// Publish sends msg to the named ROS2 topic via rosbridge. msgType is
+// forwarded to rosbridge's advertise op (handled internally by the client).
+func (r *RosProvider) Publish(topic string, msgType string, msg interface{}) error {
+	if err := r.client.Advertise(topic, msgType); err != nil {
+		// Log but do not abort – the client may not be connected yet; the
+		// message will be dropped silently by the client's Publish path.
+		logrus.Warnf("RosProvider: advertise %s: %v", topic, err)
+	}
+	return r.client.Publish(topic, msg)
 }

@@ -51,10 +51,10 @@ export function StatusComponent({compact}: {compact?: boolean}) {
                                        active={!!emergency.ActiveEmergency} color="red"/>
                             {emergency.Reason ?
                                 <Tag color="red">{emergency.Reason}</Tag> : null}
-                            <StatusTag label={`Dock L: ${dockingSensor.DetectedLeft ?? "-"}`}
-                                       active={(dockingSensor.DetectedLeft ?? 0) > 0} color="cyan"/>
-                            <StatusTag label={`Dock R: ${dockingSensor.DetectedRight ?? "-"}`}
-                                       active={(dockingSensor.DetectedRight ?? 0) > 0} color="cyan"/>
+                            <StatusTag label={dockingSensor.DockPresent ? "Dock: Present" : "Dock: Away"}
+                                       active={!!dockingSensor.DockPresent} color="cyan"/>
+                            <StatusTag label={`Distance: ${dockingSensor.DockDistance?.toFixed(2) ?? "-"}`}
+                                       active={(dockingSensor.DockDistance ?? 0) > 0} color="cyan"/>
                         </Flex>
                     </div>
                 </div>
@@ -170,10 +170,10 @@ export function StatusComponent({compact}: {compact?: boolean}) {
             <Card title={<Space><DashboardOutlined/> Docking Sensor</Space>} size="small"
                   styles={{body: {paddingBottom: 12}}}>
                 <Flex wrap gap="small">
-                    <StatusTag label={`Left: ${dockingSensor.DetectedLeft ?? "-"}`}
-                               active={(dockingSensor.DetectedLeft ?? 0) > 0} color="cyan"/>
-                    <StatusTag label={`Right: ${dockingSensor.DetectedRight ?? "-"}`}
-                               active={(dockingSensor.DetectedRight ?? 0) > 0} color="cyan"/>
+                    <StatusTag label={dockingSensor.DockPresent ? "Present" : "Away"}
+                               active={!!dockingSensor.DockPresent} color="cyan"/>
+                    <StatusTag label={`Distance: ${dockingSensor.DockDistance?.toFixed(2) ?? "-"} m`}
+                               active={(dockingSensor.DockDistance ?? 0) > 0} color="cyan"/>
                 </Flex>
             </Card>
         </Col>

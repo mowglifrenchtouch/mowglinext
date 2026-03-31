@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/mower_msgs"
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/mowgli"
 	"github.com/cedbossneo/openmower-gui/pkg/types"
 )
 
@@ -78,10 +78,9 @@ func (s *SchedulerProvider) checkSchedules() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		err = s.rosProvider.CallService(
 			ctx,
-			"/mower_service/start_in_area",
-			&mower_msgs.StartInAreaSrv{},
-			&mower_msgs.StartInAreaSrvReq{Area: uint8(sched.Area)},
-			&mower_msgs.StartInAreaSrvRes{},
+			"/behavior_tree_node/start_in_area",
+			&mowgli.StartInAreaReq{Area: uint8(sched.Area)},
+			&mowgli.StartInAreaRes{},
 		)
 		cancel()
 

@@ -181,8 +181,8 @@ export type Emergency = {
 }
 
 export type DockingSensor = {
-    DetectedLeft?: number
-    DetectedRight?: number
+    DockPresent?: boolean
+    DockDistance?: number
 }
 
 export type Point = {

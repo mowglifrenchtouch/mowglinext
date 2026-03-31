@@ -8,10 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bluenviron/goroslib/v2/pkg/msgs/geometry_msgs"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/dynamic_reconfigure"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/mower_map"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/mower_msgs"
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/geometry"
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/mowgli"
 	"github.com/cedbossneo/openmower-gui/pkg/types"
 	"github.com/docker/distribution/uuid"
 	"github.com/gin-gonic/gin"
@@ -42,18 +40,18 @@ func OpenMowerRoutes(r *gin.RouterGroup, provider types.IRosProvider) {
 // @Tags openmower
 // @Accept  json
 // @Produce  json
-// @Param CallReq body mower_map.AddMowingAreaSrvReq true "request body"
+// @Param CallReq body mowgli.AddMowingAreaReq true "request body"
 // @Success 200 {object} OkResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /openmower/map/area/add [post]
 func AddMapAreaRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.POST("/map/area/add", func(c *gin.Context) {
-		var CallReq mower_map.AddMowingAreaSrvReq
-		err := unmarshalROSMessage[*mower_map.AddMowingAreaSrvReq](c.Request.Body, &CallReq)
+		var CallReq mowgli.AddMowingAreaReq
+		err := unmarshalROSMessage[*mowgli.AddMowingAreaReq](c.Request.Body, &CallReq)
 		if err != nil {
 			return
 		}
-		err = provider.CallService(c.Request.Context(), "/mower_map_service/add_mowing_area", &mower_map.AddMowingAreaSrv{}, &CallReq, &mower_map.AddMowingAreaSrvRes{})
+		err = provider.CallService(c.Request.Context(), "/map_server_node/add_no_go_zone", &CallReq, &mowgli.AddMowingAreaRes{})
 		if err != nil {
 			c.JSON(500, ErrorResponse{Error: err.Error()})
 		} else {
@@ -74,7 +72,7 @@ func AddMapAreaRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 // @Router /openmower/map [delete]
 func ClearMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.DELETE("/map", func(c *gin.Context) {
-		err := provider.CallService(c.Request.Context(), "/mower_map_service/clear_map", &mower_map.ClearMapSrv{}, &mower_map.ClearMapSrvReq{}, &mower_map.ClearMapSrvRes{})
+		err := provider.CallService(c.Request.Context(), "/map_server_node/clear_map", &mowgli.ClearMapReq{}, &mowgli.ClearMapRes{})
 		if err != nil {
 			c.JSON(500, ErrorResponse{Error: err.Error()})
 		} else {
@@ -83,7 +81,7 @@ func ClearMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	})
 }
 
-// ReplaceMapRoute delete a map area
+// ReplaceMapRoute clear the map and insert areas
 //
 // @Summary clear the map and insert areas
 // @Description clear the map and insert areas
@@ -95,19 +93,23 @@ func ClearMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 // @Router /openmower/map [put]
 func ReplaceMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.PUT("/map", func(c *gin.Context) {
-		err := provider.CallService(c.Request.Context(), "/mower_map_service/clear_map", &mower_map.ClearMapSrv{}, &mower_map.ClearMapSrvReq{}, &mower_map.ClearMapSrvRes{})
+		err := provider.CallService(c.Request.Context(), "/map_server_node/clear_map", &mowgli.ClearMapReq{}, &mowgli.ClearMapRes{})
 		if err != nil {
 			c.JSON(500, ErrorResponse{Error: err.Error()})
 			return
 		} else {
-			var CallReq mower_map.ReplaceMowingAreaSrvReq
-			err := unmarshalROSMessage[*mower_map.ReplaceMowingAreaSrvReq](c.Request.Body, &CallReq)
+			var CallReq mowgli.ReplaceMapReq
+			err := unmarshalROSMessage[*mowgli.ReplaceMapReq](c.Request.Body, &CallReq)
 			if err != nil {
 				c.JSON(500, ErrorResponse{Error: err.Error()})
 				return
 			}
 			for _, element := range CallReq.Areas {
-				err = provider.CallService(c.Request.Context(), "/mower_map_service/add_mowing_area", &mower_map.AddMowingAreaSrv{}, &element, &mower_map.AddMowingAreaSrvRes{})
+				areaReq := mowgli.AddMowingAreaReq{
+					Area:             element.Area,
+					IsNavigationArea: element.IsNavigationArea,
+				}
+				err = provider.CallService(c.Request.Context(), "/map_server_node/add_no_go_zone", &areaReq, &mowgli.AddMowingAreaRes{})
 				if err != nil {
 					c.JSON(500, ErrorResponse{Error: err.Error()})
 					return
@@ -126,18 +128,18 @@ func ReplaceMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 // @Tags openmower
 // @Accept  json
 // @Produce  json
-// @Param CallReq body mower_map.SetDockingPointSrvReq true "request body"
+// @Param CallReq body mowgli.SetDockingPointReq true "request body"
 // @Success 200 {object} OkResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /openmower/map/docking [post]
 func SetDockingPointRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.POST("/map/docking", func(c *gin.Context) {
-		var CallReq mower_map.SetDockingPointSrvReq
-		err := unmarshalROSMessage[*mower_map.SetDockingPointSrvReq](c.Request.Body, &CallReq)
+		var CallReq mowgli.SetDockingPointReq
+		err := unmarshalROSMessage[*mowgli.SetDockingPointReq](c.Request.Body, &CallReq)
 		if err != nil {
 			return
 		}
-		err = provider.CallService(c.Request.Context(), "/mower_map_service/set_docking_point", &mower_map.SetDockingPointSrv{}, &CallReq, &mower_map.SetDockingPointSrvRes{})
+		err = provider.CallService(c.Request.Context(), "/map_server_node/set_docking_point", &CallReq, &mowgli.SetDockingPointRes{})
 		if err != nil {
 			c.JSON(500, ErrorResponse{Error: err.Error()})
 		} else {
@@ -151,11 +153,10 @@ func SetDockingPointRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 // @Summary subscribe to a topic
 // @Description subscribe to a topic
 // @Tags openmower
-// @Param topic path string true "topic to subscribe to, could be: diagnostics, status, gps, imu, ticks, highLevelStatus"
+// @Param topic path string true "logical topic key: diagnostics, status, highLevelStatus, gps, pose, imu, ticks, map, path, plan, mowingPath, power, emergency, dockingSensor, lidar"
 // @Router /openmower/subscribe/{topic} [get]
 func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.GET("/subscribe/:topic", func(c *gin.Context) {
-		// create a node and connect to the master
 		var err error
 		topic := c.Param("topic")
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -163,51 +164,46 @@ func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			return
 		}
 		defer conn.Close()
-		/*
-		   this is where we handle the request context
-		*/
-		// create a subscriber
+
 		var def func()
 		switch topic {
 		case "diagnostics":
-			def, err = subscribe(provider, c, conn, "/diagnostics", -1)
+			def, err = subscribe(provider, c, conn, "diagnostics", -1)
 		case "status":
-			def, err = subscribe(provider, c, conn, "/ll/mower_status", -1)
+			def, err = subscribe(provider, c, conn, "status", -1)
 		case "highLevelStatus":
-			def, err = subscribe(provider, c, conn, "/mower_logic/current_state", -1)
+			def, err = subscribe(provider, c, conn, "highLevelStatus", -1)
 		case "gps":
-			def, err = subscribe(provider, c, conn, "/ll/position/gps", 100)
+			def, err = subscribe(provider, c, conn, "gps", 100)
 		case "pose":
-			def, err = subscribe(provider, c, conn, "/xbot_positioning/xb_pose", 100)
+			def, err = subscribe(provider, c, conn, "pose", 100)
 		case "imu":
-			def, err = subscribe(provider, c, conn, "/ll/imu/data_raw", 100)
+			def, err = subscribe(provider, c, conn, "imu", 100)
 		case "ticks":
-			def, err = subscribe(provider, c, conn, "/xbot_positioning/wheel_ticks_in", 100)
+			def, err = subscribe(provider, c, conn, "ticks", 100)
 		case "map":
-			def, err = subscribe(provider, c, conn, "/xbot_monitoring/map", -1)
+			def, err = subscribe(provider, c, conn, "map", -1)
 		case "path":
-			def, err = subscribe(provider, c, conn, "/slic3r_coverage_planner/path_marker_array", -1)
+			def, err = subscribe(provider, c, conn, "path", -1)
 		case "plan":
-			def, err = subscribe(provider, c, conn, "/move_base_flex/FTCPlanner/global_plan", -1)
+			def, err = subscribe(provider, c, conn, "plan", -1)
 		case "mowingPath":
-			def, err = subscribe(provider, c, conn, "/mowing_path", -1)
+			def, err = subscribe(provider, c, conn, "mowingPath", -1)
 		case "power":
-			def, err = subscribe(provider, c, conn, "/ll/power", -1)
+			def, err = subscribe(provider, c, conn, "power", -1)
 		case "emergency":
-			def, err = subscribe(provider, c, conn, "/ll/emergency", -1)
+			def, err = subscribe(provider, c, conn, "emergency", -1)
 		case "dockingSensor":
-			def, err = subscribe(provider, c, conn, "/mower/docking_sensor", -1)
+			def, err = subscribe(provider, c, conn, "dockingSensor", -1)
 		case "lidar":
-			def, err = subscribe(provider, c, conn, "/scan", 100)
+			def, err = subscribe(provider, c, conn, "lidar", 100)
 		}
 		if err != nil {
 			log.Println(err.Error())
 			return
 		}
 		defer def()
-		/*
-		   send log lines to channel
-		*/
+
 		_, _, err = conn.ReadMessage()
 		if err != nil {
 			c.Error(err)
@@ -225,33 +221,29 @@ func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 // @Router /openmower/publish/{topic} [get]
 func PublisherRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.GET("/publish/:topic", func(c *gin.Context) {
-		// create a node and connect to the master
 		var err error
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			return
 		}
 		defer conn.Close()
-		// Read messages from the websocket connection and publish them to ROS
-		publisher, err := provider.Publisher("/joy_vel", &geometry_msgs.Twist{})
-		if err != nil {
-			c.Error(err)
-			return
-		}
-		defer publisher.Close()
 		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
 				c.Error(err)
 				break
 			}
-			var msgObj geometry_msgs.Twist
+			var msgObj geometry.Twist
 			err = json.Unmarshal(msg, &msgObj)
 			if err != nil {
 				c.Error(err)
 				break
 			}
-			publisher.Write(&msgObj)
+			err = provider.Publish("/cmd_vel", "geometry_msgs/msg/Twist", &msgObj)
+			if err != nil {
+				c.Error(err)
+				break
+			}
 		}
 	})
 }
@@ -295,53 +287,44 @@ func subscribe(provider types.IRosProvider, c *gin.Context, conn *websocket.Conn
 // @Tags openmower
 // @Accept  json
 // @Produce  json
-// @Param command path string true "command to call, could be: mower_start, mower_home, mower_s1, mower_s2, emergency, mow"
+// @Param command path string true "command to call, could be: high_level_control, emergency, mow_enabled, start_in_area"
 // @Param CallReq body map[string]interface{} true "request body"
 // @Success 200 {object} OkResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /openmower/call/{command} [post]
 func ServiceRoute(group *gin.RouterGroup, provider types.IRosProvider) {
-	// create a node and connect to the master
 	group.POST("/call/:command", func(c *gin.Context) {
-		// create a node and connect to the master
 		command := c.Param("command")
 		var err error
 		switch command {
 		case "high_level_control":
-			var CallReq mower_msgs.HighLevelControlSrvReq
+			var CallReq mowgli.HighLevelControlReq
 			err = c.BindJSON(&CallReq)
 			if err != nil {
 				return
 			}
-			err = provider.CallService(c.Request.Context(), "/mower_service/high_level_control", &mower_msgs.HighLevelControlSrv{}, &CallReq, &mower_msgs.HighLevelControlSrvRes{})
+			err = provider.CallService(c.Request.Context(), "/behavior_tree_node/high_level_control", &CallReq, &mowgli.HighLevelControlRes{})
 		case "emergency":
-			var CallReq mower_msgs.EmergencyStopSrvReq
+			var CallReq mowgli.EmergencyStopReq
 			err = c.BindJSON(&CallReq)
 			if err != nil {
 				return
 			}
-			err = provider.CallService(c.Request.Context(), "/ll/_service/emergency", &mower_msgs.EmergencyStopSrv{}, &CallReq, &mower_msgs.EmergencyStopSrvRes{})
-		case "mower_logic":
-			var CallReq dynamic_reconfigure.ReconfigureReq
-			err = c.BindJSON(&CallReq)
-			if err != nil {
-				return
-			}
-			err = provider.CallService(c.Request.Context(), "/mower_logic/set_parameters", &dynamic_reconfigure.Reconfigure{}, &CallReq, &dynamic_reconfigure.ReconfigureRes{})
+			err = provider.CallService(c.Request.Context(), "/hardware_bridge/emergency_stop", &CallReq, &mowgli.EmergencyStopRes{})
 		case "mow_enabled":
-			var CallReq mower_msgs.MowerControlSrvReq
+			var CallReq mowgli.MowerControlReq
 			err = c.BindJSON(&CallReq)
 			if err != nil {
 				return
 			}
-			err = provider.CallService(c.Request.Context(), "/ll/_service/mow_enabled", &mower_msgs.MowerControlSrv{}, &CallReq, &mower_msgs.MowerControlSrvRes{})
+			err = provider.CallService(c.Request.Context(), "/hardware_bridge/mower_control", &CallReq, &mowgli.MowerControlRes{})
 		case "start_in_area":
-			var CallReq mower_msgs.StartInAreaSrvReq
+			var CallReq mowgli.StartInAreaReq
 			err = c.BindJSON(&CallReq)
 			if err != nil {
 				return
 			}
-			err = provider.CallService(c.Request.Context(), "/mower_service/start_in_area", &mower_msgs.StartInAreaSrv{}, &CallReq, &mower_msgs.StartInAreaSrvRes{})
+			err = provider.CallService(c.Request.Context(), "/behavior_tree_node/start_in_area", &CallReq, &mowgli.StartInAreaRes{})
 		default:
 			err = errors.New("unknown command")
 		}

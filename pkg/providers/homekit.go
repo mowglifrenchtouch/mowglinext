@@ -3,15 +3,16 @@ package providers
 import (
 	"context"
 	"encoding/json"
-	"github.com/brutella/hap"
-	"github.com/brutella/hap/accessory"
-	log2 "github.com/brutella/hap/log"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/mower_msgs"
-	types2 "github.com/cedbossneo/openmower-gui/pkg/types"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/brutella/hap"
+	"github.com/brutella/hap/accessory"
+	log2 "github.com/brutella/hap/log"
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/mowgli"
+	types2 "github.com/cedbossneo/openmower-gui/pkg/types"
 )
 
 type HomeKitProvider struct {
@@ -40,13 +41,13 @@ func (hc *HomeKitProvider) registerAccessories() *accessory.A {
 	hc.mower.Switch.On.OnValueRemoteUpdate(func(on bool) {
 		var err error
 		if on {
-			err = hc.rosProvider.CallService(context.Background(), "/mower_service/high_level_control", &mower_msgs.HighLevelControlSrv{}, &mower_msgs.HighLevelControlSrvReq{
+			err = hc.rosProvider.CallService(context.Background(), "/behavior_tree_node/high_level_control", &mowgli.HighLevelControlReq{
 				Command: 1,
-			}, &mower_msgs.HighLevelControlSrvRes{})
+			}, &mowgli.HighLevelControlRes{})
 		} else {
-			err = hc.rosProvider.CallService(context.Background(), "/mower_service/high_level_control", &mower_msgs.HighLevelControlSrv{}, &mower_msgs.HighLevelControlSrvReq{
+			err = hc.rosProvider.CallService(context.Background(), "/behavior_tree_node/high_level_control", &mowgli.HighLevelControlReq{
 				Command: 2,
-			}, &mower_msgs.HighLevelControlSrvRes{})
+			}, &mowgli.HighLevelControlRes{})
 		}
 		if err != nil {
 			log.Println(err)
@@ -90,12 +91,11 @@ func (hc *HomeKitProvider) launchServer(as *accessory.A) {
 		// Run the server.
 		server.ListenAndServe(ctx)
 	}()
-
 }
 
 func (hc *HomeKitProvider) subscribeToRos() {
-	hc.rosProvider.Subscribe("/mower_logic/current_state", "ha-status", func(msg []byte) {
-		var status mower_msgs.HighLevelStatus
+	hc.rosProvider.Subscribe("highLevelStatus", "ha-status", func(msg []byte) {
+		var status mowgli.HighLevelStatus
 		err := json.Unmarshal(msg, &status)
 		if err != nil {
 			log.Println(err)

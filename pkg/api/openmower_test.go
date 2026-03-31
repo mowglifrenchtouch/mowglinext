@@ -35,7 +35,7 @@ func TestServiceRoute_HighLevelControl(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.Len(t, mock.ServiceCalls, 1)
-	assert.Equal(t, "/mower_service/high_level_control", mock.ServiceCalls[0].SrvName)
+	assert.Equal(t, "/behavior_tree_node/high_level_control", mock.ServiceCalls[0].Service)
 }
 
 func TestServiceRoute_Emergency(t *testing.T) {
@@ -52,7 +52,7 @@ func TestServiceRoute_Emergency(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.Len(t, mock.ServiceCalls, 1)
-	assert.Equal(t, "/ll/_service/emergency", mock.ServiceCalls[0].SrvName)
+	assert.Equal(t, "/hardware_bridge/emergency_stop", mock.ServiceCalls[0].Service)
 }
 
 func TestServiceRoute_MowEnabled(t *testing.T) {
@@ -69,30 +69,7 @@ func TestServiceRoute_MowEnabled(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.Len(t, mock.ServiceCalls, 1)
-	assert.Equal(t, "/ll/_service/mow_enabled", mock.ServiceCalls[0].SrvName)
-}
-
-func TestServiceRoute_MowerLogic(t *testing.T) {
-	mock := types.NewMockRosProvider()
-	router := setupOpenMowerRouter(mock)
-
-	payload := map[string]any{
-		"Config": map[string]any{
-			"Bools": []map[string]any{
-				{"Name": "manual_pause_mowing", "Value": true},
-			},
-		},
-	}
-	body, _ := json.Marshal(payload)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/openmower/call/mower_logic", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	require.Len(t, mock.ServiceCalls, 1)
-	assert.Equal(t, "/mower_logic/set_parameters", mock.ServiceCalls[0].SrvName)
+	assert.Equal(t, "/hardware_bridge/mower_control", mock.ServiceCalls[0].Service)
 }
 
 func TestServiceRoute_UnknownCommand(t *testing.T) {
@@ -145,7 +122,7 @@ func TestServiceRoute_StartInArea(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.Len(t, mock.ServiceCalls, 1)
-	assert.Equal(t, "/mower_service/start_in_area", mock.ServiceCalls[0].SrvName)
+	assert.Equal(t, "/behavior_tree_node/start_in_area", mock.ServiceCalls[0].Service)
 }
 
 func TestClearMapRoute(t *testing.T) {
@@ -158,7 +135,7 @@ func TestClearMapRoute(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.Len(t, mock.ServiceCalls, 1)
-	assert.Equal(t, "/mower_map_service/clear_map", mock.ServiceCalls[0].SrvName)
+	assert.Equal(t, "/map_server_node/clear_map", mock.ServiceCalls[0].Service)
 }
 
 func TestClearMapRoute_Error(t *testing.T) {
@@ -178,9 +155,9 @@ func TestSetDockingPointRoute(t *testing.T) {
 	router := setupOpenMowerRouter(mock)
 
 	payload := map[string]any{
-		"dockX":    1.5,
-		"dockY":    2.5,
-		"heading":  0.78,
+		"dockX":   1.5,
+		"dockY":   2.5,
+		"heading": 0.78,
 	}
 	body, _ := json.Marshal(payload)
 
@@ -191,5 +168,5 @@ func TestSetDockingPointRoute(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.Len(t, mock.ServiceCalls, 1)
-	assert.Equal(t, "/mower_map_service/set_docking_point", mock.ServiceCalls[0].SrvName)
+	assert.Equal(t, "/map_server_node/set_docking_point", mock.ServiceCalls[0].Service)
 }

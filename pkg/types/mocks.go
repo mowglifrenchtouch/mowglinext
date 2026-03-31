@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-
-	"github.com/bluenviron/goroslib/v2"
 )
 
 // MockDBProvider is an in-memory mock of IDBProvider for testing.
@@ -58,16 +56,16 @@ func (m *MockDBProvider) KeysWithSuffix(suffix string) ([]string, error) {
 
 // MockRosProvider is a mock of IRosProvider for testing API handlers.
 type MockRosProvider struct {
-	mu            sync.Mutex
-	subscribers   map[string]map[string]func(msg []byte)
-	ServiceCalls  []ServiceCall
-	ServiceErr    error
-	PublisherErr  error
-	SubscribeErr  error
+	mu           sync.Mutex
+	subscribers  map[string]map[string]func(msg []byte)
+	ServiceCalls []ServiceCall
+	ServiceErr   error
+	PublishErr   error
+	SubscribeErr error
 }
 
 type ServiceCall struct {
-	SrvName string
+	Service string
 	Req     any
 }
 
@@ -78,10 +76,10 @@ func NewMockRosProvider() *MockRosProvider {
 	}
 }
 
-func (m *MockRosProvider) CallService(_ context.Context, srvName string, _ any, req any, _ any) error {
+func (m *MockRosProvider) CallService(_ context.Context, service string, req any, _ any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ServiceCalls = append(m.ServiceCalls, ServiceCall{SrvName: srvName, Req: req})
+	m.ServiceCalls = append(m.ServiceCalls, ServiceCall{Service: service, Req: req})
 	return m.ServiceErr
 }
 
@@ -106,12 +104,12 @@ func (m *MockRosProvider) UnSubscribe(topic string, id string) {
 	}
 }
 
-func (m *MockRosProvider) Publisher(_ string, _ interface{}) (*goroslib.Publisher, error) {
-	return nil, m.PublisherErr
+func (m *MockRosProvider) Publish(_ string, _ string, _ interface{}) error {
+	return m.PublishErr
 }
 
-// Publish simulates publishing a message to all subscribers of a topic.
-func (m *MockRosProvider) Publish(topic string, msg []byte) {
+// Dispatch simulates delivering a message to all subscribers of a logical topic key.
+func (m *MockRosProvider) Dispatch(topic string, msg []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, cb := range m.subscribers[topic] {

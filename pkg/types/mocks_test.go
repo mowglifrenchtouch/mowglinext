@@ -33,7 +33,7 @@ func TestMockDBProvider_SetGetDelete(t *testing.T) {
 
 func TestMockDBProvider_KeysWithSuffix(t *testing.T) {
 	db := NewMockDBProvider()
-	db.Set("system.ros.masterUri", []byte("test"))
+	db.Set("system.ros.rosbridgeUrl", []byte("test"))
 	db.Set("system.ros.nodeHost", []byte("test"))
 	db.Set("other.key", []byte("test"))
 
@@ -45,11 +45,11 @@ func TestMockDBProvider_KeysWithSuffix(t *testing.T) {
 func TestMockRosProvider_CallService(t *testing.T) {
 	mock := NewMockRosProvider()
 
-	err := mock.CallService(nil, "/test/service", nil, "req", nil)
+	err := mock.CallService(nil, "/test/service", "req", nil)
 	require.NoError(t, err)
 
 	require.Len(t, mock.ServiceCalls, 1)
-	assert.Equal(t, "/test/service", mock.ServiceCalls[0].SrvName)
+	assert.Equal(t, "/test/service", mock.ServiceCalls[0].Service)
 	assert.Equal(t, "req", mock.ServiceCalls[0].Req)
 }
 
@@ -57,20 +57,20 @@ func TestMockRosProvider_CallServiceError(t *testing.T) {
 	mock := NewMockRosProvider()
 	mock.ServiceErr = assert.AnError
 
-	err := mock.CallService(nil, "/test/service", nil, nil, nil)
+	err := mock.CallService(nil, "/test/service", nil, nil)
 	assert.Error(t, err)
 }
 
-func TestMockRosProvider_SubscribeAndPublish(t *testing.T) {
+func TestMockRosProvider_SubscribeAndDispatch(t *testing.T) {
 	mock := NewMockRosProvider()
 
 	var received []byte
-	err := mock.Subscribe("/test/topic", "sub1", func(msg []byte) {
+	err := mock.Subscribe("status", "sub1", func(msg []byte) {
 		received = msg
 	})
 	require.NoError(t, err)
 
-	mock.Publish("/test/topic", []byte("hello"))
+	mock.Dispatch("status", []byte("hello"))
 	assert.Equal(t, "hello", string(received))
 }
 
@@ -78,14 +78,14 @@ func TestMockRosProvider_UnSubscribe(t *testing.T) {
 	mock := NewMockRosProvider()
 
 	callCount := 0
-	err := mock.Subscribe("/test/topic", "sub1", func(msg []byte) {
+	err := mock.Subscribe("status", "sub1", func(msg []byte) {
 		callCount++
 	})
 	require.NoError(t, err)
 
-	mock.UnSubscribe("/test/topic", "sub1")
+	mock.UnSubscribe("status", "sub1")
 
-	mock.Publish("/test/topic", []byte("should not arrive"))
+	mock.Dispatch("status", []byte("should not arrive"))
 	assert.Equal(t, 0, callCount)
 }
 
@@ -93,10 +93,10 @@ func TestMockRosProvider_MultipleSubscribers(t *testing.T) {
 	mock := NewMockRosProvider()
 
 	var received1, received2 []byte
-	mock.Subscribe("/topic", "sub1", func(msg []byte) { received1 = msg })
-	mock.Subscribe("/topic", "sub2", func(msg []byte) { received2 = msg })
+	mock.Subscribe("map", "sub1", func(msg []byte) { received1 = msg })
+	mock.Subscribe("map", "sub2", func(msg []byte) { received2 = msg })
 
-	mock.Publish("/topic", []byte("broadcast"))
+	mock.Dispatch("map", []byte("broadcast"))
 
 	assert.Equal(t, "broadcast", string(received1))
 	assert.Equal(t, "broadcast", string(received2))

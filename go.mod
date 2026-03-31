@@ -6,7 +6,6 @@ toolchain go1.21.1
 
 require (
 	git.mills.io/prologic/bitcask v1.0.2
-	github.com/bluenviron/goroslib/v2 v2.1.4
 	github.com/brutella/hap v0.0.31
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/docker/docker v20.10.24+incompatible
@@ -27,6 +26,7 @@ require (
 	github.com/swaggo/swag v1.16.1
 	golang.org/x/sys v0.10.0
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -62,7 +62,6 @@ require (
 	github.com/gofrs/flock v0.8.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/gookit/color v1.5.4 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -91,7 +90,6 @@ require (
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xiam/to v0.0.0-20200126224905-d60d31e03561 // indirect
-	github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778 // indirect
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/crypto v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17 // indirect
@@ -104,6 +102,5 @@ require (
 	gopkg.in/Regis24GmbH/go-diacritics.v2 v2.0.3 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.0 // indirect
 )
