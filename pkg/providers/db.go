@@ -40,7 +40,7 @@ var Defaults = map[string]string{
 	"system.mqtt.host":        ":1883",
 	"system.mqtt.prefix":      "/gui",
 	"system.mower.configFile":     "/config/mower_config.sh",
-	"system.mower.yamlConfigFile": "/config/mower_config.yaml",
+	"system.mower.yamlConfigFile": "/config/mowgli_robot.yaml",
 	"system.ros.masterUri":    "http://localhost:11311",
 	"system.ros.nodeName":     "openmower-gui",
 	"system.ros.nodeHost":     "localhost",

@@ -20,6 +20,7 @@ export type JSONSchemaProperty = {
     minimum?: number;
     maximum?: number;
     "x-environment-variable"?: string;
+    "x-yaml-node"?: string;
     "x-remap-values"?: Record<string, any>;
     "x-section"?: string;
     properties?: Record<string, JSONSchemaProperty>;
@@ -53,14 +54,14 @@ export const useSettingsSchema = () => {
                 setLoading(true);
                 const [schemaRes, valuesRes] = await Promise.all([
                     guiApi.settings.settingsSchemaList(),
-                    guiApi.settings.settingsList(),
+                    guiApi.settings.settingsYamlList(),
                 ]);
                 if (schemaRes.error) {
                     throw new Error((schemaRes.error as any).error);
                 }
                 setSchema(schemaRes.data as JSONSchema);
                 if (!valuesRes.error) {
-                    setValues((valuesRes.data as any)?.settings || {});
+                    setValues((valuesRes.data as Record<string, any>) || {});
                 }
             } catch (e: any) {
                 notification.error({
@@ -77,7 +78,7 @@ export const useSettingsSchema = () => {
         async (newValues: Record<string, any>) => {
             try {
                 setLoading(true);
-                const res = await guiApi.settings.settingsCreate(newValues);
+                const res = await guiApi.settings.settingsYamlCreate(newValues);
                 if (res.error) {
                     throw new Error((res.error as any).error);
                 }

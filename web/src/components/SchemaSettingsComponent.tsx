@@ -12,10 +12,9 @@ type FieldRenderProps = {
     onChange: (name: string, value: any) => void;
 };
 
-/** Turn an env-var key like "OM_MOWING_ANGLE_OFFSET" into "Mowing Angle Offset" */
+/** Turn a snake_case key like "mowing_speed" into "Mowing Speed" */
 const humanizeKey = (key: string): string => {
-    const stripped = key.replace(/^OM_/, "");
-    return stripped
+    return key
         .split("_")
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
         .join(" ");
@@ -280,15 +279,10 @@ export const SchemaSettingsComponent: React.FC<{
     const { colors } = useThemeMode();
     const { schema, values: savedValues, saveValues, loading } = useSettingsSchema();
     const [localValues, setLocalValues] = useState<Record<string, any>>({});
-    const [customEnv, setCustomEnv] = useState<Record<string, string>>({});
 
     useEffect(() => {
         if (savedValues) {
-            const { custom_environment, ...rest } = savedValues;
-            setLocalValues(rest);
-            if (custom_environment && typeof custom_environment === "object") {
-                setCustomEnv(custom_environment as Record<string, string>);
-            }
+            setLocalValues(savedValues);
         }
     }, [savedValues]);
 
@@ -296,17 +290,9 @@ export const SchemaSettingsComponent: React.FC<{
         setLocalValues((prev) => ({ ...prev, [name]: value }));
     }, []);
 
-    const handleCustomEnvChange = useCallback((entries: Record<string, string>) => {
-        setCustomEnv(entries);
-    }, []);
-
     const handleSave = useCallback(async () => {
-        const toSave = {
-            ...localValues,
-            custom_environment: customEnv,
-        };
-        await saveValues(toSave);
-    }, [localValues, customEnv, saveValues]);
+        await saveValues(localValues);
+    }, [localValues, saveValues]);
 
     if (!schema) {
         return <Spin size="large" style={{ display: "block", margin: "100px auto" }} />;
@@ -322,9 +308,8 @@ export const SchemaSettingsComponent: React.FC<{
                         key={key}
                         sectionKey={key}
                         section={section as JSONSchemaProperty}
-                        values={{ ...localValues, __custom_environment: customEnv }}
+                        values={localValues}
                         onChange={handleChange}
-                        onCustomEnvChange={handleCustomEnvChange}
                     />
                 ))}
             </Col>

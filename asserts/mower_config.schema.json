@@ -1,215 +1,499 @@
 {
   "type": "object",
   "properties": {
-    "important_settings": {
-      "title": "Hardware Settings",
+    "hardware_settings": {
+      "title": "Hardware",
       "type": "object",
       "properties": {
-        "OM_HARDWARE_VERSION": {
-          "title": "Mainboard Version",
-          "type": "string",
-          "enum": ["0_13_X", "0_12_X_LSM6DSO", "0_11_X_WT901", "0_10_X_WT901", "0_10_X_MPU9250", "0_9_X_WT901_INSTEAD_OF_SOUND", "0_9_X_MPU9250"],
-          "default": "0_13_X",
-          "description": "Your hardware/firmware version. This corresponds to the mainboard you are using in your build.",
-          "x-environment-variable": "OM_HARDWARE_VERSION"
-        },
-        "OM_MOWER": {
+        "mower_model": {
           "type": "string",
           "title": "Mower Model",
           "enum": ["YardForce500", "YardForceSA650", "CUSTOM"],
           "default": "YardForce500",
-          "description": "The type of mower you're using. This sets physical properties like antenna position and wheel ticks per meter. Use CUSTOM for a custom mower build.",
-          "x-environment-variable": "OM_MOWER"
+          "description": "The type of mower you are using."
         },
-        "ESC_TYPE": {
-          "type": "string",
-          "title": "ESC Type",
-          "enum": ["xesc_mini", "xesc_2040", "xesc_mini_w_r4ma", "xesc_2040_w_r4ma"],
-          "default": "xesc_mini",
-          "description": "Select which ESC (speed controller) type you are using. Use xesc_mini if unsure.",
-          "x-environment-variable": "ESC_TYPE"
+        "wheel_radius": {
+          "type": "number",
+          "title": "Wheel Radius",
+          "default": 0.04475,
+          "description": "Drive wheel radius in metres."
         },
-        "OM_MOWER_GAMEPAD": {
-          "type": "string",
-          "title": "Gamepad",
-          "enum": ["ps3", "shield", "steam_stick", "steam_touch", "switch_pro", "xbox360"],
-          "default": "xbox360",
-          "description": "Select your gamepad. The cheap ones are usually xbox360.",
-          "x-environment-variable": "OM_MOWER_GAMEPAD"
+        "wheel_track": {
+          "type": "number",
+          "title": "Wheel Track",
+          "default": 0.325,
+          "description": "Centre-to-centre distance between drive wheels in metres."
         },
-        "OM_IGNORE_CHARGING_CURRENT": {
+        "wheel_x_offset": {
+          "type": "number",
+          "title": "Wheel X Offset",
+          "default": -0.18,
+          "description": "Wheel axle offset behind base_link centre in metres."
+        },
+        "ticks_per_revolution": {
+          "type": "integer",
+          "title": "Encoder Ticks per Revolution",
+          "default": 1050,
+          "description": "Encoder ticks per full wheel revolution."
+        },
+        "tool_width": {
+          "type": "number",
+          "title": "Mowing Tool Width",
+          "default": 0.18,
+          "description": "Effective cutting width in metres (2 x blade_radius)."
+        },
+        "blade_radius": {
+          "type": "number",
+          "title": "Blade Radius",
+          "default": 0.09,
+          "description": "Mowing blade radius in metres."
+        }
+      }
+    },
+    "sensor_settings": {
+      "title": "Sensors",
+      "type": "object",
+      "properties": {
+        "lidar_enabled": {
           "type": "boolean",
-          "default": false,
-          "title": "Ignore Charging Current",
-          "description": "Set to True if you're affected by a wrong IC2 sourcing.",
-          "x-environment-variable": "OM_IGNORE_CHARGING_CURRENT"
+          "title": "LiDAR Enabled",
+          "default": true,
+          "description": "Enable the LiDAR sensor."
+        },
+        "lidar_x": {
+          "type": "number",
+          "title": "LiDAR X",
+          "default": 0.20,
+          "description": "LiDAR position X (forward from base_link) in metres."
+        },
+        "lidar_y": {
+          "type": "number",
+          "title": "LiDAR Y",
+          "default": 0.0,
+          "description": "LiDAR position Y (left from base_link) in metres."
+        },
+        "lidar_z": {
+          "type": "number",
+          "title": "LiDAR Z",
+          "default": 0.22,
+          "description": "LiDAR position Z (above base_link) in metres."
+        },
+        "gps_antenna_x": {
+          "type": "number",
+          "title": "GPS Antenna X",
+          "default": 0.0,
+          "description": "GPS antenna position X in metres."
+        },
+        "gps_antenna_y": {
+          "type": "number",
+          "title": "GPS Antenna Y",
+          "default": 0.0,
+          "description": "GPS antenna position Y in metres."
+        },
+        "gps_antenna_z": {
+          "type": "number",
+          "title": "GPS Antenna Z",
+          "default": 0.20,
+          "description": "GPS antenna position Z in metres."
+        },
+        "imu_x": {
+          "type": "number",
+          "title": "IMU X",
+          "default": 0.0,
+          "description": "IMU position X in metres."
+        },
+        "imu_y": {
+          "type": "number",
+          "title": "IMU Y",
+          "default": 0.0,
+          "description": "IMU position Y in metres."
+        },
+        "imu_z": {
+          "type": "number",
+          "title": "IMU Z",
+          "default": 0.095,
+          "description": "IMU position Z in metres."
         }
       }
     },
     "gps_settings": {
-      "title": "GPS Settings",
+      "title": "GPS / Positioning",
       "type": "object",
       "properties": {
-        "DATUM": {
-          "type": "object",
-          "title": "Origin / Datum",
-          "description": "Set the coordinates for the robot's map origin.",
-          "properties": {
-            "OM_DATUM_LAT": {
-              "type": "string",
-              "title": "Datum Lat",
-              "description": "Coordinates near your docking station.",
-              "x-environment-variable": "OM_DATUM_LAT"
-            },
-            "OM_DATUM_LONG": {
-              "type": "string",
-              "title": "Datum Long",
-              "description": "Coordinates near your docking station.",
-              "x-environment-variable": "OM_DATUM_LONG"
-            }
-          }
+        "datum_lat": {
+          "type": "number",
+          "title": "Datum Latitude",
+          "default": 0.0,
+          "description": "Map origin latitude (WGS84). Set near your docking station.",
+          "x-yaml-node": "navsat_to_absolute_pose"
         },
-        "NTRIP": {
-          "title": "NTRIP Settings",
-          "type": "object",
-          "properties": {
-            "OM_USE_NTRIP": {
-              "type": "boolean",
-              "default": true,
-              "title": "Use Ntrip for receiving corrections",
-              "description": "Set to False if using an external radio.",
-              "x-environment-variable": "OM_USE_NTRIP"
-            }
-          },
-          "allOf": [{
-            "if": { "properties": { "OM_USE_NTRIP": { "const": true } } },
-            "then": {
-              "properties": {
-                "OM_NTRIP_HOSTNAME": { "type": "string", "title": "NTRIP Hostname", "description": "Hostname or IP of your NTRIP caster.", "default": "your-ntrip-caster", "x-environment-variable": "OM_NTRIP_HOSTNAME" },
-                "OM_NTRIP_PORT": { "type": "number", "title": "NTRIP port", "default": 2101, "description": "Port of your NTRIP caster.", "x-environment-variable": "OM_NTRIP_PORT" },
-                "OM_NTRIP_USER": { "type": "string", "title": "NTRIP Username", "description": "NTRIP username.", "default": "gps", "x-environment-variable": "OM_NTRIP_USER" },
-                "OM_NTRIP_PASSWORD": { "type": "string", "title": "NTRIP Password", "description": "NTRIP password.", "default": "gps", "x-environment-variable": "OM_NTRIP_PASSWORD" },
-                "OM_NTRIP_ENDPOINT": { "type": "string", "title": "NTRIP Endpoint", "default": "BASE1", "description": "NTRIP endpoint / mount point.", "x-environment-variable": "OM_NTRIP_ENDPOINT" },
-                "OM_NTRIP_RECONNECT_WAIT_SECONDS": { "type": "number", "title": "NTRIP Reconnect Wait Seconds", "default": 5, "description": "How long in seconds the NTRIP client waits before reconnecting", "x-environment-variable": "OM_NTRIP_RECONNECT_WAIT_SECONDS" },
-                "OM_NTRIP_RECONNECT_MAX": { "type": "number", "title": "NTRIP Max Reconnection Attempts", "default": 99999, "description": "The maximum number of times the NTRIP client retries", "x-environment-variable": "OM_NTRIP_RECONNECT_MAX" }
-              }
-            }
-          }]
+        "datum_lon": {
+          "type": "number",
+          "title": "Datum Longitude",
+          "default": 0.0,
+          "description": "Map origin longitude (WGS84). Set near your docking station.",
+          "x-yaml-node": "navsat_to_absolute_pose"
         },
-        "advanced": { "type": "boolean", "default": false, "description": "Show advanced GPS settings" }
-      },
-      "allOf": [{
-        "if": { "properties": { "advanced": { "const": true } } },
-        "then": {
-          "properties": {
-            "OM_GPS_PROTOCOL": { "title": "GPS Protocol", "type": "string", "enum": ["UBX", "NMEA"], "default": "UBX", "description": "Protocol used by your GPS board.", "x-environment-variable": "OM_GPS_PROTOCOL" },
-            "OM_GPS_DEVICE_TYPE": { "title": "Device Type", "type": "string", "enum": ["serial", "tcp"], "default": "serial", "description": "Whether communicate with the serial port directly or via TCP port.", "x-environment-variable": "OM_GPS_DEVICE_TYPE" },
-            "OM_USE_F9R_SENSOR_FUSION": { "type": "boolean", "default": false, "description": "Use F9R's sensor fusion. Disable, if unsure.", "x-environment-variable": "OM_USE_F9R_SENSOR_FUSION" },
-            "OM_USE_RELATIVE_POSITION": { "title": "Use Relative Position", "type": "boolean", "default": false, "description": "True, to use Relative Positioning.", "x-environment-variable": "OM_USE_RELATIVE_POSITION" }
-          },
-          "allOf": [{
-            "if": { "properties": { "OM_GPS_DEVICE_TYPE": { "const": "serial" } } },
-            "then": {
-              "properties": {
-                "OM_GPS_PORT": { "title": "Port", "type": "string", "description": "Port for GPS board (/dev/...).", "x-environment-variable": "OM_GPS_PORT" },
-                "OM_GPS_BAUDRATE": { "title": "Baud rate", "type": "string", "description": "Baud rate for GPS board.", "x-environment-variable": "OM_GPS_BAUDRATE" }
-              }
-            },
-            "else": {
-              "properties": {
-                "OM_GPS_TCP_HOSTNAME": { "title": "Hostname", "type": "string", "default": "127.0.0.1", "description": "Hostname to read GPS data from via TCP.", "x-environment-variable": "OM_GPS_TCP_HOSTNAME" },
-                "OM_GPS_TCP_PORT": { "title": "Port", "type": "number", "default": 2102, "description": "Port to read GPS data from via TCP.", "x-environment-variable": "OM_GPS_TCP_PORT" }
-              }
-            }
-          }]
+        "gps_protocol": {
+          "type": "string",
+          "title": "GPS Protocol",
+          "enum": ["UBX", "NMEA"],
+          "default": "UBX",
+          "description": "Protocol used by your GPS receiver."
+        },
+        "gps_port": {
+          "type": "string",
+          "title": "GPS Port",
+          "default": "/dev/gps",
+          "description": "Serial device for the GPS receiver."
+        },
+        "gps_baudrate": {
+          "type": "integer",
+          "title": "GPS Baud Rate",
+          "default": 921600,
+          "description": "Baud rate for the GPS serial connection."
+        },
+        "gps_wait_after_undock_sec": {
+          "type": "number",
+          "title": "GPS Wait After Undock",
+          "default": 10.0,
+          "description": "Seconds to wait for RTK fix after undocking."
+        },
+        "gps_timeout_sec": {
+          "type": "number",
+          "title": "GPS Timeout",
+          "default": 5.0,
+          "description": "Pause mowing if no GPS fix for this many seconds."
+        },
+        "ntrip_enabled": {
+          "type": "boolean",
+          "title": "Enable NTRIP",
+          "default": true,
+          "description": "Enable NTRIP RTK corrections for cm-level accuracy."
         }
-      }]
-    },
-    "mower_logic_settings": {
-      "title": "Mower Logic Settings",
-      "type": "object",
-      "properties": {
-        "OM_DOCKING_DISTANCE": { "type": "number", "default": 1.0, "title": "Docking Distance", "description": "Distance in [m] to drive forward after docking.", "x-environment-variable": "OM_DOCKING_DISTANCE" },
-        "OM_DOCKING_APPROACH_DISTANCE": { "type": "number", "default": 1.5, "title": "Docking Approach Distance", "description": "Distance in [m] from the docking point to start docking.", "x-environment-variable": "OM_DOCKING_APPROACH_DISTANCE" },
-        "OM_DOCKING_EXTRA_TIME": { "type": "number", "default": 0.0, "description": "Extra time in [s] to continue docking after voltage detection.", "x-environment-variable": "OM_DOCKING_EXTRA_TIME" },
-        "OM_DOCKING_RETRY_COUNT": { "type": "number", "title": "Docking retry count", "default": 4, "description": "How many times to retry docking before giving up.", "x-environment-variable": "OM_DOCKING_RETRY_COUNT" },
-        "OM_DOCKING_REDOCK": { "type": "boolean", "title": "Redock on voltage loss", "default": false, "description": "Whether to attempt redocking if the voltage is no longer detected after docking.", "x-environment-variable": "OM_DOCKING_REDOCK" },
-        "OM_DOCKING_WAIT_TIME": { "type": "number", "title": "Wait before docking", "default": 0, "description": "Time to wait (s) before starting to dock.", "x-environment-variable": "OM_DOCKING_WAIT_TIME" },
-        "OM_UNDOCKING_WAIT_TIME": { "type": "number", "title": "Wait before undocking", "default": 0, "description": "Time to wait in dock (s) before starting to undock.", "x-environment-variable": "OM_UNDOCKING_WAIT_TIME" },
-        "OM_UNDOCK_DISTANCE": { "type": "number", "title": "Undock Distance", "default": 2.0, "description": "Distance in [m] to drive for undocking.", "x-environment-variable": "OM_UNDOCK_DISTANCE" },
-        "OM_UNDOCK_ANGLED_DISTANCE": { "type": "number", "title": "Undock Angled Distance", "default": 0.0, "description": "Distance in [m] to continue driving at an angle for undocking.", "x-environment-variable": "OM_UNDOCK_ANGLED_DISTANCE" },
-        "OM_UNDOCK_ANGLE": { "type": "number", "title": "Undock Angle", "default": 0.0, "description": "Angle in degrees for second stage undocking.", "x-environment-variable": "OM_UNDOCK_ANGLE" },
-        "OM_UNDOCK_FIXED_ANGLE": { "type": "boolean", "title": "Undock Fixed Angle", "default": true, "description": "True to fix the undock angle, false to vary it.", "x-environment-variable": "OM_UNDOCK_FIXED_ANGLE" },
-        "OM_UNDOCK_USE_CURVE": { "type": "boolean", "title": "Undock Use Curve", "default": true, "description": "True to use a curved second stage.", "x-environment-variable": "OM_UNDOCK_USE_CURVE" },
-        "OM_OUTLINE_COUNT": { "type": "number", "default": 4, "description": "How many outlines should the mower drive. Not recommended below 4.", "x-environment-variable": "OM_OUTLINE_COUNT" },
-        "OM_TOOL_WIDTH": { "type": "number", "title": "Mowing Tool Width", "default": 0.13, "description": "Width of mowing paths in [m].", "x-environment-variable": "OM_TOOL_WIDTH" },
-        "OM_BATTERY_FULL_VOLTAGE": { "type": "number", "title": "Battery Full Voltage", "default": 28.5, "description": "Voltage for battery to be considered full.", "x-environment-variable": "OM_BATTERY_FULL_VOLTAGE" },
-        "OM_BATTERY_EMPTY_VOLTAGE": { "type": "number", "default": 24.0, "title": "Battery Empty Voltage", "description": "Dock if voltage remains below empty for 20s.", "x-environment-variable": "OM_BATTERY_EMPTY_VOLTAGE" },
-        "OM_BATTERY_CRITICAL_VOLTAGE": { "type": "number", "default": 23.0, "title": "Battery Critical Voltage", "description": "Immediate dock if voltage is critical.", "x-environment-variable": "OM_BATTERY_CRITICAL_VOLTAGE" },
-        "OM_MOWING_MOTOR_TEMP_HIGH": { "type": "number", "default": 80.0, "title": "Mower max. Temperature", "description": "Motor temperature to stop mowing (deg C).", "x-environment-variable": "OM_MOWING_MOTOR_TEMP_HIGH" },
-        "OM_MOWING_MOTOR_TEMP_LOW": { "type": "number", "default": 40.0, "title": "Mower low Temperature", "description": "Resume mowing below this temperature (deg C).", "x-environment-variable": "OM_MOWING_MOTOR_TEMP_LOW" },
-        "OM_GPS_WAIT_TIME_SEC": { "type": "number", "default": 10.0, "title": "GPS Wait Time", "description": "Additional wait time in [s] after undocking.", "x-environment-variable": "OM_GPS_WAIT_TIME_SEC" },
-        "OM_GPS_TIMEOUT_SEC": { "type": "number", "default": 5.0, "title": "GPS Timeout", "description": "Timeout for GPS in [s].", "x-environment-variable": "OM_GPS_TIMEOUT_SEC" },
-        "OM_ENABLE_MOWER": { "type": "boolean", "default": false, "title": "Enable Mowing Motor", "description": "Enable mowing motor. Set to false for testing.", "x-environment-variable": "OM_ENABLE_MOWER" },
-        "OM_AUTOMATIC_MODE": { "type": "string", "enum": ["MANUAL", "SEMIAUTO", "AUTO"], "default": "MANUAL", "title": "Automatic Mode", "description": "Automatic start value.", "x-environment-variable": "OM_AUTOMATIC_MODE", "x-remap-values": { "MANUAL": 0, "SEMIAUTO": 1, "AUTO": 2 } },
-        "OM_OUTLINE_OFFSET": { "type": "number", "default": 0.05, "title": "Mowing Outline Offset", "description": "Offset applied to the recorded outline (m).", "x-environment-variable": "OM_OUTLINE_OFFSET" },
-        "OM_ENABLE_RECORDING_ALL": { "type": "boolean", "default": false, "title": "Enable Recording", "description": "Record your session for debugging.", "x-environment-variable": "OM_ENABLE_RECORDING_ALL" },
-        "OM_SNAPSHOT_MEMORY_PER_TOPIC": { "type": "number", "default": 0.0, "title": "Snapshot Buffer Memory per Topic", "description": "Max memory per topic (MB) for snapshot buffer.", "x-environment-variable": "OM_SNAPSHOT_MEMORY_PER_TOPIC" },
-        "OM_SNAPSHOT_DURATION": { "type": "number", "default": 1200, "title": "Snapshot Buffer Duration", "description": "Max age (seconds) of messages in snapshot buffer.", "x-environment-variable": "OM_SNAPSHOT_DURATION" },
-        "OM_RAIN_MODE": { "type": "string", "enum": ["Ignore", "Dock", "Dock Until Dry", "Pause Automatic Mode"], "default": "Ignore", "title": "Rain Mode", "description": "Behaviour when rain detected.", "x-environment-variable": "OM_RAIN_MODE", "x-remap-values": { "Ignore": 0, "Dock": 1, "Dock Until Dry": 2, "Pause Automatic Mowing": 3 } },
-        "OM_RAIN_DELAY_MINUTES": { "type": "number", "default": 30, "title": "Rain delay minutes", "description": "How long to wait after rain to resume mowing (min 30).", "x-environment-variable": "OM_RAIN_DELAY_MINUTES" },
-        "advanced": { "type": "boolean", "description": "Show advanced Mower Logic settings" }
       },
       "allOf": [{
-        "if": { "properties": { "advanced": { "const": true } } },
+        "if": { "properties": { "ntrip_enabled": { "const": true } } },
         "then": {
           "properties": {
-            "OM_OUTLINE_OVERLAP_COUNT": { "type": "number", "default": 0, "description": "Number of outlines to overlap.", "x-environment-variable": "OM_OUTLINE_OVERLAP_COUNT" },
-            "OM_MOWING_ANGLE_OFFSET": { "type": "number", "default": 0, "description": "Mowing angle offset (-180 to +180 deg).", "x-environment-variable": "OM_MOWING_ANGLE_OFFSET" },
-            "OM_MOWING_ANGLE_OFFSET_IS_ABSOLUTE": { "type": "boolean", "default": false, "description": "If mowing angle offset is absolute.", "x-environment-variable": "OM_MOWING_ANGLE_OFFSET_IS_ABSOLUTE" },
-            "OM_MOWING_ANGLE_INCREMENT": { "type": "number", "default": 0, "description": "Degrees added to mowing angle after each full map pass.", "x-environment-variable": "OM_MOWING_ANGLE_INCREMENT" },
-            "OM_PERIMETER_SIGNAL": { "type": "number", "description": "Use perimeter sensor for docking (1 or 2). Mowgli builds only.", "x-environment-variable": "OM_PERIMETER_SIGNAL" },
-            "OM_EMERGENCY_INPUT_CONFIG": { "type": "string", "default": "", "description": "Emergency inputs config: '[!]<I>gnore|<U>nused|<S>top|<L>Lift'", "x-environment-variable": "OM_EMERGENCY_INPUT_CONFIG" },
-            "OM_EMERGENCY_LIFT_PERIOD": { "type": "number", "default": -1, "description": "Period (ms) for >=2 wheels lifted to trigger emergency (0=disable).", "x-environment-variable": "OM_EMERGENCY_LIFT_PERIOD" },
-            "OM_EMERGENCY_TILT_PERIOD": { "type": "number", "default": -1, "description": "Period (ms) for single wheel lifted to trigger emergency (0=disable).", "x-environment-variable": "OM_EMERGENCY_TILT_PERIOD" },
-            "OM_SHUTDOWN_ESC_MAX_PITCH": { "type": "number", "default": 0, "description": "Max pitch angle (deg) for ESC shutdown (0=disable).", "x-environment-variable": "OM_SHUTDOWN_ESC_MAX_PITCH" },
-            "OM_CU_RAIN_THRESHOLD": { "type": "number", "default": -1, "title": "Stock-CoverUI rain sensor threshold", "description": "Rain sensor threshold (higher = more dry, default 700).", "x-environment-variable": "OM_CU_RAIN_THRESHOLD" },
-            "OM_BATTERY_CRITICAL_HIGH_VOLTAGE": { "type": "number", "default": -1, "title": "Max. battery voltage", "description": "Max. battery voltage before charging off.", "x-environment-variable": "OM_BATTERY_CRITICAL_HIGH_VOLTAGE" },
-            "OM_CHARGE_CRITICAL_HIGH_VOLTAGE": { "type": "number", "default": -1, "title": "Max. charge voltage", "description": "Max. charge voltage before charging off.", "x-environment-variable": "OM_CHARGE_CRITICAL_HIGH_VOLTAGE" },
-            "OM_CHARGE_CRITICAL_HIGH_CURRENT": { "type": "number", "default": -1, "title": "Max. charge current", "description": "Max. charge current before charging off.", "x-environment-variable": "OM_CHARGE_CRITICAL_HIGH_CURRENT" }
+            "ntrip_host": {
+              "type": "string",
+              "title": "NTRIP Host",
+              "default": "your-ntrip-caster",
+              "description": "Hostname or IP of your NTRIP caster."
+            },
+            "ntrip_port": {
+              "type": "integer",
+              "title": "NTRIP Port",
+              "default": 2101,
+              "description": "Port of your NTRIP caster."
+            },
+            "ntrip_user": {
+              "type": "string",
+              "title": "NTRIP Username",
+              "default": "",
+              "description": "NTRIP username."
+            },
+            "ntrip_password": {
+              "type": "string",
+              "title": "NTRIP Password",
+              "default": "",
+              "description": "NTRIP password."
+            },
+            "ntrip_mountpoint": {
+              "type": "string",
+              "title": "NTRIP Mountpoint",
+              "default": "",
+              "description": "NTRIP endpoint / mount point."
+            }
           }
         }
       }]
     },
-    "external_mqtt_broker": {
-      "title": "External MQTT Broker",
-      "description": "Configure Open Mower to publish status and sensor data to your MQTT broker.",
+    "docking_settings": {
+      "title": "Docking",
       "type": "object",
       "properties": {
-        "OM_MQTT_ENABLE": { "type": "boolean", "title": "Enable MQTT Publisher", "description": "Enable publishing to the external MQTT broker.", "x-environment-variable": "OM_MQTT_ENABLE" },
-        "OM_MQTT_HOSTNAME": { "type": "string", "title": "MQTT Broker Hostname", "description": "MQTT broker hostname or IP address.", "x-environment-variable": "OM_MQTT_HOSTNAME" },
-        "OM_MQTT_PORT": { "type": "number", "title": "MQTT Broker Port", "description": "MQTT broker port.", "x-environment-variable": "OM_MQTT_PORT" },
-        "OM_MQTT_USER": { "type": "string", "title": "MQTT Broker Username", "description": "MQTT broker user.", "x-environment-variable": "OM_MQTT_USER" },
-        "OM_MQTT_PASSWORD": { "type": "string", "title": "MQTT Broker Password", "description": "MQTT broker password.", "x-environment-variable": "OM_MQTT_PASSWORD" },
-        "OM_MQTT_TOPIC_PREFIX": { "type": "string", "title": "MQTT Topic Prefix", "description": "MQTT topic prefix.", "x-environment-variable": "OM_MQTT_TOPIC_PREFIX" }
+        "dock_pose_x": {
+          "type": "number",
+          "title": "Dock Pose X",
+          "default": 0.0,
+          "description": "Docking station X position in the map frame (metres)."
+        },
+        "dock_pose_y": {
+          "type": "number",
+          "title": "Dock Pose Y",
+          "default": 0.0,
+          "description": "Docking station Y position in the map frame (metres)."
+        },
+        "dock_pose_yaw": {
+          "type": "number",
+          "title": "Dock Pose Yaw",
+          "default": 0.0,
+          "description": "Docking station heading in radians."
+        },
+        "undock_distance": {
+          "type": "number",
+          "title": "Undock Distance",
+          "default": 1.5,
+          "description": "Reverse distance when undocking (metres)."
+        },
+        "undock_speed": {
+          "type": "number",
+          "title": "Undock Speed",
+          "default": 0.15,
+          "description": "Reverse speed when undocking (m/s)."
+        },
+        "dock_approach_distance": {
+          "type": "number",
+          "title": "Dock Approach Distance",
+          "default": 1.0,
+          "description": "Staging point distance in front of dock (metres)."
+        },
+        "dock_max_retries": {
+          "type": "integer",
+          "title": "Dock Max Retries",
+          "default": 3,
+          "description": "Maximum docking retry attempts."
+        },
+        "dock_use_charger_detection": {
+          "type": "boolean",
+          "title": "Use Charger Detection",
+          "default": true,
+          "description": "Detect charging voltage to confirm successful dock."
+        }
       }
     },
-    "sound_settings": {
+    "mowing_settings": {
+      "title": "Mowing",
       "type": "object",
-      "title": "Sound Settings",
-      "description": "For Full Sound Support read the instructions carefully.",
       "properties": {
-        "OM_DFP_IS_5V": { "type": "boolean", "title": "DFPlayer is set to 5V", "description": "Enable if DFPlayer is set to 5V. ONLY enable after hardware modification.", "default": false, "x-environment-variable": "OM_DFP_IS_5V" },
-        "OM_LANGUAGE": { "type": "string", "enum": ["en", "de"], "description": "Language (ISO-639-1) for sound output.", "default": "en", "x-environment-variable": "OM_LANGUAGE" },
-        "OM_VOLUME": { "type": "number", "description": "Sound volume (0-100, -1 = managed by CoverUI).", "default": -1, "x-environment-variable": "OM_VOLUME" },
-        "OM_BACKGROUND_SOUNDS": { "type": "boolean", "title": "Also play background sounds", "description": "Enable background sounds in addition to informational sounds.", "default": false, "x-environment-variable": "OM_BACKGROUND_SOUNDS" }
+        "mowing_enabled": {
+          "type": "boolean",
+          "title": "Enable Mowing Motor",
+          "default": true,
+          "description": "Enable mowing blade. Set false for testing without blade."
+        },
+        "mowing_speed": {
+          "type": "number",
+          "title": "Mowing Speed",
+          "default": 0.3,
+          "description": "Robot speed during mowing (m/s)."
+        },
+        "transit_speed": {
+          "type": "number",
+          "title": "Transit Speed",
+          "default": 0.4,
+          "description": "Robot speed when transiting between zones and to dock (m/s)."
+        },
+        "outline_passes": {
+          "type": "integer",
+          "title": "Outline Passes",
+          "default": 1,
+          "description": "Number of perimeter passes before fill mowing."
+        },
+        "outline_offset": {
+          "type": "number",
+          "title": "Outline Offset",
+          "default": 0.05,
+          "description": "Inward offset from recorded boundary (metres)."
+        },
+        "path_spacing": {
+          "type": "number",
+          "title": "Path Spacing",
+          "default": 0.13,
+          "description": "Spacing between mowing paths (metres). 0.13 gives overlap with 0.18 blade."
+        },
+        "headland_width": {
+          "type": "number",
+          "title": "Headland Width",
+          "default": 0.18,
+          "description": "Width of headland (turning area) in metres."
+        },
+        "min_turning_radius": {
+          "type": "number",
+          "title": "Min Turning Radius",
+          "default": 0.30,
+          "description": "Minimum turning radius for coverage path (metres)."
+        },
+        "mow_angle_offset_deg": {
+          "type": "number",
+          "title": "Mow Angle Offset",
+          "default": -1.0,
+          "description": "Mowing angle offset in degrees (-1 = auto-detect)."
+        },
+        "mow_angle_increment_deg": {
+          "type": "number",
+          "title": "Mow Angle Increment",
+          "default": 0.0,
+          "description": "Rotate mowing pattern by this many degrees each full pass."
+        },
+        "automatic_mode": {
+          "type": "integer",
+          "title": "Automatic Mode",
+          "enum": [0, 1, 2],
+          "default": 0,
+          "description": "0=Manual, 1=Semi-auto (mow once), 2=Full auto."
+        }
       }
     },
-    "custom_environment": {
+    "battery_settings": {
+      "title": "Battery",
       "type": "object",
-      "title": "Additional Environment Variables",
-      "description": "Additional KEY=VALUE pairs injected into the container.",
-      "additionalProperties": { "type": "string" }
+      "properties": {
+        "battery_full_voltage": {
+          "type": "number",
+          "title": "Full Voltage",
+          "default": 28.5,
+          "description": "Voltage at which battery is considered full."
+        },
+        "battery_empty_voltage": {
+          "type": "number",
+          "title": "Empty Voltage",
+          "default": 24.0,
+          "description": "Dock if voltage stays below this for 20s."
+        },
+        "battery_critical_voltage": {
+          "type": "number",
+          "title": "Critical Voltage",
+          "default": 23.0,
+          "description": "Immediate dock if voltage drops below this."
+        },
+        "battery_full_percent": {
+          "type": "number",
+          "title": "Full Percent",
+          "default": 95.0,
+          "description": "Resume mowing above this battery percentage."
+        },
+        "battery_low_percent": {
+          "type": "number",
+          "title": "Low Percent",
+          "default": 20.0,
+          "description": "Start heading to dock below this battery percentage."
+        },
+        "battery_critical_percent": {
+          "type": "number",
+          "title": "Critical Percent",
+          "default": 10.0,
+          "description": "Critical battery percentage."
+        }
+      }
+    },
+    "safety_settings": {
+      "title": "Safety",
+      "type": "object",
+      "properties": {
+        "motor_temp_high_c": {
+          "type": "number",
+          "title": "Motor Temp High",
+          "default": 80.0,
+          "description": "Stop blade above this motor temperature (C)."
+        },
+        "motor_temp_low_c": {
+          "type": "number",
+          "title": "Motor Temp Low",
+          "default": 40.0,
+          "description": "Resume blade below this motor temperature (C)."
+        },
+        "emergency_stop_on_tilt": {
+          "type": "boolean",
+          "title": "Emergency Stop on Tilt",
+          "default": true,
+          "description": "Emergency stop when robot tilts beyond threshold."
+        },
+        "emergency_stop_on_lift": {
+          "type": "boolean",
+          "title": "Emergency Stop on Lift",
+          "default": true,
+          "description": "Emergency stop when robot is lifted."
+        },
+        "max_obstacle_avoidance_distance": {
+          "type": "number",
+          "title": "Max Obstacle Detour",
+          "default": 2.0,
+          "description": "Maximum detour distance around obstacles (metres)."
+        }
+      }
+    },
+    "rain_settings": {
+      "title": "Rain",
+      "type": "object",
+      "properties": {
+        "rain_mode": {
+          "type": "integer",
+          "title": "Rain Mode",
+          "enum": [0, 1, 2, 3],
+          "default": 2,
+          "description": "0=Ignore, 1=Dock, 2=Dock until dry, 3=Pause automatic mode."
+        },
+        "rain_delay_minutes": {
+          "type": "number",
+          "title": "Rain Delay",
+          "default": 30.0,
+          "description": "Minutes to wait after rain stops before resuming."
+        },
+        "rain_debounce_sec": {
+          "type": "number",
+          "title": "Rain Debounce",
+          "default": 10.0,
+          "description": "Seconds of continuous rain signal before triggering."
+        }
+      }
+    },
+    "slam_settings": {
+      "title": "SLAM / Mapping",
+      "type": "object",
+      "properties": {
+        "slam_mode": {
+          "type": "string",
+          "title": "SLAM Mode",
+          "enum": ["mapping", "localization", "lifelong"],
+          "default": "lifelong",
+          "description": "SLAM operating mode."
+        },
+        "map_save_path": {
+          "type": "string",
+          "title": "Map Save Path",
+          "default": "/ros2_ws/maps/garden_map",
+          "description": "Path to save/load the SLAM map."
+        },
+        "map_save_on_dock": {
+          "type": "boolean",
+          "title": "Save Map on Dock",
+          "default": true,
+          "description": "Automatically save the SLAM map when docking."
+        }
+      }
+    },
+    "nav_settings": {
+      "title": "Navigation",
+      "type": "object",
+      "properties": {
+        "xy_goal_tolerance": {
+          "type": "number",
+          "title": "XY Goal Tolerance",
+          "default": 0.75,
+          "description": "Acceptable position error at goal (metres)."
+        },
+        "yaw_goal_tolerance": {
+          "type": "number",
+          "title": "Yaw Goal Tolerance",
+          "default": 1.0,
+          "description": "Acceptable heading error at goal (radians)."
+        },
+        "coverage_xy_tolerance": {
+          "type": "number",
+          "title": "Coverage XY Tolerance",
+          "default": 0.5,
+          "description": "Position tolerance for coverage waypoints (metres)."
+        },
+        "progress_timeout_sec": {
+          "type": "number",
+          "title": "Progress Timeout",
+          "default": 60.0,
+          "description": "Seconds without progress before recovery."
+        }
+      }
     }
   }
 }
