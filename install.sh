@@ -34,7 +34,7 @@ step()  { echo -e "\n${CYAN}=== $* ===${NC}"; }
 
 # ── Configuration ────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/cedbossneo/mowgli-ros2.git"
-REPO_BRANCH="main"
+REPO_BRANCH="v3"
 INSTALL_DIR="${MOWGLI_HOME:-$HOME/mowgli-docker}"
 UDEV_RULES_FILE="/etc/udev/rules.d/50-mowgli.rules"
 
