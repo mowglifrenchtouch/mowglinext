@@ -466,8 +466,21 @@ void MapServerNode::on_publish_timer()
 
     mow_progress_pub_->publish(mow_progress_to_occupancy_grid());
 
-    publish_keepout_mask();
-    publish_speed_mask();
+    // Only recompute masks when areas or obstacles changed.
+    if (masks_dirty_)
+    {
+      publish_keepout_mask();
+      publish_speed_mask();
+      masks_dirty_ = false;
+    }
+    else
+    {
+      // Republish cached masks (cheap — just a copy + publish).
+      cached_keepout_mask_.header.stamp = now_time;
+      keepout_mask_pub_->publish(cached_keepout_mask_);
+      cached_speed_mask_.header.stamp = now_time;
+      speed_mask_pub_->publish(cached_speed_mask_);
+    }
   }
 }
 
@@ -673,6 +686,7 @@ void MapServerNode::on_clear_map(const std_srvs::srv::Trigger::Request::SharedPt
   docking_pose_set_ = false;
   keepout_filter_info_sent_ = false;
   speed_filter_info_sent_ = false;
+  masks_dirty_ = true;
 
   res->success = true;
   res->message = "All map layers and areas cleared.";
@@ -737,6 +751,7 @@ void MapServerNode::on_add_area(
   }
 
   areas_.push_back(std::move(entry));
+  masks_dirty_ = true;
 
   RCLCPP_INFO(get_logger(),
               "Added area '%s' (%s) with %zu vertices and %zu obstacles.",
@@ -1016,6 +1031,7 @@ void MapServerNode::publish_keepout_mask()
     }
   }
 
+  cached_keepout_mask_ = mask;
   keepout_mask_pub_->publish(mask);
 
   // Publish filter info only once (transient_local latches it for late
@@ -1133,6 +1149,7 @@ void MapServerNode::publish_speed_mask()
     }
   }
 
+  cached_speed_mask_ = mask;
   speed_mask_pub_->publish(mask);
 
   if (!speed_filter_info_sent_)
@@ -1230,9 +1247,7 @@ void MapServerNode::diff_and_update_obstacles(
   }
 
   last_obstacle_count_ = incoming_count;
-
-  publish_keepout_mask();
-  publish_speed_mask();
+  masks_dirty_ = true;
 
   if ((now() - last_replan_time_).seconds() < replan_cooldown_sec_)
   {
@@ -1527,6 +1542,7 @@ void MapServerNode::load_areas_from_file(const std::string& path)
   // Reset filter info flags so masks are republished with new areas.
   keepout_filter_info_sent_ = false;
   speed_filter_info_sent_ = false;
+  masks_dirty_ = true;
 }
 
 void MapServerNode::apply_area_classifications()

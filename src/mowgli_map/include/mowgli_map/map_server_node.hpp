@@ -280,6 +280,11 @@ private:
   bool keepout_filter_info_sent_{false};
   bool speed_filter_info_sent_{false};
 
+  /// Cached masks — recomputed only when areas/obstacles change.
+  nav_msgs::msg::OccupancyGrid cached_keepout_mask_;
+  nav_msgs::msg::OccupancyGrid cached_speed_mask_;
+  bool masks_dirty_{true};
+
   // Replan and boundary violation publishers
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr replan_needed_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr boundary_violation_pub_;
