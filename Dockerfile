@@ -134,6 +134,7 @@ RUN rosdep update --rosdistro jazzy \
       --from-paths src \
       --ignore-src \
       --rosdistro jazzy \
+      --skip-keys "fields2cover" \
       -y \
  || true
 
