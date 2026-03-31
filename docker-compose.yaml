@@ -84,6 +84,7 @@ services:
       project: openmower
       app: gui
     network_mode: host
+    privileged: true
     environment:
       ROSBRIDGE_URL: ws://localhost:9090
       MOWER_CONFIG_FILE: /config/mower_config.sh
@@ -93,6 +94,7 @@ services:
       - ./config/db:/db
       - ./config/om:/config:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      - /dev/bus/usb:/dev/bus/usb
     depends_on:
       - mowgli
     restart: unless-stopped
