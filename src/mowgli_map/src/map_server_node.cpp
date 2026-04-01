@@ -864,16 +864,6 @@ void MapServerNode::on_get_mowing_area(
                 entry.name.c_str(),
                 entry.obstacles.size());
   }
-  else if (!areas_.empty())
-  {
-    // Fall back to first area if index is out of range.
-    const auto& entry = areas_[0];
-    res->area.name = entry.name;
-    res->area.area = entry.polygon;
-    res->area.obstacles = entry.obstacles;
-    res->area.is_navigation_area = entry.is_navigation_area;
-    res->success = true;
-  }
   else
   {
     res->success = false;
