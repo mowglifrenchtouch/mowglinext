@@ -480,18 +480,27 @@ private:
     msg.header.frame_id = "odom";
     msg.child_frame_id = "base_link";
 
-    // We only publish velocity, not position (EKF integrates)
+    // When charging, the robot is mechanically fixed to the dock.
+    // Force zero velocity with very tight covariance so the EKF
+    // trusts this "not moving" signal over process noise drift.
+    if (is_charging_)
+    {
+      vx = 0.0;
+      vyaw = 0.0;
+    }
+
     msg.twist.twist.linear.x = vx;
     msg.twist.twist.angular.z = vyaw;
 
-    // Covariance: trust velocities loosely (wheel slip on grass)
-    // [vx, vy, vz, wx, wy, wz] - 6x6 row-major
-    msg.twist.covariance[0] = 0.01;  // vx variance
+    // Covariance: when charging, very tight (certain we're not moving).
+    // When driving, loose (wheel slip on grass).
+    const double vel_var = is_charging_ ? 1e-6 : 0.01;
+    msg.twist.covariance[0] = vel_var;  // vx variance
     msg.twist.covariance[7] = 1e6;  // vy (no lateral) - very high = unknown
     msg.twist.covariance[14] = 1e6;  // vz - unknown
     msg.twist.covariance[21] = 1e6;  // wx - unknown
     msg.twist.covariance[28] = 1e6;  // wy - unknown
-    msg.twist.covariance[35] = 0.05;  // wz variance
+    msg.twist.covariance[35] = is_charging_ ? 1e-6 : 0.05;  // wz variance
 
     pub_wheel_odom_->publish(msg);
   }
