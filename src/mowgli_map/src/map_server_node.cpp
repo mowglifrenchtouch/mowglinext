@@ -99,7 +99,7 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
       });
 
   status_sub_ = create_subscription<mowgli_interfaces::msg::Status>(
-      "/mower_status",
+      "/status",
       rclcpp::QoS(1),
       [this](mowgli_interfaces::msg::Status::ConstSharedPtr msg)
       {

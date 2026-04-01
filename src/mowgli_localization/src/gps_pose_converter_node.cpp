@@ -127,13 +127,6 @@ double GpsPoseConverterNode::compute_xy_variance(
 {
   using Flags = mowgli_interfaces::msg::AbsolutePose;
 
-  // Discard altogether if accuracy is reported as worse than the threshold.
-  // position_accuracy of 0.0 means "unknown"; treat with caution.
-  if (msg.position_accuracy > min_accuracy_threshold_ && msg.position_accuracy > 0.0f)
-  {
-    return -1.0;
-  }
-
   // Determine a quality multiplier from the fix-type flags.
   // Check from best to worst quality.
   double multiplier = 0.0;
@@ -150,8 +143,8 @@ double GpsPoseConverterNode::compute_xy_variance(
   }
   else if ((msg.flags & Flags::FLAG_GPS_RTK) != 0u)
   {
-    // Generic RTK indicator without fixed/float distinction.
-    multiplier = 2.0;
+    // Generic GPS fix (no RTK corrections).  Inflate variance by 8×.
+    multiplier = 8.0;
   }
   else if ((msg.flags & Flags::FLAG_GPS_DEAD_RECKONING) != 0u)
   {
@@ -161,6 +154,17 @@ double GpsPoseConverterNode::compute_xy_variance(
   else
   {
     // No recognisable GPS fix flag; discard.
+    return -1.0;
+  }
+
+  // Discard if accuracy is reported as worse than the threshold.
+  // position_accuracy of 0.0 means "unknown"; treat with caution.
+  // For non-RTK fixes, use a relaxed threshold (5× base) so the robot
+  // can still localise when NTRIP corrections are unavailable.
+  const bool has_rtk = (msg.flags & (Flags::FLAG_GPS_RTK_FIXED | Flags::FLAG_GPS_RTK_FLOAT)) != 0u;
+  const double effective_threshold = has_rtk ? min_accuracy_threshold_ : min_accuracy_threshold_ * 5.0;
+  if (msg.position_accuracy > effective_threshold && msg.position_accuracy > 0.0f)
+  {
     return -1.0;
   }
 
