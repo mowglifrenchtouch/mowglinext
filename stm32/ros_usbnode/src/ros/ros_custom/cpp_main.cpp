@@ -487,9 +487,10 @@ extern "C" void broadcast_handler()
         mowgli_comms_send_status(&status_pkt);
     }
 
-    // Blade motor status (4 Hz)
-    if (NBT_handler(&blade_nbt)) {
+    // Blade motor status (4 Hz) — only after system has initialized
+    if (NBT_handler(&blade_nbt) && last_heartbeat_tick != 0u) {
         pkt_blade_status_t blade_pkt;
+        memset(&blade_pkt, 0, sizeof(blade_pkt));
         blade_pkt.type        = PKT_ID_BLADE_STATUS;
         blade_pkt.is_active   = BLADEMOTOR_bActivated ? 1u : 0u;
         blade_pkt.rpm         = BLADEMOTOR_u16RPM;
