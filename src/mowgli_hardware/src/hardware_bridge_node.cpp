@@ -351,15 +351,15 @@ private:
       pose_msg.pose.pose.position.y = dock_y_;
       pose_msg.pose.pose.orientation.z = std::sin(dock_yaw_ / 2.0);
       pose_msg.pose.pose.orientation.w = std::cos(dock_yaw_ / 2.0);
-      // Very tight position covariance
-      pose_msg.pose.covariance[0] = 0.001;   // x
-      pose_msg.pose.covariance[7] = 0.001;   // y
+      // Extremely tight covariance — must dominate GPS completely
+      pose_msg.pose.covariance[0] = 1e-8;    // x
+      pose_msg.pose.covariance[7] = 1e-8;    // y
       pose_msg.pose.covariance[14] = 1e6;    // z
       pose_msg.pose.covariance[21] = 1e6;    // roll
       pose_msg.pose.covariance[28] = 1e6;    // pitch
       // Yaw: tight if we have a heading (from config or magnetometer),
       // loose if completely unknown
-      pose_msg.pose.covariance[35] = (dock_yaw_ != 0.0 || mag_initialized_) ? 0.05 : 1e6;
+      pose_msg.pose.covariance[35] = (dock_yaw_ != 0.0 || mag_initialized_) ? 1e-4 : 1e6;
       pub_dock_pose_->publish(pose_msg);
     }
 

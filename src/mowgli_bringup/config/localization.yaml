@@ -136,6 +136,10 @@ ekf_map:
     pose0_nodelay: false
     pose0_differential: false
     pose0_relative: false
+    # Reject GPS measurements with Mahalanobis distance > 3.0 from current
+    # estimate. When docked with tight dock_pose_fix, GPS measurements that
+    # disagree (due to float noise) will be rejected.
+    pose0_rejection_threshold: 3.0
 
     # Dock pose fix: when charging, the hardware bridge publishes the
     # known dock position (and orientation if configured) with very tight
