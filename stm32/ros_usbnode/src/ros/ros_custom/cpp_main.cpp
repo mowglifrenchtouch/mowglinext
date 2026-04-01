@@ -28,6 +28,9 @@
 #include "emergency.h"
 #include "drivemotor.h"
 #include "blademotor.h"
+extern "C" {
+#include "imu/wt901.h"
+}
 #include "ultrasonic_sensor.h"
 #include "stm32f_board_hal.h"
 #include "nbt.h"
