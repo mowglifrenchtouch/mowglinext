@@ -39,6 +39,8 @@ INSTALL_DIR="${MOWGLI_HOME:-$HOME/mowgli-docker}"
 UDEV_RULES_FILE="/etc/udev/rules.d/50-mowgli.rules"
 
 MOWGLI_ROS2_IMAGE_DEFAULT="ghcr.io/cedbossneo/mowgli-ros2/mowgli-ros2:main"
+GPS_IMAGE_DEFAULT="ghcr.io/cedbossneo/mowgli-docker/gps:v3"
+LIDAR_IMAGE_DEFAULT="ghcr.io/cedbossneo/mowgli-docker/lidar:v3"
 GUI_IMAGE_DEFAULT="ghcr.io/cedbossneo/openmower-gui:v3"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -168,6 +170,14 @@ setup_env() {
       echo "MOWGLI_ROS2_IMAGE=$MOWGLI_ROS2_IMAGE_DEFAULT" >> "$env_file"
       needs_update=true
     }
+    grep -q "^GPS_IMAGE=" "$env_file" || {
+      echo "GPS_IMAGE=$GPS_IMAGE_DEFAULT" >> "$env_file"
+      needs_update=true
+    }
+    grep -q "^LIDAR_IMAGE=" "$env_file" || {
+      echo "LIDAR_IMAGE=$LIDAR_IMAGE_DEFAULT" >> "$env_file"
+      needs_update=true
+    }
     grep -q "^GUI_IMAGE=" "$env_file" || {
       echo "GUI_IMAGE=$GUI_IMAGE_DEFAULT" >> "$env_file"
       needs_update=true
@@ -208,6 +218,8 @@ LIDAR_BAUD=230400
 
 # Docker images
 MOWGLI_ROS2_IMAGE=$MOWGLI_ROS2_IMAGE_DEFAULT
+GPS_IMAGE=$GPS_IMAGE_DEFAULT
+LIDAR_IMAGE=$LIDAR_IMAGE_DEFAULT
 GUI_IMAGE=$GUI_IMAGE_DEFAULT
 EOF
     info "Created $env_file — edit it to set your MOWER_IP"
