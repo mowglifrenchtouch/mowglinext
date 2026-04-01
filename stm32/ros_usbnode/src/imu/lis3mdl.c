@@ -27,13 +27,13 @@ uint8_t LIS3MDL_TestDevice(void)
 void LIS3MDL_Init(void)
 {
     /* Ultra-high-performance mode for X/Y, 10 Hz ODR */
-    SW_I2C_UTIL_Write(LIS3MDL_ADDRESS, LIS3MDL_CTRL_REG1, 0x70);
+    SW_I2C_UTIL_WRITE(LIS3MDL_ADDRESS, LIS3MDL_CTRL_REG1, 0x70);
     /* +/- 4 gauss full scale */
-    SW_I2C_UTIL_Write(LIS3MDL_ADDRESS, LIS3MDL_CTRL_REG2, 0x00);
+    SW_I2C_UTIL_WRITE(LIS3MDL_ADDRESS, LIS3MDL_CTRL_REG2, 0x00);
     /* Continuous-conversion mode */
-    SW_I2C_UTIL_Write(LIS3MDL_ADDRESS, LIS3MDL_CTRL_REG3, 0x00);
+    SW_I2C_UTIL_WRITE(LIS3MDL_ADDRESS, LIS3MDL_CTRL_REG3, 0x00);
     /* Ultra-high-performance mode for Z */
-    SW_I2C_UTIL_Write(LIS3MDL_ADDRESS, LIS3MDL_CTRL_REG4, 0x0C);
+    SW_I2C_UTIL_WRITE(LIS3MDL_ADDRESS, LIS3MDL_CTRL_REG4, 0x0C);
 }
 
 void LIS3MDL_ReadMagRaw(float *x, float *y, float *z)
