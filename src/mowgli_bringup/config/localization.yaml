@@ -98,11 +98,9 @@ ekf_map:
     frequency: 20.0
     sensor_timeout: 0.2
     two_d_mode: true
-    # publish_tf is false when slam_toolbox is running — SLAM already
-    # publishes map→odom.  Two publishers on the same TF link causes
-    # erratic map rotation.  ekf_map still publishes /odometry/filtered_map
-    # which other nodes can use for GPS-fused position.
-    publish_tf: false
+    # ekf_map publishes map→odom TF using GPS + dock pose fix.
+    # SLAM's TF publishing is disabled to avoid conflicts.
+    publish_tf: true
     odom_frame: odom
     base_link_frame: base_link
     world_frame: map
