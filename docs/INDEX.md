@@ -16,7 +16,7 @@ Start here to get up and running:
    - Building from source
    - Quick start (Docker, hardware, simulation)
 
-2. **[SIMULATION.md](SIMULATION.md)** – Running in Gazebo Ignition
+2. **[SIMULATION.md](SIMULATION.md)** – Running in Gazebo Harmonic
    - Virtual testing without hardware
    - Common workflows (navigation, SLAM, behavior trees)
    - Troubleshooting simulation issues
@@ -54,12 +54,16 @@ Build new features and extend the system:
 1. **[ARCHITECTURE.md](ARCHITECTURE.md)** – Package organization
    - mowgli_interfaces (messages and services)
    - mowgli_hardware (serial bridge)
+   - mowgli_description (URDF/xacro model)
    - mowgli_localization (odometry and GPS fusion)
    - mowgli_nav2_plugins (FTC and RotationShim controllers)
    - mowgli_coverage_planner (autonomous mowing patterns)
+   - mowgli_map (area management and obstacle tracking)
    - mowgli_monitoring (diagnostic and telemetry)
    - mowgli_behavior (behavior trees)
+   - mowgli_simulation (Gazebo Harmonic worlds)
    - mowgli_bringup (configuration and launch)
+   - opennav_coverage (third-party Nav2 coverage server)
 
 2. **[../README.md](../README.md)** – Development workflow
    - Contributing guidelines
@@ -181,29 +185,41 @@ mowgli_ros2/
 │   ├── FIRMWARE_MIGRATION.md          # STM32 integration guide
 │   └── SIMULATION.md                  # Gazebo Harmonic simulation guide
 │
+├── foxglove/                          # Foxglove dashboards
+│   └── mowgli_sim.json               # Simulation dashboard
+│
 ├── src/
-│   ├── mowgli_interfaces/             # Message definitions
+│   ├── mowgli_interfaces/             # Message definitions (12 msgs, 9 srvs)
 │   ├── mowgli_hardware/               # Serial bridge to STM32
+│   ├── mowgli_description/            # URDF/xacro model & meshes
 │   ├── mowgli_localization/           # Odometry & GPS fusion (dual EKF)
 │   ├── mowgli_nav2_plugins/           # FTC & RotationShim controllers
 │   ├── mowgli_coverage_planner/       # Autonomous mowing patterns
+│   │   └── config/
+│   │       └── coverage_planner.yaml
+│   ├── mowgli_map/                    # Area management & obstacle tracking
+│   │   ├── src/
+│   │   │   ├── map_server_node.cpp
+│   │   │   └── obstacle_tracker_node.cpp
+│   │   └── config/
+│   │       └── obstacle_tracker.yaml
 │   ├── mowgli_monitoring/             # Diagnostics and telemetry
 │   ├── mowgli_behavior/               # Behavior tree nodes
+│   │   └── trees/
+│   │       ├── main_tree.xml
+│   │       └── navigate_to_pose.xml
+│   ├── mowgli_simulation/             # Gazebo Harmonic worlds & SDF model
 │   ├── mowgli_bringup/                # Launch files & configuration
 │   │   └── config/
 │   │       ├── hardware_bridge.yaml
 │   │       ├── localization.yaml
 │   │       ├── nav2_params.yaml
-│   │       ├── coverage_planner.yaml
 │   │       ├── slam_toolbox.yaml
 │   │       ├── twist_mux.yaml
 │   │       ├── foxglove_bridge.yaml
-│   │       └── navigate_to_pose.xml   # Custom behavior tree
+│   │       └── mowgli_robot.yaml
 │   │
-│   └── foxglove/                      # Foxglove dashboards
-│       ├── mowing.json                # Main mowing dashboard
-│       ├── debug.json                 # Diagnostic dashboard
-│       └── README.md                  # Dashboard setup guide
+│   └── opennav_coverage/              # Third-party Nav2 coverage server
 │
 └── [build artifacts]
 ```
@@ -237,7 +253,7 @@ mowgli_ros2/
 
 #### Understand the system design
 1. Start with [ARCHITECTURE.md](ARCHITECTURE.md) → System Overview
-2. Review the package description that interests you (9 packages total)
+2. Review the package description that interests you (12 packages total)
 3. Check the data flow diagram for end-to-end flow
 
 #### Configure autonomous mowing
@@ -478,7 +494,7 @@ Include:
 
 **Current Version:** 0.2.0 (Development)
 
-**Last Updated:** 2026-03-27
+**Last Updated:** 2026-04-01
 
 | Component | Version | Notes |
 |-----------|---------|-------|
@@ -487,7 +503,7 @@ Include:
 | Nav2 | Latest (Jazzy) | Auto-loaded plugins, no manual registration |
 | SLAM Toolbox | Latest (Jazzy) | Outdoor-tuned defaults |
 | BehaviorTree.CPP | v4 | ReactiveSequence with emergency guard |
-| Total Packages | 9 | Core system complete |
+| Total Packages | 12 | Core system complete |
 
 ---
 

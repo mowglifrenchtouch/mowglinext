@@ -42,11 +42,11 @@ All dependencies (ROS2 Jazzy, Gazebo Harmonic, tools) are containerized. No inst
 ```bash
 cd ~/mowgli-ros2/mowgli_ros2
 
-# Build production image (for GUI + noVNC)
-make build-sim-gui
+# Build simulation image (used by all sim services)
+docker compose build simulation
 
-# Build development image (for iterative development)
-make build-dev-sim
+# Or build all images at once
+docker compose build
 ```
 
 ### 2. Run Simulation with GUI
@@ -54,7 +54,7 @@ make build-dev-sim
 Production mode with Gazebo GUI accessible via browser:
 
 ```bash
-make run-sim-gui
+docker compose up simulation-gui
 ```
 
 **Output:**
@@ -74,7 +74,7 @@ Simulation running...
 Development mode with source volume mounts for fast iteration:
 
 ```bash
-make dev-sim
+docker compose up dev-sim
 ```
 
 This container has your source code mounted at `/ros2_ws/src/`, allowing you to:
@@ -88,16 +88,17 @@ In the dev container shell:
 
 ```bash
 # Build a single package (fast rebuild)
-make dev-build-pkg PKG=mowgli_behavior
+docker compose exec dev-sim bash -c \
+  'source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && colcon build --packages-select mowgli_behavior'
 
 # Restart simulation services
-make dev-restart
+docker compose restart dev-sim
 
 # Open a shell in the running container
-make dev-shell
+docker compose exec dev-sim bash
 
 # View logs
-make dev-logs
+docker compose logs -f dev-sim
 ```
 
 ## Accessing Simulation
@@ -119,7 +120,7 @@ Open **http://localhost:6080/vnc.html** in your browser.
 
 1. Open [Foxglove Studio](https://foxglove.dev/) (web or desktop app)
 2. Click "Open Connection"
-3. Select "Rosbridge (ROS 1/ROS 2)" and enter: **ws://localhost:8765**
+3. Select "Foxglove WebSocket" and enter: **ws://localhost:8765**
 4. Import layout from `foxglove/mowgli_sim.json` (pre-configured with panels for LiDAR, odometry, transforms, status)
 
 **Foxglove displays:**
@@ -136,7 +137,7 @@ Complete test of behavior tree control:
 
 ```bash
 # Terminal 1: Start simulation with GUI
-make run-sim-gui
+docker compose up simulation-gui
 # Wait for "Simulation running..." message
 
 # Terminal 2: Send high-level control command
@@ -232,17 +233,18 @@ To create a custom world:
 
 ```bash
 # Terminal 1: Start dev container
-make dev-sim
+docker compose up dev-sim
 
 # Terminal 2: Edit your code
 # e.g., modify src/mowgli_behavior/src/behavior_tree.cpp
 
 # Terminal 3: Rebuild package inside container
-make dev-build-pkg PKG=mowgli_behavior
+docker compose exec dev-sim bash -c \
+  'source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && colcon build --packages-select mowgli_behavior'
 
 # Watch noVNC (http://localhost:6080/vnc.html) to see changes take effect
 # Or restart simulation:
-make dev-restart
+docker compose restart dev-sim
 ```
 
 ### Interactive Development Shell
@@ -250,7 +252,7 @@ make dev-restart
 For direct container access:
 
 ```bash
-make dev-shell
+docker compose exec dev-sim bash
 
 # Now you're inside the container
 cd /ros2_ws
@@ -263,16 +265,16 @@ ros2 launch mowgli_bringup simulation.launch.py
 
 ```bash
 # View container logs
-make dev-logs
+docker compose logs -f dev-sim
 
 # Check ROS2 nodes running inside container
-docker exec mowgli_simulation_dev bash -c "\
+docker exec mowgli_dev_sim bash -c "\
   source /opt/ros/jazzy/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 node list"
 
 # Echo a specific topic
-docker exec mowgli_simulation_dev bash -c "\
+docker exec mowgli_dev_sim bash -c "\
   source /opt/ros/jazzy/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 topic echo /scan --no-arr"
@@ -285,9 +287,9 @@ docker exec mowgli_simulation_dev bash -c "\
 | Topic | Type | Rate | Description |
 |-------|------|------|-------------|
 | `/clock` | rosgraph_msgs/Clock | 1000 Hz | Simulation time (use_sim_time) |
-| `/scan` | sensor_msgs/LaserScan | 5 Hz | 2D LiDAR scan |
+| `/scan` | sensor_msgs/LaserScan | ~10 Hz | 2D LiDAR scan |
 | `/imu/data` | sensor_msgs/Imu | 100 Hz | IMU (accelerometer + gyroscope) |
-| `/wheel_odom` | nav_msgs/Odometry | 50 Hz | Wheel encoder odometry |
+| `/wheel_odom` | nav_msgs/Odometry | ~50 Hz | Wheel encoder odometry |
 | `/cmd_vel` | geometry_msgs/Twist | – | Motor velocity commands (ROS → Gazebo) |
 
 ### ROS2 Processed Topics
@@ -323,12 +325,12 @@ docker exec mowgli_simulation_gui bash -c "\
 
 ### Optimize CPU Usage
 
-Development mode runs lighter than production. Use `make dev-sim` for iterative work.
+Development mode runs lighter than production. Use `docker compose up dev-sim` for iterative work.
 
 Production mode can be optimized:
 ```bash
 # Reduce sensor frequencies in launch configuration
-# Lower /scan rate from 5 Hz to 2 Hz
+# Lower /scan rate from 10 Hz to 2 Hz
 # Lower /imu rate from 100 Hz to 50 Hz
 # Reduces CPU load and network overhead
 ```
@@ -341,7 +343,7 @@ Docker simulation can use GPU if available:
 # Modify docker-compose.yml to include:
 # runtime: nvidia
 # and rebuild
-make build-sim-gui
+docker compose build simulation
 ```
 
 Check Gazebo rendering speed in noVNC. GPU provides 2-3x faster rendering.
@@ -355,7 +357,7 @@ Check Gazebo rendering speed in noVNC. GPU provides 2-3x faster rendering.
 docker stop mowgli_simulation_gui
 
 # Stop development container
-docker stop mowgli_simulation_dev
+docker stop mowgli_dev_sim
 
 # Stop and remove everything
 docker compose down
@@ -403,7 +405,7 @@ docker exec mowgli_simulation_gui bash -c "\
 ```
 
 **Solution:**
-- Restart container: `make run-sim-gui`
+- Restart container: `docker compose restart simulation-gui`
 - Check firewall: `lsof -i :8765`
 - Verify ROS2 domain ID matches (should be 0)
 
@@ -419,13 +421,13 @@ docker exec mowgli_simulation_gui bash -c "\
 
 **Solution:**
 - Wait 10-15 seconds for Gazebo to initialize model spawn
-- Check simulation logs: `make dev-logs` (if using dev mode)
-- Rebuild and restart: `make dev-build && make dev-restart`
+- Check simulation logs: `docker compose logs -f dev-sim` (if using dev mode)
+- Rebuild and restart: `docker compose build dev-sim && docker compose restart dev-sim`
 
 ### Issue: Slow Rendering or CPU Maxed Out
 
 **Solution:**
-- Use `make dev-sim` instead of production image (lighter)
+- Use `docker compose up dev-sim` instead of production image (lighter)
 - Reduce sensor rates in configuration
 - Close unnecessary applications on host
 - Check GPU acceleration is enabled (if available)
@@ -434,13 +436,13 @@ docker exec mowgli_simulation_gui bash -c "\
 
 **Check:**
 ```bash
-docker ps -a | grep mowgli_simulation_dev
-docker logs mowgli_simulation_dev
+docker ps -a | grep mowgli_dev_sim
+docker logs mowgli_dev_sim
 ```
 
 **Solution:**
-- Rebuild: `make build-dev-sim`
-- Restart: `make dev-sim`
+- Rebuild: `docker compose build dev-sim`
+- Restart: `docker compose up dev-sim`
 - Check disk space: `docker system df`
 
 ### Issue: Source Edits Don't Take Effect in Dev Mode
@@ -448,13 +450,15 @@ docker logs mowgli_simulation_dev
 **Solution:**
 ```bash
 # Rebuild the specific package
-make dev-build-pkg PKG=mowgli_behavior
+docker compose exec dev-sim bash -c \
+  'source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && colcon build --packages-select mowgli_behavior'
 
 # Or full rebuild
-make dev-build
+docker compose exec dev-sim bash -c \
+  'source /opt/ros/jazzy/setup.bash && colcon build'
 
 # Restart simulation
-make dev-restart
+docker compose restart dev-sim
 ```
 
 ## Integration Testing Examples
@@ -463,7 +467,7 @@ make dev-restart
 
 ```bash
 # Terminal 1
-make run-sim-gui
+docker compose up simulation-gui
 
 # Terminal 2 (after 30 seconds for Gazebo to load)
 docker exec mowgli_simulation_gui bash -c "\
@@ -485,7 +489,7 @@ Open noVNC (http://localhost:6080/vnc.html) to watch robot execute mowing patter
 
 ```bash
 # Terminal 1
-make run-sim-gui
+docker compose up simulation-gui
 
 # Terminal 2: Record laser scan
 docker exec mowgli_simulation_gui bash -c "\
@@ -500,7 +504,7 @@ Verify scan data shows valid ranges and angles.
 
 ```bash
 # Terminal 1
-make run-sim-gui
+docker compose up simulation-gui
 
 # Terminal 2: Start recording odometry data
 docker exec mowgli_simulation_gui bash -c "\

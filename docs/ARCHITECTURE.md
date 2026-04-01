@@ -2,11 +2,11 @@
 
 Comprehensive technical documentation of the Mowgli ROS2 system design, including package organization, data flow, communication protocols, and integration points.
 
-Built on **ROS2 Jazzy** with **Gazebo Harmonic** simulation, this architecture spans 10 focused packages providing complete autonomous lawn mower functionality.
+Built on **ROS2 Jazzy** with **Gazebo Harmonic** simulation, this architecture spans 12 focused packages providing complete autonomous lawn mower functionality.
 
 ## System Overview
 
-Mowgli ROS2 is organized as a **10-package ecosystem** with clear separation of concerns and layered dependencies:
+Mowgli ROS2 is organized as a **12-package ecosystem** with clear separation of concerns and layered dependencies:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -72,8 +72,10 @@ Mowgli ROS2 is organized as a **10-package ecosystem** with clear separation of 
 | **mowgli_behavior** | Reactive behavior tree control (BehaviorTree.CPP v4) | mowgli_interfaces, nav2_msgs |
 | **mowgli_monitoring** | Diagnostics aggregation and MQTT bridge for external monitoring | diagnostic_msgs |
 | **mowgli_simulation** | Gazebo Harmonic worlds, robot models, and ros_gz_bridge configuration | mowgli_bringup, ros_gz_sim, ros_gz_bridge |
-| **mowgli_map** | Map server, storage, and persistence for offline maps | nav_msgs, nav2_map_server |
-| **mowgli_bringup** | Configuration, launch orchestration, URDF/xacro, and integration layer | All packages above |
+| **mowgli_map** | Map server, storage, persistence for offline maps, and obstacle_tracker_node (persistent LiDAR obstacle detection) | nav_msgs, nav2_map_server, mowgli_interfaces |
+| **mowgli_description** | URDF/xacro robot model and meshes | xacro, robot_state_publisher |
+| **opennav_coverage** | Third-party Nav2 coverage server (built from source, jazzy branch) | nav2_core, fields2cover |
+| **mowgli_bringup** | Configuration, launch orchestration, and integration layer | All packages above |
 
 ## Package Dependency Graph
 
@@ -100,6 +102,9 @@ mowgli_interfaces (base layer)
     │
     └──→ mowgli_map
             └──→ mowgli_bringup
+
+mowgli_description (robot model)
+    └──→ mowgli_bringup
 
 mowgli_simulation (standalone testing)
     ├──→ mowgli_bringup
@@ -159,14 +164,29 @@ Application layer
   string charger_status           # "charging", "idle", "error"
   ```
 
-- **WheelTick.msg** – Encoder pulse counts (internal)
+- **WheelTick.msg** – Encoder pulse counts with validity bitmasks
   ```
   builtin_interfaces/Time stamp
-  int32 fl_tick                   # Front-left wheel (unused on Mowgli)
-  int32 fr_tick                   # Front-right wheel (unused on Mowgli)
-  int32 rl_tick                   # Rear-left wheel (active)
-  int32 rr_tick                   # Rear-right wheel (active)
+  float32 wheel_tick_factor       # Ticks-to-distance conversion factor
+  uint8 valid_wheels              # Bitmask: WHEEL_VALID_FL=1, FR=2, RL=4, RR=8
+  bool wheel_direction_fl         # Front-left direction
+  bool wheel_direction_fr         # Front-right direction
+  bool wheel_direction_rl         # Rear-left direction
+  bool wheel_direction_rr         # Rear-right direction
+  uint32 wheel_ticks_fl           # Front-left tick count
+  uint32 wheel_ticks_fr           # Front-right tick count
+  uint32 wheel_ticks_rl           # Rear-left tick count
+  uint32 wheel_ticks_rr           # Rear-right tick count
   ```
+
+- **AbsolutePose.msg** – Robot position with GPS quality flags (FLAG_GPS_RTK=1, FLAG_GPS_RTK_FIXED=2, FLAG_GPS_RTK_FLOAT=4, FLAG_GPS_DEAD_RECKONING=8)
+- **HighLevelStatus.msg** – Behavior tree state (IDLE, UNDOCKING, MOWING, RECOVERING, DOCKING, RECORDING)
+- **ESCStatus.msg** – Motor ESC telemetry
+- **ImuRaw.msg** – Raw IMU data from STM32 firmware
+- **MapArea.msg** – Mowing area polygon definition for map_server_node
+- **CoveragePath.msg** – Coverage path with metadata
+- **ObstacleArray.msg** – Collection of tracked obstacles from obstacle_tracker_node
+- **TrackedObstacle.msg** – Individual persistent obstacle with position, age, and observation count
 
 #### Services
 
@@ -190,7 +210,6 @@ Application layer
 #### Actions
 
 - **NavigateToPose.action** – Nav2 navigation goal (standard nav2_msgs)
-- **DockingSequence.action** – Custom docking behavior (if implemented)
 
 **Design Notes:**
 - All timestamps use `builtin_interfaces/Time` (ROS2 idiom, replacing `rosgraph_msgs/Time` from ROS1)
@@ -297,7 +316,7 @@ PacketHandler::feed() → on_packet_received()
     ↓
 handle_status() → Status msg + Emergency msg + Power msg → pub_status_, pub_emergency_, pub_power_
     ↓
-ROS2 network: /hardware_bridge/status, /hardware_bridge/emergency, /hardware_bridge/power
+ROS2 network: /status, /emergency, /power
 ```
 
 **Outgoing (ROS2 → Pi → STM32):**
@@ -367,7 +386,7 @@ hardware_bridge:
 
 ```
 Inputs:
-  - /hardware_bridge/status (WheelTick in Status msg)
+  - /status (WheelTick in Status msg)
   - /imu/data (sensor_msgs/Imu) → smoothed IMU
   - /gps/rtk_fix (sensor_msgs/NavSatFix, RTK status)
 
@@ -506,7 +525,7 @@ gps_pose_converter:
 **Inputs:**
 - `/odometry/filtered_odom` (from ekf_odom)
 - `/odometry/filtered_map` (from ekf_map)
-- `/hardware_bridge/status` (for wheel tick freshness)
+- `/status` (for wheel tick freshness)
 - `/gps/rtk_fix` (for fix status)
 
 **Outputs:**
@@ -656,11 +675,13 @@ Starts:
 </library>
 ```
 
-**Two Controller Profiles:**
+**Controller Profiles (Active Configuration):**
 
-The same FTC controller is used in two different navigation modes via the behavior tree:
+RPP (RegulatedPurePursuit) is the active controller for both navigation modes:
 1. **FollowPath** – Transit navigation and docking (RPP + RotationShimController wrapper)
-2. **FollowCoveragePath** – Coverage path following (native FTC, path-indexed tracking)
+2. **FollowCoveragePath** – Coverage path following (RPP, sequential lookahead tracking)
+
+The FTC controller plugin exists but is not yet activated. See the FTC architecture below for reference.
 
 #### FTCController: 5-State FSM & Path-Indexed Algorithm
 
@@ -761,7 +782,9 @@ The `FailureDetector` class tracks velocity history:
 
 ```yaml
 FollowPath:
-  plugin: "mowgli_nav2_plugins::FTCController"
+  plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+  # FTC is available but not yet activated:
+  # plugin: "mowgli_nav2_plugins::FTCController"
 
   # Speed profiles (state-dependent)
   speed_fast: 0.5                           # m/s in FOLLOWING state
@@ -955,7 +978,7 @@ class FollowCoveragePath : public BT::AsyncActionNode
 // Returns RUNNING (following), SUCCESS (completed), FAILURE (collision/stuck)
 
 class SetMowerEnabled : public BT::ActionNode
-// Calls /hardware_bridge/mower_control service
+// Calls /mower_control service
 // Port In: enabled (bool)
 // Fire-and-forget; always returns SUCCESS (or gracefully continues in simulation)
 
@@ -986,14 +1009,14 @@ class RetryUntilSuccessful : public BT::ControlNode
 #### Tree Control (BehaviorTreeNode)
 
 **Subscriptions:**
-- `/hardware_bridge/status` – Mower state, rain sensor, blade status
-- `/hardware_bridge/emergency` – Latched emergency flag
-- `/hardware_bridge/power` – Battery voltage (v_battery)
+- `/status` – Mower state, rain sensor, blade status
+- `/emergency` – Latched emergency flag
+- `/power` – Battery voltage (v_battery)
 - `/high_level_control` (service) – Receive mode commands from GUI (START, HOME, S1, S2)
 
 **Services Called:**
-- `/hardware_bridge/mower_control` – Enable/disable blade
-- `/hardware_bridge/emergency_stop` – Release latched emergency
+- `/mower_control` – Enable/disable blade
+- `/emergency_stop` – Release latched emergency
 - `/navigate_to_pose` (Nav2) – Send navigation goals
 - `/plan_coverage` (mowgli_coverage_planner) – Generate coverage paths
 
@@ -1097,7 +1120,7 @@ The coverage planner follows this deterministic pipeline:
 
 5. **Path Conversion:**
    - Convert F2C `State` objects (x, y, angle) to `geometry_msgs/PoseStamped`
-   - Generate continuous path suitable for FTC controller
+   - Generate continuous path suitable for RPP controller
    - Poses include orientation for turn preparation
 
 **Parameters (coverage_planner.yaml):**
@@ -1400,16 +1423,14 @@ foxglove_bridge:
 3. Navigation to coverage start:
    NavigateToPose(first_waypoint):
      ├─ Nav2 planner: global path from odometry to start
-     ├─ FTC controller (FollowPath mode, PRE_ROTATE → FOLLOWING)
+     ├─ RPP controller (RegulatedPurePursuit + RotationShimController)
      ├─ Costmap: /scan + odom → local obstacles
      └─ cmd_vel → hardware_bridge → STM32 → wheels
 
 4. Coverage path following (CoverageWithRecovery loop):
    FollowCoveragePath:
-     ├─ FTC controller (PRE_ROTATE → FOLLOWING state machine)
-     ├─ Path-indexed tracking (not lookahead-based)
-     │   └─ current_index_ advances along /coverage_path
-     ├─ PID control (lateral, longitudinal, angular)
+     ├─ RPP controller (RegulatedPurePursuit, sequential lookahead)
+     ├─ max_robot_pose_search_dist: 5.0 prevents jumping to adjacent swaths
      ├─ Oscillation detection (FailureDetector)
      ├─ Obstacle avoidance (costmap checking)
      └─ Updates: state → WAITING_FOR_GOAL_APPROACH → POST_ROTATE → FINISHED
@@ -1444,11 +1465,10 @@ foxglove_bridge:
      ├─ Output: /map (occupancy grid)
      └─→ /tf: map → odom (loop closure correction)
 
-   FTC Controller (10 Hz):
+   RPP Controller (10 Hz):
      ├─ Reads robot pose from /tf: odom → base_link
-     ├─ Reads /coverage_path (current_index_ position)
-     ├─ Computes errors (lateral, longitudinal, angular)
-     ├─ PID loops → u_lat, u_lon, u_ang
+     ├─ Sequential lookahead along coverage path
+     ├─ Regulated pure pursuit with curvature-based speed scaling
      └─→ /cmd_vel (geometry_msgs/Twist)
 
 6. Command routing (twist_mux, priority-based):
@@ -1573,9 +1593,9 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 | `/scan` | sensor_msgs/LaserScan | Gazebo bridge / LiDAR driver | 10 Hz | LiDAR range data (Gazebo simulated or real) |
 | `/imu/data` | sensor_msgs/Imu | imu_filter_madgwick | 50 Hz | Filtered IMU (9-DOF fusion) |
 | `/imu/data_raw` | sensor_msgs/Imu | hardware_bridge_node | 100 Hz | Raw accelerometer + gyroscope |
-| `/hardware_bridge/status` | mowgli_interfaces/Status | hardware_bridge_node | 100 Hz | Mower state (blade on/off, rain, charging) |
-| `/hardware_bridge/emergency` | mowgli_interfaces/Emergency | hardware_bridge_node | 100 Hz | Emergency stop status (latched, active) |
-| `/hardware_bridge/power` | mowgli_interfaces/Power | hardware_bridge_node | 100 Hz | Battery voltage, charging current |
+| `/status` | mowgli_interfaces/Status | hardware_bridge_node | 100 Hz | Mower state (blade on/off, rain, charging) |
+| `/emergency` | mowgli_interfaces/Emergency | hardware_bridge_node | 100 Hz | Emergency stop status (latched, active) |
+| `/power` | mowgli_interfaces/Power | hardware_bridge_node | 100 Hz | Battery voltage, charging current |
 | `/wheel_odom` | nav_msgs/Odometry | wheel_odometry_node | 50 Hz | Dead-reckoning from wheel encoders |
 | `/gps/rtk_fix` | sensor_msgs/NavSatFix | GPS hardware driver | 10–20 Hz | RTK fix (latitude, longitude, altitude) |
 | `/gps/pose` | geometry_msgs/PoseWithCovarianceStamped | gps_pose_converter_node | 10–20 Hz | RTK position converted to local ENU |
@@ -1599,9 +1619,9 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 | `/odometry/filtered_odom` | slam_toolbox, nav2 controller, diagnostics_node | SLAM input, localized pose for control |
 | `/odometry/filtered_map` | nav2 planner, behavior_tree (goal comparison), diagnostics_node | Global navigation reference |
 | `/gps/rtk_fix` | gps_pose_converter_node, diagnostics_node | Convert fix to local frame, monitor GPS |
-| `/hardware_bridge/status` | behavior_tree_node, localization_monitor_node, diagnostics_node | Health checks, sensor freshness |
-| `/hardware_bridge/emergency` | behavior_tree_node, diagnostics_node | Emergency monitoring |
-| `/hardware_bridge/power` | behavior_tree_node, diagnostics_node | Battery level monitoring |
+| `/status` | behavior_tree_node, localization_monitor_node, diagnostics_node | Health checks, sensor freshness |
+| `/emergency` | behavior_tree_node, diagnostics_node | Emergency monitoring |
+| `/power` | behavior_tree_node, diagnostics_node | Battery level monitoring |
 | `/wheel_odom` | diagnostics_node | Monitor odometry freshness |
 | `/coverage_path` | FollowCoveragePath BT node, diagnostics_node (optional) | Coverage execution |
 
@@ -1609,8 +1629,8 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 
 | Service | Type | Server | Client | Purpose |
 |---------|------|--------|--------|---------|
-| `/hardware_bridge/mower_control` | MowerControl | hardware_bridge_node | behavior_tree_node | Enable/disable blade motor |
-| `/hardware_bridge/emergency_stop` | EmergencyStop | hardware_bridge_node | behavior_tree_node, safety system | Assert/release latched emergency |
+| `/mower_control` | MowerControl | hardware_bridge_node | behavior_tree_node | Enable/disable blade motor |
+| `/emergency_stop` | EmergencyStop | hardware_bridge_node | behavior_tree_node, safety system | Assert/release latched emergency |
 | `/navigate_to_pose` | nav2_msgs/NavigateToPose | nav2_behavior_tree_navigator | behavior_tree_node | Send goal to Nav2 |
 | `/robot_localization/set_pose` | robot_localization/SetPose | ekf_odom | startup/testing tools | Initialize odometry origin |
 
@@ -1625,16 +1645,17 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 
 ## Summary: Architectural Principles
 
-1. **10-Package Modular Design:** Separation of concerns across hardware, localization, navigation, planning, monitoring, and behavior layers.
+1. **12-Package Modular Design:** Separation of concerns across hardware, localization, navigation, planning, monitoring, and behavior layers.
    - **Core:** mowgli_interfaces (message definitions)
    - **Hardware:** mowgli_hardware (STM32 bridge via COBS)
    - **Perception:** mowgli_localization (EKF fusion, multi-sensor)
-   - **Control:** mowgli_nav2_plugins (path tracking, FTC algorithm)
+   - **Control:** mowgli_nav2_plugins (path tracking, RPP active, FTC available)
    - **Planning:** mowgli_coverage_planner (Fields2Cover v2, boustrophedon)
    - **Behavior:** mowgli_behavior (BehaviorTree.CPP, 10 Hz reactive control)
    - **Monitoring:** mowgli_monitoring (diagnostics, MQTT bridge)
    - **Simulation:** mowgli_simulation (Gazebo Harmonic, ros_gz_bridge)
-   - **Infrastructure:** mowgli_bringup (launch, URDF, config), mowgli_map (map storage)
+   - **Infrastructure:** mowgli_bringup (launch, config), mowgli_description (URDF/xacro), mowgli_map (map storage)
+   - **Third-party:** opennav_coverage (Nav2 coverage server)
 
 2. **ROS2 Jazzy + Gazebo Harmonic:** Modern robotics stack with first-class simulation support and lifecycle management.
 
@@ -1647,7 +1668,7 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
    - Global (ekf_map, 20 Hz): Corrects drift using GPS or SLAM loop closures
    - Graceful degradation: operates without GPS in GNSS-denied areas
 
-6. **Path-Indexed Coverage Control:** FTC controller with 5-state FSM (PRE_ROTATE → FOLLOWING → WAITING_FOR_GOAL_APPROACH → POST_ROTATE → FINISHED) using path index advancement rather than lookahead distance, enabling precise coverage execution.
+6. **Coverage Path Following:** RPP (RegulatedPurePursuit) is the active controller for both FollowPath and FollowCoveragePath. Sequential lookahead with `max_robot_pose_search_dist: 5.0` prevents jumping between adjacent boustrophedon swaths. FTC controller plugin exists with a 5-state FSM but is not yet activated.
 
 7. **Fields2Cover v2 Coverage Planning:** Deterministic boustrophedon path generation with Dubins curve smoothing, optimal angle search, and headland generation for complete edge coverage.
 

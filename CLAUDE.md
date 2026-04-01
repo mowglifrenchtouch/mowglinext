@@ -2,29 +2,98 @@
 
 Complete ROS2 rewrite of the OpenMower robot mower. Targets ROS2 Jazzy with Nav2, slam_toolbox, Fields2Cover v2, and BehaviorTree.CPP v4.
 
+## Maintenance Instructions
+
+**CLAUDE.md is the living project reference. Keep it accurate.**
+
+After completing any task that changes the project state (new features, bug fixes, config changes, topic changes, new nodes, completed TODOs, etc.):
+1. Update the relevant section of this CLAUDE.md to reflect the change.
+2. If a TODO was completed, mark it `[x]` and move it to the completed group.
+3. If a TODO is no longer relevant (superseded, removed, or the approach changed), remove it and note why in a brief comment if non-obvious.
+4. If new work creates a new TODO, add it to the appropriate priority section.
+
+Before starting a session, scan the TODO list and verify each item against the codebase — mark done items that were completed in previous sessions but not yet updated here.
+
 ## Quick Reference
 
 - **ROS distro:** Jazzy
+- **DDS:** FastDDS (`rmw_fastrtps_cpp`)
 - **Build:** `colcon build` (ament_cmake for C++, ament_python for launch)
 - **Run simulation:** `docker compose up dev-sim` (Gazebo + Nav2 + Foxglove on ws://localhost:8765)
 - **Run hardware:** `docker compose up mowgli` (requires /dev/mowgli)
 - **Send mow command:** `ros2 service call /behavior_tree_node/high_level_control mowgli_interfaces/srv/HighLevelControl "{command: 1}"`
 - **Source workspace inside container:** `source /ros2_ws/install/setup.bash`
+- **GUI:** openmower-gui (Go backend + React frontend), connects to rosbridge on port 9090
 
-## Packages (10)
+## Packages (12)
 
 | Package | Purpose |
 |---------|---------|
-| `mowgli_interfaces` | ROS2 msg/srv/action definitions |
+| `mowgli_interfaces` | ROS2 msg/srv definitions (12 msgs, 9 srvs) |
 | `mowgli_hardware` | COBS serial bridge to STM32 (IMU, blade, E-stop, battery) |
-| `mowgli_bringup` | Launch files, URDF, Nav2 config, EKF config |
-| `mowgli_localization` | Wheel odometry, GPS converter, dual EKF, localization monitor |
+| `mowgli_bringup` | Launch files (mowgli.launch.py + full_system.launch.py), Nav2 config, EKF config |
+| `mowgli_description` | URDF/xacro model, meshes |
+| `mowgli_localization` | Wheel odometry, GPS converter (navsat_to_absolute_pose), dual EKF, localization monitor |
 | `mowgli_nav2_plugins` | FTCController (Nav2 plugin), oscillation detector |
 | `mowgli_behavior` | BehaviorTree.CPP v4 action nodes + main_tree.xml |
-| `mowgli_map` | 4-layer GridMap (occupancy, mow_progress, keepout, speed masks) |
-| `mowgli_coverage_planner` | Fields2Cover v2 (headland + boustrophedon + Dubins curves) |
+| `mowgli_map` | map_server_node (area management, GridMap) + obstacle_tracker_node (persistent LiDAR obstacle detection) |
+| `mowgli_coverage_planner` | Fields2Cover v2 (headland + boustrophedon + Dubins curves) via opennav_coverage |
 | `mowgli_monitoring` | Diagnostics aggregator (8 checks) + optional MQTT bridge |
 | `mowgli_simulation` | Gazebo Harmonic worlds, mower SDF model, VNC support |
+| `opennav_coverage` | Third-party: Nav2 coverage server (built from source, jazzy branch) |
+
+## Launch Structure
+
+Two-tier launch:
+
+1. **`mowgli.launch.py`** — hardware layer (always runs first):
+   - `robot_state_publisher` (URDF → TF)
+   - `hardware_bridge_node` (STM32 serial: publishes `~/status`, `~/power`, `~/emergency`, `~/imu/data_raw`, `~/wheel_odom`; remapped to `/status`, `/power`, `/emergency`, `/imu/data`, `/wheel_odom`)
+   - `twist_mux` (merges `/cmd_vel` sources → `/hardware_bridge/cmd_vel`)
+
+2. **`full_system.launch.py`** — full nav stack (includes mowgli.launch.py):
+   - `behavior_tree_node` (BT executor, publishes `/behavior_tree_node/high_level_status`)
+   - `map_server_node` (area CRUD, docking point, GridMap layers)
+   - `opennav_coverage` (coverage_server lifecycle node)
+   - `lifecycle_manager` (manages coverage_server)
+   - `wheel_odometry_node` → `navsat_to_absolute_pose_node` → `gps_pose_converter_node` → `localization_monitor_node`
+   - Nav2 stack (via `nav2_bringup` include)
+   - `diagnostics_node`, `mqtt_bridge_node` (optional)
+   - `foxglove_bridge` (ws://0.0.0.0:8765)
+   - `rosbridge_websocket` (ws://0.0.0.0:9090, conditional on `enable_rosbridge`)
+   - `obstacle_tracker_node` (persistent LiDAR obstacle detection)
+
+## Key Topics
+
+| Topic | Type | Source | Rate |
+|-------|------|--------|------|
+| `/status` | `mowgli_interfaces/msg/Status` | hardware_bridge | ~10 Hz |
+| `/power` | `mowgli_interfaces/msg/Power` | hardware_bridge | ~1 Hz |
+| `/emergency` | `mowgli_interfaces/msg/Emergency` | hardware_bridge | ~1 Hz |
+| `/imu/data` | `sensor_msgs/msg/Imu` | hardware_bridge | ~50 Hz |
+| `/wheel_odom` | `nav_msgs/msg/Odometry` | wheel_odometry_node | ~50 Hz |
+| `/gps/absolute_pose` | `mowgli_interfaces/msg/AbsolutePose` | navsat_to_absolute_pose | ~5 Hz |
+| `/odometry/filtered_map` | `nav_msgs/msg/Odometry` | robot_localization (ekf_map) | ~20 Hz |
+| `/scan` | `sensor_msgs/msg/LaserScan` | LiDAR driver / Gazebo | ~10 Hz |
+| `/behavior_tree_node/high_level_status` | `mowgli_interfaces/msg/HighLevelStatus` | behavior_tree_node | on BT tick |
+| `/coverage_planner_node/coverage_path` | `nav_msgs/msg/Path` | coverage_server | on plan |
+| `/diagnostics` | `diagnostic_msgs/msg/DiagnosticArray` | diagnostics_node | ~1 Hz |
+
+## mowgli_interfaces
+
+### Messages (12)
+`AbsolutePose`, `CoveragePath`, `ESCStatus`, `Emergency`, `HighLevelStatus`, `ImuRaw`, `MapArea`, `ObstacleArray`, `Power`, `Status`, `TrackedObstacle`, `WheelTick`
+
+**Note:** `DockingSensor.msg` does NOT exist yet. The old OpenMower had it in `mower_msgs` but it has not been ported. Do not subscribe to `/mower/docking_sensor` — it will cause rosbridge type resolution errors.
+
+### Services (9)
+`AddMowingArea`, `ClearMap`, `ClearObstacle`, `EmergencyStop`, `GetMowingArea`, `HighLevelControl`, `MowerControl`, `SetDockingPoint`, `TriggerReplan`
+
+### AbsolutePose Flags (important for GUI)
+- `FLAG_GPS_RTK = 1` — has GPS fix (poorly named; does NOT mean actual RTK)
+- `FLAG_GPS_RTK_FIXED = 2` — RTK fixed (centimetre accuracy)
+- `FLAG_GPS_RTK_FLOAT = 4` — RTK float (decimetre accuracy)
+- `FLAG_GPS_DEAD_RECKONING = 8` — dead reckoning fallback
 
 ## Architecture
 
@@ -45,7 +114,32 @@ Navigation:
   Coverage:  RegulatedPurePursuit bare (FollowCoveragePath)
   Planner:   SmacPlanner2D
   Costmaps:  ObstacleLayer (LiDAR /scan) + InflationLayer
+
+Obstacle Tracking:
+  obstacle_tracker_node subscribes to /scan, promotes transient detections to
+  PERSISTENT after age/observation thresholds, publishes ObstacleArray, feeds
+  map_server_node for costmap updates and coverage replanning.
 ```
+
+## openmower-gui Integration
+
+The GUI lives in `../openmower-gui/` (Go backend + React/Vite frontend).
+
+### Backend → rosbridge connection
+- Go backend connects to rosbridge at `ws://<ROSBRIDGE_URL>:9090`
+- Subscribes to ROS2 topics via rosbridge v2 JSON protocol (NOT CBOR — `compression: "none"` is explicit to avoid a known rosbridge Jazzy bug with fixed-size arrays like covariance matrices)
+- Topic mapping is in `pkg/providers/ros.go` (`topicMap`)
+- Adapters in `pkg/providers/transform.go` convert Odometry → AbsolutePose format for the frontend
+
+### Settings
+- GUI settings use snake_case YAML keys (e.g., `datum_lon`, `datum_lat`, `tool_width`, `battery_full_voltage`, `battery_empty_voltage`, `battery_capacity_mah`)
+- All legacy `OM_*` environment variable keys have been removed from the frontend
+- Settings loaded via `useSettings` hook from both shell config and YAML endpoints
+
+### Known rosbridge issues
+- **rosbridge CBOR bug (Jazzy):** `'bytes' object has no attribute 'get_fields_and_field_types'` — triggered by `float64[36]` covariance arrays in Odometry/Imu messages when CBOR compression is used. Fixed by explicitly requesting `compression: "none"` in subscribe ops.
+- **`/initialpose` type conflict:** nav2 advertises as `PoseWithCovarianceStamped` but another client registered it as `PoseStamped`. Not a GUI issue — comes from nav2/foxglove interaction.
+- **foxglove `/rtcm` schema error:** `rtcm_msgs` package not installed. Harmless unless RTCM visualization needed.
 
 ## Key Config Files
 
@@ -56,10 +150,21 @@ All live-editable via docker-compose.override.yml bind-mounts (no rebuild needed
 | `src/mowgli_bringup/config/nav2_params.yaml` | All Nav2 params: controllers, planner, costmaps, collision monitor, velocity smoother |
 | `src/mowgli_bringup/config/coverage_planner.yaml` | F2C parameters: tool_width, spacing, headland, turning radius |
 | `src/mowgli_localization/config/localization.yaml` | Dual EKF tuning, GPS converter, wheel odometry |
+| `src/mowgli_bringup/config/obstacle_tracker.yaml` | LiDAR obstacle detection thresholds, promotion criteria |
 | `src/mowgli_behavior/trees/main_tree.xml` | BT structure (guards, mowing sequence, recovery) |
 | `src/mowgli_simulation/models/mowgli_mower/model.sdf` | Gazebo robot model (LiDAR, IMU, diff_drive) -- NOT bind-mounted, needs image rebuild |
 
-## Docker Services
+## Docker
+
+### Dockerfile stages
+1. `base` — ros:jazzy-ros-base + all apt deps (nav2, slam_toolbox, rosbridge-suite, foxglove-bridge, etc.)
+2. `deps` — build tools + rosdep + Fields2Cover v1.2.1 from source + opennav_coverage from source
+3. `build-interfaces` — builds mowgli_interfaces only (cached layer)
+4. `build` — builds all remaining packages
+5. `runtime` — minimal image with compiled install tree + entrypoint
+6. `simulation` — extends runtime with Gazebo Harmonic + VNC
+
+### Services
 
 | Service | Description |
 |---------|-------------|
@@ -87,6 +192,9 @@ Nav2 Jazzy's bt_navigator sends empty `progress_checker_id` for NavigateToPose. 
 ### Collision Monitor: disabled scan source in simulation
 The Gazebo LiDAR (range_min=0.10m) produces self-reflections from the robot chassis at ~0.26-0.30m. These phantom readings trigger PolygonStop and FootprintApproach, permanently blocking the robot. The scan source is disabled in the nav2_params.yaml config. Re-enable for real hardware where self-reflections don't occur.
 
+### Obstacles: navigate around, not just stop
+Obstacles detected by LiDAR are tracked by obstacle_tracker_node and promoted to persistent after meeting age/observation thresholds. The SLAM map must persist obstacles so replanning routes around them. The robot should navigate around obstacles, not simply stop.
+
 ## Known Issues & TODOs
 
 ### Active Issues
@@ -96,26 +204,34 @@ The Gazebo LiDAR (range_min=0.10m) produces self-reflections from the robot chas
 
 ### TODO: High Priority
 - [ ] Verify full 13329-pose coverage path completion in simulation (RPP + disabled collision monitor)
-- [ ] Build MowingAreaManager node: persistent LiDAR obstacle detection feeding into F2C replanning
+- [ ] Wire BT dock_pose from map_server_node/docking_pose topic instead of static parameter (map_server publishes `~/docking_pose`, but BT still reads a static `dock_pose` parameter in behavior_tree_node.cpp:168)
+- [ ] Reduce BT log verbosity — PublishHighLevelStatus::tick() publishes every tick with no throttling (action_nodes.cpp:205-254)
+- [ ] Add DockingSensor.msg to mowgli_interfaces (port from old mower_msgs/DockingSensor.msg: stamp, detected_left, detected_right)
+- [ ] Wire `mowgli_robot.yaml` centralized config into all launch files (file exists and is loaded in full_system.launch.py:131 but params not used to override other configs)
+- [ ] FTCController integration — plugin exists (ftc_controller.cpp) but nav2_params still uses RPP for both FollowPath and FollowCoveragePath
+- [ ] Wire opennav_docking into BT — docking_server is fully configured in nav2_params.yaml (SimpleChargingDock plugin) but the BT uses NavigateToPose for docking instead of the docking action
+
+### TODO: Medium Priority
+- [ ] Test rain and battery dock/resume flows end-to-end in simulation (BT guards exist, no automated tests)
+- [ ] GPS + odom fusion tuning on real hardware (field testing required; simulation tuning done)
+- [ ] Install `rtcm_msgs` package to silence foxglove_bridge schema error on `/rtcm` topic
+
+### Completed
 - [x] Implement zone management: costmap filter mask publisher for keepout/speed zones
 - [x] Area recording: GUI → Go backend → ROS2 map_server_node services (add_area, set_docking_point, clear_map)
 - [x] Area persistence: auto-save/load areas and docking point to /ros2_ws/maps/areas.dat
-- [ ] Wire BT dock_pose from map_server_node/docking_pose topic instead of static parameter
-- [ ] Reduce BT log verbosity (conditional publish, rate-limit tick logging)
-- [ ] Fix Gazebo LiDAR self-reflections at source (increase range_min to 0.35m in model.sdf, rebuild image)
-
-### TODO: Medium Priority
-- [ ] Wire `mowgli_robot.yaml` centralized config into all launch files
-- [ ] Test rain and battery dock/resume flows end-to-end in simulation
-- [ ] Implement stuck detection: wheel ticks advancing but GPS/SLAM position unchanged -> backup + reroute
-- [ ] FTCController integration (replace RPP for coverage once validated)
-- [ ] Obstacle avoidance: detect, navigate around, add persistent obstacles to SLAM map
-
-### TODO: Lower Priority
-- [ ] SLAM map persistence across container restarts (currently saves before dock, but load-on-startup may need work)
-- [ ] GPS + odom fusion tuning on real hardware (field testing required)
-- [ ] opennav_docking integration for precise dock approach
-- [ ] Mow progress tracking visualization (map_server mow_progress layer -> Foxglove)
+- [x] Obstacle tracker: persistent LiDAR obstacle detection with promotion thresholds (obstacle_tracker_node)
+- [x] GUI topic mapping: all topics aligned with actual ROS2 topic names after hardware_bridge remapping
+- [x] GUI settings: migrated from OM_* env vars to snake_case YAML keys
+- [x] Rosbridge CBOR fix: explicit `compression: "none"` to avoid Jazzy serialization bug
+- [x] Rosbridge reconnect: stores msgType per topic for correct resubscription
+- [x] Removed DockingSensor subscription from GUI backend (msg doesn't exist, caused rosbridge errors)
+- [x] Fix Gazebo LiDAR self-reflections: range_min set to 0.35m in model.sdf
+- [x] Stuck detection: ExecuteSwathBySwath::checkStuck() in coverage_nodes.cpp (10s timeout, 0.05m threshold)
+- [x] SLAM map persistence: lifelong mode + SaveSlamMap action before dock, saves to /ros2_ws/maps/garden_map
+- [x] Mow progress tracking: map_server_node publishes ~/mow_progress OccupancyGrid
+- [x] Obstacle avoidance: obstacle_tracker promotes detections to persistent, feeds costmap for inflation-based avoidance
+- [ ] Install `rtcm_msgs` package to silence foxglove_bridge schema error
 
 ## Development Workflow
 
@@ -150,6 +266,15 @@ Connect to `ws://localhost:8765` to visualize:
 - `/local_costmap/costmap` (obstacle map)
 - `/behavior_tree_node/high_level_status` (BT state)
 
+### GUI development:
+```bash
+# Backend (Go):
+cd ../openmower-gui && ROSBRIDGE_URL=ws://<robot-ip>:9090 go run .
+
+# Frontend (Vite dev server with proxy to backend on :4006):
+cd ../openmower-gui/web && npm run dev
+```
+
 ## Conventions
 
 - **C++ standard:** C++17, ament_cmake build
@@ -158,3 +283,4 @@ Connect to `ws://localhost:8765` to visualize:
 - **Units:** metres, radians, seconds (SI throughout)
 - **Config:** YAML files under each package's `config/` directory
 - **Topics:** namespaced under node name (`~/`) for internal, absolute for shared (`/scan`, `/cmd_vel`)
+- **Settings keys:** snake_case (e.g., `datum_lon`, `tool_width`, `battery_full_voltage`). No `OM_*` prefix.

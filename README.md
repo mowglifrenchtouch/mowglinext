@@ -14,12 +14,12 @@ The system maintains the proven hardware platform (Raspberry Pi 4, STM32 firmwar
 - **RTK-GPS Fusion** - Dual Extended Kalman Filter (EKF) architecture combining wheel odometry, IMU, and RTK-GPS for accurate outdoor positioning
 - **Nav2 Integration** - Industrial-grade navigation stack with dynamic costmaps and path planning
 - **Coverage Path Planning** - Fields2Cover v2 integration for optimal boustrophedon patterns with configurable swath angles and Dubins turn optimization
-- **Dual Controller Architecture** - RPP (Regulated Pure Pursuit) with RotationShimController for transit/docking, FTC (Follow-The-Carrot) for coverage paths
+- **Dual Controller Architecture** - RPP (Regulated Pure Pursuit) for both transit and coverage, with FTC plugin available for future integration
 - **Behavior Trees** - Reactive, composable control logic using BehaviorTree.CPP v4 with path-indexed state machine for coverage execution
 - **COBS Serial Protocol** - Robust binary communication with STM32 firmware (Consistent Overhead Byte Stuffing with CRC-16 error detection)
 - **Hardware Bridge** - Single USB serial interface abstracting all firmware interactions
 - **Foxglove Integration** - Real-time visualization via Foxglove Studio (ws://localhost:8765)
-- **Modular Architecture** - 9 focused packages with clear responsibilities and minimal coupling
+- **Modular Architecture** - 12 focused packages with clear responsibilities and minimal coupling
 
 ## System Architecture
 
@@ -29,7 +29,7 @@ The system maintains the proven hardware platform (Raspberry Pi 4, STM32 firmwar
 │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────────┐   │
 │  │  Nav2 Stack  │  │  Behavior    │  │  Localization       │   │
 │  │ (SmacPlanner │  │  Tree (BT.   │  │  Monitor            │   │
-│  │  FTCControl) │  │  CPP)        │  │  & GPS Fusion       │   │
+│  │  RPP + FTC ) │  │  CPP)        │  │  & GPS Fusion       │   │
 │  └──────────────┘  └──────────────┘  └─────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
            │                  │                    │
@@ -61,11 +61,13 @@ mowgli_interfaces (messages, services, actions)
     ↓
 mowgli_hardware (COBS bridge to STM32)
     ↓
+mowgli_description (URDF/xacro robot model)
 mowgli_localization (odometry, GPS fusion, monitoring)
 mowgli_map (map server, boundary/zone management)
-mowgli_bringup (URDF, Nav2 config, launch files)
+mowgli_bringup (Nav2 config, launch files)
 mowgli_nav2_plugins (RPP & FTC controller plugins)
 mowgli_coverage_planner (Fields2Cover v2 coverage path planning)
+opennav_coverage (third-party Nav2 coverage server, built from source)
 mowgli_behavior (BehaviorTree nodes & main control)
 mowgli_monitoring (diagnostics, health monitoring, MQTT bridge)
 mowgli_simulation (Gazebo Harmonic simulation assets)
@@ -128,16 +130,18 @@ This brings up:
 - Robot state publisher (URDF → static transforms)
 - Hardware bridge (USB-serial COBS communication)
 - Twist multiplexer (priority-based command routing)
-- Localization (wheel odometry + IMU fusion)
-- Behavior tree controller
+
+For the full navigation stack (localization, Nav2, behavior tree, coverage planner), use:
+```bash
+ros2 launch mowgli_bringup full_system.launch.py serial_port:=/dev/mowgli
+```
 
 ### 3. Launching Simulation (Gazebo Harmonic)
 
 #### Option A: GUI Simulation with noVNC
 
 ```bash
-make docker-sim
-make run-sim-gui
+docker compose up simulation-gui
 ```
 
 Visit http://localhost:6080/vnc.html to view the Gazebo GUI. Foxglove Studio is available at ws://localhost:8765.
@@ -145,13 +149,10 @@ Visit http://localhost:6080/vnc.html to view the Gazebo GUI. Foxglove Studio is 
 #### Option B: Development Simulation
 
 ```bash
-make dev-sim
+docker compose up dev-sim
 ```
 
-Then in the container:
-```bash
-ros2 launch mowgli_bringup simulation.launch.py
-```
+The simulation launches `sim_full_system.launch.py` which includes Gazebo Harmonic, the full Nav2 stack, and sensor bridging. For hardware, use `full_system.launch.py` instead.
 
 This spawns a virtual Mowgli in a Gazebo Harmonic world with:
 - Simulated sensors (LiDAR, IMU, wheel odometry)
@@ -189,9 +190,10 @@ make dev-sim
 Or use docker-compose directly:
 ```bash
 docker compose build
-docker compose up simulation    # For simulation testing
+docker compose up simulation    # Headless simulation testing
+docker compose up dev-sim       # Development simulation with bind-mounts
 # or
-docker compose up hardware      # For real robot (mounts /dev/mowgli)
+docker compose up mowgli        # For real robot (mounts /dev/mowgli)
 ```
 
 ## Package Descriptions
@@ -230,7 +232,7 @@ Key types:
 - Heartbeat every 250 ms to maintain watchdog on firmware
 
 ### mowgli_localization
-**Three-node localization pipeline** producing accurate, multi-modal pose estimates.
+**Four-node localization pipeline** producing accurate, multi-modal pose estimates.
 
 **Nodes:**
 
@@ -244,7 +246,12 @@ Key types:
    - Scales covariance based on GPS quality indicators
    - Publishes `/gps/pose` as PoseWithCovarianceStamped
 
-3. **localization_monitor_node**
+3. **navsat_to_absolute_pose_node**
+   - Converts GPS fix to absolute pose in the map frame
+   - Publishes `/gps/absolute_pose` as `mowgli_interfaces/msg/AbsolutePose`
+   - Includes RTK fix quality flags for downstream consumers (GUI, behavior tree)
+
+4. **localization_monitor_node**
    - Monitors EKF filter health and variance
    - Detects 5 degradation modes: stale odometry, GPS timeout, filter divergence, etc.
    - Publishes degradation warnings for behavior tree adaptation
@@ -263,8 +270,9 @@ Key types:
 - `config/nav2_params.yaml` – Nav2 costmaps, planners, and controller parameters
 - `config/slam_toolbox.yaml` – Outdoor SLAM tuning (loop closure, map update rates)
 - `config/twist_mux.yaml` – Priority multiplexing of navigation, teleoperation, and emergency commands
-- `launch/mowgli.launch.py` – Main real-hardware bringup
-- `launch/simulation.launch.py` – Gazebo Harmonic simulation
+- `launch/mowgli.launch.py` – Hardware-layer bringup (robot_state_publisher, hardware_bridge, twist_mux)
+- `launch/full_system.launch.py` – Full navigation stack (includes mowgli.launch.py + Nav2, localization, BT, coverage)
+- `launch/sim_full_system.launch.py` – Gazebo Harmonic simulation with full nav stack
 
 ### mowgli_nav2_plugins
 **Custom Nav2 controller plugins** for navigation and coverage path following.
@@ -307,16 +315,20 @@ PlanCoveragePath(boundary, zone_config) → waypoint_list
 ```
 
 ### mowgli_map
-**Map server and boundary/zone management** for coverage planning context.
+**Map server, area management, and obstacle tracking** for coverage planning context.
 
 **Nodes:**
-- `map_server_node` – Loads boundary map and zone definitions from saved files
-- Publishes map metadata for coverage planner
 
-**Configuration:**
-- Boundary polygon (polygon from map file or GPS-defined)
-- Inclusion/exclusion zones with penalty costs
-- Saved coverage sessions for replay and analysis
+1. **map_server_node**
+   - Area CRUD via ROS2 services: `AddMowingArea`, `SetDockingPoint`, `ClearMap`, `GetMowingArea`
+   - 4-layer GridMap: occupancy, mow_progress, keepout, speed
+   - Auto-saves/loads mowing areas and docking point to disk (`/ros2_ws/maps/areas.dat`)
+   - Publishes `~/mow_progress` OccupancyGrid for coverage tracking
+
+2. **obstacle_tracker_node**
+   - Persistent LiDAR obstacle detection subscribing to `/scan`
+   - Promotes transient detections to PERSISTENT after age/observation thresholds
+   - Publishes `ObstacleArray` for costmap integration and coverage replanning
 
 ### mowgli_monitoring
 **System health monitoring, diagnostics, and MQTT integration**.
@@ -378,8 +390,8 @@ All nodes are registered in `register_nodes.cpp` for dynamic loading from XML.
 **Gazebo Harmonic simulation assets and physics models** for testing without hardware.
 
 **Contents:**
-- `models/mowgli/` – Complete mower URDF with Gazebo physics, contact sensors, and joint actuators
-- `worlds/backyard.world` – Example lawn simulation environment with grass, obstacles, charging dock
+- `models/mowgli_mower/model.sdf` – Complete mower SDF with Gazebo physics, contact sensors, and joint actuators
+- `worlds/garden.sdf` – Example lawn simulation environment with grass, obstacles, charging dock
 - `launch/spawn_mowgli.launch.py` – Spawns the mower in Gazebo with sensor bridging
 - Sensor simulation: LiDAR point cloud, IMU (noise and gravity), wheel encoder odometry
 - Motor simulation: Direct velocity control → motor commands via Gazebo plugins
@@ -432,7 +444,7 @@ controller_server:
   ros__parameters:
     controller_frequency: 10.0         # Hz – how fast to compute motor commands
     FollowPath:
-      plugin: "mowgli_nav2_plugins::FTCController"
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
       desired_linear_vel: 0.3           # m/s – target speed for lawn mowing
       lookahead_dist: 0.6               # m – carrot distance ahead of robot
 ```
@@ -499,6 +511,8 @@ twist_mux:
 ```
 
 ### FTCController Parameters
+
+> **Note:** The FTC plugin is available but not currently active. RPP (RegulatedPurePursuit) is used for both transit and coverage paths. The FTC configuration below is provided for future integration.
 
 **File:** `src/mowgli_bringup/config/nav2_params.yaml` (controller section)
 

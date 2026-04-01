@@ -16,7 +16,9 @@ config/
 ├── coverage_planner.yaml      # Coverage path planning parameters
 ├── slam_toolbox.yaml          # SLAM parameters
 ├── twist_mux.yaml             # Velocity multiplexer priorities
-└── foxglove_bridge.yaml       # Foxglove Studio visualization bridge
+├── foxglove_bridge.yaml       # Foxglove Studio visualization bridge
+├── obstacle_tracker.yaml      # LiDAR obstacle detection thresholds
+└── mowgli_robot.yaml          # Centralized robot config (exists but not fully wired)
 ```
 
 All YAML files use the ROS2 `ros__parameters` namespace convention. Parameters can be overridden via command-line:
@@ -63,9 +65,9 @@ foxglove_bridge:
       - /local_costmap/costmap        # Local costmap
       - /path                         # Global plan
       - /cmd_vel                      # Velocity commands
-      - /hardware_bridge/status       # Hardware status
-      - /hardware_bridge/power        # Battery voltage
-      - /gps/fix                      # GPS fix data
+      - /status                        # Hardware status
+      - /power                         # Battery voltage
+      - /gps/absolute_pose             # GPS absolute pose
       - /imu/data                     # IMU data
 
     # Camera feed (if available from camera node)
@@ -186,6 +188,7 @@ hardware_bridge:
 - **Range:** 10.0–200.0 Hz typical
 - **Description:** Rate at which hardware_bridge publishes sensor data to ROS2 topics
 - **Affects:** `/hardware_bridge/status`, `/hardware_bridge/power`, `/hardware_bridge/imu/data_raw`
+- **Note:** These are the node-local topic names (`~/status`, `~/power`, `~/imu/data_raw`). In `mowgli.launch.py`, they are remapped to `/status`, `/power`, and `/imu/data` respectively.
 - **Upstream drivers:** Should match firmware's sensor acquisition rate (typically 100 Hz)
 - **Tuning:**
   - Increase for more responsive sensor feedback (higher CPU load on Pi)
@@ -437,7 +440,7 @@ nav2_bringup (lifecycle manager)
   │   └── SmacPlanner2D: plans path from start to goal
   │
   ├── controller_server (local planner + motion controller)
-  │   └── FTCController: follows path and generates motor commands
+  │   └── RegulatedPurePursuit: follows path and generates motor commands
   │
   ├── bt_navigator (behavior tree)
   │   └── Default Nav2 BT: compute path → follow path → success
@@ -536,27 +539,26 @@ controller_server:
       use_cost_regulated_linear_velocity_scaling: false
 
     # ─────────────────────────────────────────────────────────────
-    # FollowCoveragePath: FTC Controller for mowing patterns
+    # FollowCoveragePath: Regulated Pure Pursuit for mowing patterns
+    # Note: FTCController plugin exists in mowgli_nav2_plugins but is
+    # not activated. RPP is used for both FollowPath and FollowCoveragePath
+    # because MPPI's Euclidean nearest-point matching jumps between
+    # adjacent parallel boustrophedon swaths.
     # ─────────────────────────────────────────────────────────────
     FollowCoveragePath:
-      plugin: "mowgli_nav2_plugins::FTCController"
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
 
-      # Speed profiles
-      speed_fast: 0.4                      # m/s (open areas)
-      speed_slow: 0.15                     # m/s (near obstacles)
-      max_follow_distance: 0.8             # m (lateral offset tolerance)
-
-      # Goal tolerance
-      goal_tolerance: 0.2                  # m
-
-      # Lateral control PID (cross-track error)
-      kp_lat: 2.5                          # Proportional gain
-      ki_lat: 0.3                          # Integral gain
-      kd_lat: 0.1                          # Derivative gain
-
-      # Heading control (via angular velocity)
+      desired_linear_vel: 0.3              # m/s
+      max_linear_vel: 0.5                  # m/s
       max_angular_vel: 1.0                 # rad/s
-      angular_acceleration_limit: 2.0      # rad/s²
+      use_regulated_linear_velocity_scaling: true
+      lookahead_dist: 0.6                  # m
+      min_lookahead_dist: 0.3              # m
+      max_lookahead_dist: 0.9              # m
+      lookahead_time: 1.5                  # seconds
+      max_robot_pose_search_dist: 5.0      # m (prevents jumping to adjacent swaths)
+      transform_tolerance: 0.1             # seconds
+      use_cost_regulated_linear_velocity_scaling: false
 ```
 
 #### planner_server Configuration
@@ -997,7 +999,7 @@ topics:
 |-------|----------------|--------|
 | Robot drifts without sensor updates | EKF process noise too low | Increase `process_noise_covariance` in localization.yaml |
 | Robot ignores GPS corrections | EKF process noise too high | Decrease `process_noise_covariance` |
-| Path tracking oscillates | PID gains too high | Decrease `*_p_gain`, `*_i_gain` in FTCController |
+| Path tracking oscillates | Lookahead or velocity scaling too aggressive | Adjust `lookahead_dist`, `desired_linear_vel` in RegulatedPurePursuit |
 | Robot can't follow curves | Lookahead distance too short | Increase `lookahead_dist` in nav2_params.yaml |
 | Planner is very slow | Grid resolution too fine or search space too large | Increase resolution (0.05 → 0.10) or reduce grid size |
 | SLAM diverges in loop closure | Loop closure parameters too aggressive | Decrease `loop_match_minimum_chain_size`, increase `loop_search_maximum_distance` |
