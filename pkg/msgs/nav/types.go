@@ -3,13 +3,13 @@ package nav
 import "github.com/cedbossneo/openmower-gui/pkg/msgs/geometry"
 
 type Path struct {
-	Header geometry.Header
-	Poses  []geometry.PoseStamped
+	Header geometry.Header       `json:"header"`
+	Poses  []geometry.PoseStamped `json:"poses"`
 }
 
 type Odometry struct {
-	Header       geometry.Header
-	ChildFrameId string
-	Pose         geometry.PoseWithCovariance
-	Twist        geometry.TwistWithCovariance
+	Header       geometry.Header              `json:"header"`
+	ChildFrameId string                       `json:"child_frame_id"`
+	Pose         geometry.PoseWithCovariance  `json:"pose"`
+	Twist        geometry.TwistWithCovariance `json:"twist"`
 }

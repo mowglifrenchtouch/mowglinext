@@ -1,9 +1,9 @@
 package std
 
 type String struct {
-	Data string
+	Data string `json:"data"`
 }
 
 type Bool struct {
-	Data bool
+	Data bool `json:"data"`
 }

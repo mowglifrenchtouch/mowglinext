@@ -4,74 +4,74 @@ import "github.com/cedbossneo/openmower-gui/pkg/msgs/geometry"
 
 // HighLevelControlReq for /behavior_tree_node/high_level_control
 type HighLevelControlReq struct {
-	Command uint8
+	Command uint8 `json:"command"`
 }
 
 type HighLevelControlRes struct {
-	Success bool
+	Success bool `json:"success"`
 }
 
 // EmergencyStopReq for /hardware_bridge/emergency_stop
 type EmergencyStopReq struct {
-	Emergency uint8
+	Emergency uint8 `json:"emergency"`
 }
 
 type EmergencyStopRes struct {
-	Success bool
+	Success bool `json:"success"`
 }
 
 // MowerControlReq for /hardware_bridge/mower_control
 type MowerControlReq struct {
-	MowEnabled   uint8
-	MowDirection uint8
+	MowEnabled   uint8 `json:"mow_enabled"`
+	MowDirection uint8 `json:"mow_direction"`
 }
 
 type MowerControlRes struct {
-	Success bool
+	Success bool `json:"success"`
 }
 
 // StartInAreaReq - for scheduled mowing
 type StartInAreaReq struct {
-	Area uint8
+	Area uint8 `json:"area"`
 }
 
 type StartInAreaRes struct {
-	Success bool
+	Success bool `json:"success"`
 }
 
 // AddMowingAreaReq for /map_server_node/add_area
 type AddMowingAreaReq struct {
-	Area             MapArea
-	IsNavigationArea bool
+	Area             MapArea `json:"area"`
+	IsNavigationArea bool    `json:"is_navigation_area"`
 }
 
 type AddMowingAreaRes struct {
-	Success bool
+	Success bool `json:"success"`
 }
 
 // SetDockingPointReq for map_server dock service
 type SetDockingPointReq struct {
-	DockingPose geometry.Pose
+	DockingPose geometry.Pose `json:"docking_pose"`
 }
 
 type SetDockingPointRes struct {
-	Success bool
+	Success bool `json:"success"`
 }
 
 // ClearMapReq for /map_server_node/clear_map (std_srvs/Trigger)
 type ClearMapReq struct{}
 
 type ClearMapRes struct {
-	Success bool
-	Message string
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }
 
 // ReplaceMapReq - used by the frontend to clear+add all areas
 type ReplaceMapArea struct {
-	Area             MapArea
-	IsNavigationArea bool
+	Area             MapArea `json:"area"`
+	IsNavigationArea bool    `json:"is_navigation_area"`
 }
 
 type ReplaceMapReq struct {
-	Areas []ReplaceMapArea
+	Areas []ReplaceMapArea `json:"areas"`
 }
