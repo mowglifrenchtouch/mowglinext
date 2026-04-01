@@ -137,9 +137,9 @@ The GUI lives in `../openmower-gui/` (Go backend + React/Vite frontend).
 - Settings loaded via `useSettings` hook from both shell config and YAML endpoints
 
 ### Known rosbridge issues
-- **rosbridge CBOR bug (Jazzy):** `'bytes' object has no attribute 'get_fields_and_field_types'` — triggered by `float64[36]` covariance arrays in Odometry/Imu messages when CBOR compression is used. Fixed by explicitly requesting `compression: "none"` in subscribe ops.
+- **rosbridge CBOR bug (Jazzy):** `'bytes' object has no attribute 'get_fields_and_field_types'` — triggered by `float64[36]` covariance arrays in Odometry/Imu messages. **Fixed** both client-side (`compression: "none"`) and server-side (`scripts/patch_rosbridge.py` patches `cbor_conversion.py` in the Docker image). Rebuild image to apply.
 - **`/initialpose` type conflict:** nav2 advertises as `PoseWithCovarianceStamped` but another client registered it as `PoseStamped`. Not a GUI issue — comes from nav2/foxglove interaction.
-- **foxglove `/rtcm` schema error:** `rtcm_msgs` package not installed. Harmless unless RTCM visualization needed.
+- **foxglove `/rtcm` schema error:** **Fixed** — `ros-jazzy-rtcm-msgs` added to Dockerfile base stage. Rebuild image to apply.
 
 ## Key Config Files
 
@@ -214,7 +214,7 @@ Obstacles detected by LiDAR are tracked by obstacle_tracker_node and promoted to
 ### TODO: Medium Priority
 - [ ] Test rain and battery dock/resume flows end-to-end in simulation (BT guards exist, no automated tests)
 - [ ] GPS + odom fusion tuning on real hardware (field testing required; simulation tuning done)
-- [ ] Install `rtcm_msgs` package to silence foxglove_bridge schema error on `/rtcm` topic
+- [x] Install `rtcm_msgs` package — added `ros-jazzy-rtcm-msgs` to Dockerfile base stage
 
 ### Completed
 - [x] Implement zone management: costmap filter mask publisher for keepout/speed zones
@@ -223,7 +223,7 @@ Obstacles detected by LiDAR are tracked by obstacle_tracker_node and promoted to
 - [x] Obstacle tracker: persistent LiDAR obstacle detection with promotion thresholds (obstacle_tracker_node)
 - [x] GUI topic mapping: all topics aligned with actual ROS2 topic names after hardware_bridge remapping
 - [x] GUI settings: migrated from OM_* env vars to snake_case YAML keys
-- [x] Rosbridge CBOR fix: explicit `compression: "none"` to avoid Jazzy serialization bug
+- [x] Rosbridge CBOR fix: explicit `compression: "none"` in GUI client + server-side patch in Dockerfile (scripts/patch_rosbridge.py)
 - [x] Rosbridge reconnect: stores msgType per topic for correct resubscription
 - [x] Removed DockingSensor subscription from GUI backend (msg doesn't exist, caused rosbridge errors)
 - [x] Fix Gazebo LiDAR self-reflections: range_min set to 0.35m in model.sdf

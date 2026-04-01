@@ -46,9 +46,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-foxglove-bridge \
     # Rosbridge (WebSocket bridge for openmower-gui)
     ros-jazzy-rosbridge-suite \
-    # u-blox message definitions (for foxglove_bridge schema resolution)
+    # u-blox and RTCM message definitions (for foxglove_bridge schema resolution)
     ros-jazzy-ublox-msgs \
     ros-jazzy-nmea-msgs \
+    ros-jazzy-rtcm-msgs \
     # tinyxml2 (required at runtime by BehaviorTree.CPP and opennav_coverage)
     libtinyxml2-dev \
     # Rotation shim controller for transit navigation
@@ -212,6 +213,12 @@ COPY src/mowgli_bringup/launch/    /ros2_ws/install/mowgli_bringup/share/mowgli_
 COPY src/mowgli_bringup/config/    /ros2_ws/install/mowgli_bringup/share/mowgli_bringup/config/
 COPY src/mowgli_localization/launch/  /ros2_ws/install/mowgli_localization/share/mowgli_localization/launch/
 COPY src/mowgli_localization/config/  /ros2_ws/install/mowgli_localization/share/mowgli_localization/config/
+
+# Patch rosbridge_library CBOR serialization bug (Jazzy):
+# Fixed-size arrays (float64[36] covariance, uint8[N]) crash the CBOR encoder.
+# See: https://github.com/RobotWebTools/rosbridge_suite/issues/965
+COPY scripts/patch_rosbridge.py /tmp/patch_rosbridge.py
+RUN python3 /tmp/patch_rosbridge.py && rm /tmp/patch_rosbridge.py
 
 # Entrypoint script sources both ROS and workspace setups before exec'ing CMD
 COPY scripts/ros2_entrypoint.sh /ros2_entrypoint.sh
