@@ -169,7 +169,7 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
     };
 
     const flashFirmware = (values: Config) => {
-        modal.confirm({
+        const confirmModal = modal.confirm({
             title: "Confirm firmware flash",
             content: (
                 <div>
@@ -187,7 +187,10 @@ export const FlashBoardComponent = (props: { onNext: () => void }) => {
             okText: "Flash",
             okType: "danger",
             cancelText: "Cancel",
-            onOk: () => doFlashFirmware(values),
+            onOk: () => {
+                confirmModal.destroy();
+                doFlashFirmware(values);
+            },
         });
     };
 
