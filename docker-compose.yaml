@@ -23,7 +23,7 @@ services:
     ipc: host
     privileged: true
     devices:
-      - /dev/ttyACM0:/dev/mowgli
+      - /dev/mowgli:/dev/mowgli
     environment:
       <<: *ros2-env
     command: >
