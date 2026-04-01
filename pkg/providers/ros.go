@@ -161,6 +161,7 @@ func NewRosProvider(dbProvider types2.IDBProvider) types2.IRosProvider {
 		}
 		r.initRosbridgeSubscriptions()
 		r.initMowingPathTracking()
+		r.initMapPolling()
 	}()
 
 	return r
@@ -239,6 +240,74 @@ func (r *RosProvider) fanOut(logicalKey string, msg []byte) {
 // logical key. It records the mower's position while the blade motor is
 // running (MOWING state) and publishes the accumulated path list to the
 // virtual "mowingPath" key.
+// initMapPolling periodically fetches mowing areas from the map_server_node
+// and publishes the result to the virtual "map" topic for the GUI.
+func (r *RosProvider) initMapPolling() {
+	go func() {
+		// Wait for rosbridge to be ready
+		time.Sleep(5 * time.Second)
+
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			r.pollMap()
+		}
+	}()
+}
+
+func (r *RosProvider) pollMap() {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var workingAreas []mowgli.MapArea
+	var navAreas []mowgli.MapArea
+
+	// Fetch all areas (index 0..N until success=false)
+	for i := uint32(0); i < 100; i++ {
+		req := mowgli.GetMowingAreaReq{Index: i}
+		var res mowgli.GetMowingAreaRes
+		err := r.CallService(ctx, "/map_server_node/get_mowing_area", &req, &res)
+		if err != nil || !res.Success {
+			break
+		}
+		if res.IsNavigationArea {
+			navAreas = append(navAreas, res.Area)
+		} else {
+			workingAreas = append(workingAreas, res.Area)
+		}
+	}
+
+	if workingAreas == nil {
+		workingAreas = []mowgli.MapArea{}
+	}
+	if navAreas == nil {
+		navAreas = []mowgli.MapArea{}
+	}
+
+	mapData := mowgli.Map{
+		MapWidth:        20.0,
+		MapHeight:       20.0,
+		MapCenterX:      0.0,
+		MapCenterY:      0.0,
+		NavigationAreas: navAreas,
+		WorkingArea:     workingAreas,
+	}
+
+	data, err := json.Marshal(mapData)
+	if err != nil {
+		return
+	}
+
+	// Convert to PascalCase for frontend
+	converted, err := snakeToPascalJSON(data)
+	if err != nil {
+		r.fanOut("map", data)
+		return
+	}
+	r.fanOut("map", converted)
+}
+
 func (r *RosProvider) initMowingPathTracking() {
 	err := r.Subscribe("pose", "gui-mowing-path-tracker", func(msg []byte) {
 		r.mtx.Lock()

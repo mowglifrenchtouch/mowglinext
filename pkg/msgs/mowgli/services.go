@@ -39,6 +39,17 @@ type StartInAreaRes struct {
 	Success bool `json:"success"`
 }
 
+// GetMowingAreaReq for /map_server_node/get_mowing_area
+type GetMowingAreaReq struct {
+	Index uint32 `json:"index"`
+}
+
+type GetMowingAreaRes struct {
+	Area             MapArea `json:"area"`
+	IsNavigationArea bool    `json:"is_navigation_area"`
+	Success          bool    `json:"success"`
+}
+
 // AddMowingAreaReq for /map_server_node/add_area
 type AddMowingAreaReq struct {
 	Area             MapArea `json:"area"`
