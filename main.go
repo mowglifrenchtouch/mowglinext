@@ -13,7 +13,6 @@ func main() {
 	dockerProvider := providers.NewDockerProvider()
 	rosProvider := providers.NewRosProvider(dbProvider)
 	firmwareProvider := providers.NewFirmwareProvider(dbProvider)
-	ubloxProvider := providers.NewUbloxProvider()
 	homekitEnabled, err := dbProvider.Get("system.homekit.enabled")
 	if err != nil {
 		panic(err)
@@ -29,5 +28,5 @@ func main() {
 		providers.NewMqttProvider(rosProvider, dbProvider)
 	}
 	providers.NewSchedulerProvider(rosProvider, dbProvider)
-	api.NewAPI(dbProvider, dockerProvider, rosProvider, firmwareProvider, ubloxProvider)
+	api.NewAPI(dbProvider, dockerProvider, rosProvider, firmwareProvider)
 }

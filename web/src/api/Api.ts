@@ -660,21 +660,5 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
                 type: ContentType.Json,
                 ...params,
             }),
-
-        /**
-         * @description flash the gps configuration
-         *
-         * @tags setup
-         * @name FlashGpsCreate
-         * @summary flash the gps configuration
-         * @request POST:/setup/flashGPS
-         */
-        flashGpsCreate: (params: RequestParams = {}) =>
-            this.request<ApiOkResponse, ApiErrorResponse>({
-                path: `/setup/flashGPS`,
-                method: "POST",
-                type: ContentType.Json,
-                ...params,
-            }),
   };
 }

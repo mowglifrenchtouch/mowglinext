@@ -5,7 +5,6 @@ import {Button, Card, Col, Row, Steps, Typography} from "antd";
 import {FlashBoardComponent} from "../components/FlashBoardComponent.tsx";
 import {SettingsComponent} from "../components/SettingsComponent.tsx";
 import AsyncButton from "../components/AsyncButton.tsx";
-import {FlashGPSComponent} from "../components/FlashGPSComponent.tsx";
 import {SettingsConfig} from "../hooks/useSettings.ts";
 import {useIsMobile} from "../hooks/useIsMobile";
 
@@ -30,14 +29,6 @@ const SetupWizard: React.FC = () => {
             content: (
                 <Card title={"Firmware configuration"} key={"flashBoard"}>
                     <FlashBoardComponent onNext={handleNext}/>
-                </Card>
-            ),
-        },
-        {
-            title: 'Flash GPS configuration',
-            content: (
-                <Card title={"Flash GPS configuration"} key={"flashGPS"}>
-                    <FlashGPSComponent onNext={handleNext} onPrevious={handlePrevious}/>
                 </Card>
             ),
         },
@@ -87,7 +78,7 @@ const SetupWizard: React.FC = () => {
     return <Row gutter={[16, isMobile ? 16 : 32]}>
         <Col span={24}>
             <Typography.Text type="danger" style={{fontSize: isMobile ? 12 : 14}}>WARNING: This setup wizard will flash your
-                motherboard firmware and the GPS configuration. Run at your own risk and be careful with voltage
+                motherboard firmware. Run at your own risk and be careful with voltage
                 settings if you change them.</Typography.Text>
         </Col>
         <Col span={24}>
