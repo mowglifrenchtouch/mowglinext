@@ -197,9 +197,10 @@ FROM base AS runtime
 
 WORKDIR /ros2_ws
 
-# Pull Fields2Cover shared libraries from build stage (needed at runtime by
-# opennav_coverage's coverage_server)
+# Pull Fields2Cover and steering_functions shared libraries from build stage
+# (needed at runtime by opennav_coverage's coverage_server)
 COPY --from=build /usr/local/lib/libFields2Cover* /usr/local/lib/
+COPY --from=build /usr/local/lib/libsteering_functions* /usr/local/lib/
 COPY --from=build /usr/local/include/fields2cover* /usr/local/include/
 RUN ldconfig
 
