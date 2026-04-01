@@ -265,6 +265,9 @@ private:
       case PACKET_ID_LL_ODOMETRY:
         handle_odometry(data, len);
         break;
+      case PACKET_ID_LL_BLADE_STATUS:
+        handle_blade_status(data, len);
+        break;
       default:
         RCLCPP_DEBUG(get_logger(), "Unhandled packet type 0x%02X (len=%zu)", data[0], len);
         break;
@@ -297,9 +300,13 @@ private:
       msg.sound_module_available = (pkt.status_bitmask & STATUS_BIT_SOUND_AVAIL) != 0u;
       msg.sound_module_busy = (pkt.status_bitmask & STATUS_BIT_SOUND_BUSY) != 0u;
       msg.ui_board_available = (pkt.status_bitmask & STATUS_BIT_UI_AVAIL) != 0u;
-      // mow_enabled and ESC fields are set by mower_control service state.
+      // Blade motor fields from live telemetry
       msg.mow_enabled = mow_enabled_;
-      msg.esc_power = mow_enabled_;
+      msg.esc_power = mow_enabled_ || blade_active_;
+      msg.mower_esc_status = blade_active_ ? 1u : 0u;
+      msg.mower_motor_rpm = blade_rpm_;
+      msg.mower_motor_temperature = blade_temperature_;
+      msg.mower_esc_current = blade_esc_current_;
       pub_status_->publish(msg);
     }
 
@@ -485,6 +492,34 @@ private:
                     sizeof(LlHighLevelState) - sizeof(uint16_t));
   }
 
+  void send_blade_command(uint8_t on, uint8_t dir)
+  {
+    LlCmdBlade pkt{};
+    pkt.type = PACKET_ID_LL_CMD_BLADE;
+    pkt.blade_on = on;
+    pkt.blade_dir = dir;
+
+    send_raw_packet(reinterpret_cast<const uint8_t*>(&pkt),
+                    sizeof(LlCmdBlade) - sizeof(uint16_t));
+  }
+
+  void handle_blade_status(const uint8_t* data, std::size_t len)
+  {
+    if (len < sizeof(LlBladeStatus))
+    {
+      return;
+    }
+
+    LlBladeStatus pkt{};
+    std::memcpy(&pkt, data, sizeof(LlBladeStatus));
+
+    // Update the Status message fields with live blade data
+    blade_active_ = pkt.is_active != 0u;
+    blade_rpm_ = static_cast<float>(pkt.rpm);
+    blade_temperature_ = pkt.temperature;
+    blade_esc_current_ = static_cast<float>(pkt.power_watts);
+  }
+
   // ---------------------------------------------------------------------------
   // cmd_vel subscriber
   // ---------------------------------------------------------------------------
@@ -513,9 +548,8 @@ private:
                 mow_enabled_ ? "true" : "false",
                 req->mow_direction);
 
-    // Send an immediate heartbeat with current emergency state so the STM32
-    // picks up the mode change without waiting for the next scheduled tick.
-    send_heartbeat();
+    // Send blade command to STM32
+    send_blade_command(mow_enabled_ ? 1u : 0u, req->mow_direction);
 
     res->success = true;
   }
@@ -581,6 +615,12 @@ private:
   bool mow_enabled_{false};
   uint8_t current_mode_{0};
   uint8_t gps_quality_{0};
+
+  // Blade motor state (updated from LlBladeStatus packets)
+  bool blade_active_{false};
+  float blade_rpm_{0.0f};
+  float blade_temperature_{0.0f};
+  float blade_esc_current_{0.0f};
 
   // Odometry state
   int32_t prev_left_ticks_{0};

@@ -34,6 +34,8 @@ enum PacketId : uint8_t
   PACKET_ID_LL_HEARTBEAT = 0x42,  ///< Pi → STM32: heartbeat
   PACKET_ID_LL_HIGH_LEVEL_STATE = 0x43,  ///< Pi → STM32: high-level state
   PACKET_ID_LL_CMD_VEL = 0x50,  ///< Pi → STM32: velocity command (extension)
+  PACKET_ID_LL_BLADE_STATUS = 0x05,  ///< STM32 → Pi: blade motor status
+  PACKET_ID_LL_CMD_BLADE = 0x51,  ///< Pi → STM32: blade motor control
 };
 
 // ---------------------------------------------------------------------------
@@ -168,6 +170,31 @@ struct LlCmdVel
   uint16_t crc;  ///< CRC-16 CCITT over all preceding bytes
 };
 
+/**
+ * @brief Blade motor control packet sent by the Pi (PACKET_ID_LL_CMD_BLADE = 0x51).
+ */
+struct LlCmdBlade
+{
+  uint8_t type;  ///< Must equal PACKET_ID_LL_CMD_BLADE
+  uint8_t blade_on;  ///< 1=start, 0=stop
+  uint8_t blade_dir;  ///< 0=normal, 1=reverse
+  uint16_t crc;  ///< CRC-16 CCITT over all preceding bytes
+};
+
+/**
+ * @brief Blade motor status packet from STM32 (PACKET_ID_LL_BLADE_STATUS = 0x05).
+ */
+struct LlBladeStatus
+{
+  uint8_t type;  ///< Must equal PACKET_ID_LL_BLADE_STATUS
+  uint8_t is_active;  ///< 1=running, 0=stopped
+  uint16_t rpm;  ///< Blade motor RPM
+  uint16_t power_watts;  ///< Power consumption [W]
+  float temperature;  ///< Blade/motor temperature [C]
+  uint32_t error_count;  ///< Cumulative error counter
+  uint16_t crc;  ///< CRC-16 CCITT over all preceding bytes
+};
+
 #pragma pack(pop)
 
 // ---------------------------------------------------------------------------
@@ -181,5 +208,7 @@ static_assert(sizeof(LlOdometry) == 19u, "LlOdometry layout mismatch");
 static_assert(sizeof(LlHeartbeat) == 5u, "LlHeartbeat layout mismatch");
 static_assert(sizeof(LlHighLevelState) == 5u, "LlHighLevelState layout mismatch");
 static_assert(sizeof(LlCmdVel) == 11u, "LlCmdVel layout mismatch");
+static_assert(sizeof(LlCmdBlade) == 5u, "LlCmdBlade layout mismatch");
+static_assert(sizeof(LlBladeStatus) == 16u, "LlBladeStatus layout mismatch");
 
 }  // namespace mowgli_hardware
