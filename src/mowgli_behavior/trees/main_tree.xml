@@ -98,9 +98,14 @@
         <Sequence name="MowingSequence">
           <IsCommand command="1"/>
 
-          <!-- Undock: reverse, verify not charging. Abort after 3 fails. -->
+          <!-- Undock: only if currently charging (on dock).
+               If already undocked, skip entirely. -->
           <PublishHighLevelStatus state="2" state_name="UNDOCKING"/>
-          <Fallback name="UndockOrAbort">
+          <WaitForDuration duration_sec="1.0"/>
+          <Fallback name="UndockOrSkip">
+            <!-- Already undocked? Skip. -->
+            <Inverter><IsCharging/></Inverter>
+            <!-- On dock — back up and verify -->
             <RetryUntilSuccessful num_attempts="3" name="UndockRetry">
               <Sequence name="UndockAndVerify">
                 <BackUp backup_dist="1.5" backup_speed="0.15"/>
@@ -108,6 +113,7 @@
                 <Inverter><IsCharging/></Inverter>
               </Sequence>
             </RetryUntilSuccessful>
+            <!-- Undock failed — abort -->
             <Sequence name="UndockFailed">
               <StopMoving/>
               <PublishHighLevelStatus state="1" state_name="UNDOCK_FAILED"/>
@@ -159,6 +165,7 @@
                   <WaitForDuration duration_sec="1800.0"/>
                   <!-- Rain over — undock and resume mowing -->
                   <PublishHighLevelStatus state="2" state_name="RESUMING_AFTER_RAIN"/>
+                  <WaitForDuration duration_sec="1.0"/>
                   <Fallback name="RainResumeUndock">
                     <RetryUntilSuccessful num_attempts="3">
                       <Sequence>
@@ -201,6 +208,7 @@
                   </RetryUntilSuccessful>
                   <!-- Charged — undock and verify -->
                   <PublishHighLevelStatus state="2" state_name="RESUMING_UNDOCKING"/>
+                  <WaitForDuration duration_sec="1.0"/>
                   <Fallback name="ResumeUndockOrAbort">
                     <RetryUntilSuccessful num_attempts="3" name="ResumeUndockRetry">
                       <Sequence>
