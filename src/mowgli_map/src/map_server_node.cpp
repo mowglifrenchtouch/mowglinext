@@ -791,12 +791,13 @@ void MapServerNode::on_add_area(
   entry.is_navigation_area = req->is_navigation_area;
 
   // Store obstacle polygons from the MapArea message.
+  // Only store in the area entry (static), NOT in obstacle_polygons_
+  // (which is for dynamic LiDAR-detected obstacles).
   for (const auto& obstacle : req->area.obstacles)
   {
     if (obstacle.points.size() >= 3)
     {
       entry.obstacles.push_back(obstacle);
-      obstacle_polygons_.push_back(obstacle);
 
       grid_map::Polygon obs_gm;
       for (const auto& pt : obstacle.points)
@@ -852,18 +853,16 @@ void MapServerNode::on_get_mowing_area(
     res->area.area = entry.polygon;
     res->area.obstacles = entry.obstacles;
     res->area.is_navigation_area = entry.is_navigation_area;
-    // Also include dynamic obstacles from the tracker.
-    for (const auto& obs : obstacle_polygons_)
-    {
-      res->area.obstacles.push_back(obs);
-    }
+    // Only return user-defined (static) obstacles. Dynamic obstacles from the
+    // LiDAR tracker are handled separately via the costmap and should not be
+    // included here — otherwise the GUI saves them as static, duplicating
+    // obstacles on every save/load cycle.
     res->success = true;
     RCLCPP_INFO(get_logger(),
-                "GetMowingArea[%u]: area='%s', %zu static + %zu dynamic obstacles",
+                "GetMowingArea[%u]: area='%s', %zu obstacles",
                 req->index,
                 entry.name.c_str(),
-                entry.obstacles.size(),
-                obstacle_polygons_.size());
+                entry.obstacles.size());
   }
   else if (!areas_.empty())
   {
@@ -873,10 +872,6 @@ void MapServerNode::on_get_mowing_area(
     res->area.area = entry.polygon;
     res->area.obstacles = entry.obstacles;
     res->area.is_navigation_area = entry.is_navigation_area;
-    for (const auto& obs : obstacle_polygons_)
-    {
-      res->area.obstacles.push_back(obs);
-    }
     res->success = true;
   }
   else
@@ -1567,7 +1562,6 @@ void MapServerNode::load_areas_from_file(const std::string& path)
       if (obs_poly.points.size() >= 3)
       {
         entry.obstacles.push_back(obs_poly);
-        obstacle_polygons_.push_back(obs_poly);
       }
     }
 
