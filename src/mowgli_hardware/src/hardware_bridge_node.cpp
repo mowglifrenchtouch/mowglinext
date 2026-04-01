@@ -339,10 +339,10 @@ private:
     }
 
     // ---- Dock pose fix (when charging, anchor position + orientation) ----
-    // When on the dock, we know the exact position. If dock_yaw is
-    // configured (non-zero), also anchor orientation. This prevents
+    // When on the dock, we know the exact position. This prevents
     // position drift from GPS noise and gives the EKF a heading reference.
-    if (is_charging_ && (dock_x_ != 0.0 || dock_y_ != 0.0))
+    // dock at (0,0) is valid — it means the datum IS the dock.
+    if (is_charging_)
     {
       auto pose_msg = geometry_msgs::msg::PoseWithCovarianceStamped{};
       pose_msg.header.stamp = stamp;
@@ -357,8 +357,9 @@ private:
       pose_msg.pose.covariance[14] = 1e6;    // z
       pose_msg.pose.covariance[21] = 1e6;    // roll
       pose_msg.pose.covariance[28] = 1e6;    // pitch
-      // Yaw: tight if configured, loose if unknown (let SLAM determine it)
-      pose_msg.pose.covariance[35] = (dock_yaw_ != 0.0) ? 0.01 : 1e6;
+      // Yaw: tight if we have a heading (from config or magnetometer),
+      // loose if completely unknown
+      pose_msg.pose.covariance[35] = (dock_yaw_ != 0.0 || mag_initialized_) ? 0.05 : 1e6;
       pub_dock_pose_->publish(pose_msg);
     }
 
