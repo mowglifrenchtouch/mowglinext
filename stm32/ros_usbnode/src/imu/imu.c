@@ -24,6 +24,7 @@
 
 IMU_ReadAccelerometerRaw imuReadAccelerometerRaw=NULL;
 IMU_ReadGyroRaw imuReadGyroRaw=NULL;
+IMU_ReadGyroRaw imuReadMagRaw=NULL;  /* reuse same typedef: void(*)(float*,float*,float*) */
 
 /* accelerometer calibration values */
 float imu_cal_ax = 0.0;
@@ -109,6 +110,26 @@ void IMU_ReadGyro(float *x, float *y, float *z)
   *x = imu_x - imu_cal_gx;
   *y = imu_y - imu_cal_gy;
   *z = imu_z - imu_cal_gz;
+}
+
+/**
+  * @brief  Reads the 3 magnetometer channels (if available)
+  * units are uT (microtesla), uncalibrated
+  */
+void IMU_ReadMag(float *x, float *y, float *z)
+{
+  if (imuReadMagRaw != NULL) {
+    imuReadMagRaw(x, y, z);
+  } else {
+    *x = 0.0f;
+    *y = 0.0f;
+    *z = 0.0f;
+  }
+}
+
+int IMU_HasMag(void)
+{
+  return imuReadMagRaw != NULL;
 }
 
 /*
@@ -284,6 +305,7 @@ void IMU_Normalize( VECTOR* p )
 void IMU_Init() {
   imuReadAccelerometerRaw=NULL;
   imuReadGyroRaw=NULL;
+  imuReadMagRaw=NULL;
 
   uint32_t l_u32Timestamp = HAL_GetTick();
 while (imuReadAccelerometerRaw == NULL && ((HAL_GetTick() - l_u32Timestamp) < 20000) )
@@ -301,6 +323,7 @@ while (imuReadAccelerometerRaw == NULL && ((HAL_GetTick() - l_u32Timestamp) < 20
       WT901_Init();
       imuReadAccelerometerRaw=WT901_ReadAccelerometerRaw;
       imuReadGyroRaw=WT901_ReadGyroRaw;
+      imuReadMagRaw=WT901_ReadMagRaw;
     }
   #endif
 

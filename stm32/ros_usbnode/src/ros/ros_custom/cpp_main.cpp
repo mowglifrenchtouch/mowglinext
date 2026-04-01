@@ -28,9 +28,6 @@
 #include "emergency.h"
 #include "drivemotor.h"
 #include "blademotor.h"
-extern "C" {
-#include "imu/wt901.h"
-}
 #include "ultrasonic_sensor.h"
 #include "stm32f_board_hal.h"
 #include "nbt.h"
@@ -435,20 +432,8 @@ extern "C" void broadcast_handler()
         imu_pkt.gyro_rads[2] = 0.0f;
 #endif
 
-        // Magnetometer — read from WT901 if available
-#ifndef DISABLE_WT901
-        {
-            float mx, my, mz;
-            WT901_ReadMagRaw(&mx, &my, &mz);
-            imu_pkt.mag_uT[0] = mx;
-            imu_pkt.mag_uT[1] = my;
-            imu_pkt.mag_uT[2] = mz;
-        }
-#else
-        imu_pkt.mag_uT[0] = 0.0f;
-        imu_pkt.mag_uT[1] = 0.0f;
-        imu_pkt.mag_uT[2] = 0.0f;
-#endif
+        // Magnetometer — uses generic IMU_ReadMag (works with any IMU that has mag)
+        IMU_ReadMag(&imu_pkt.mag_uT[0], &imu_pkt.mag_uT[1], &imu_pkt.mag_uT[2]);
 
         mowgli_comms_send_imu(&imu_pkt);
     }

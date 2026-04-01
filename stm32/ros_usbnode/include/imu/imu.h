@@ -43,6 +43,8 @@ typedef void (*IMU_ReadAccelerometerRaw)(float *x, float *y, float *z);
 void IMU_Init();
 int IMU_HasAccelerometer();
 int IMU_HasGyro();
+int IMU_HasMag();
+void IMU_ReadMag(float *x, float *y, float *z);
 
 /* IMU calibration (accel/gyro only) */
 #define IMU_CAL_SAMPLES     100
