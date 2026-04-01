@@ -27,19 +27,20 @@ error() { echo -e "${RED}[x]${NC} $*" >&2; }
 step()  { echo -e "\n${CYAN}${BOLD}── $* ──${NC}"; }
 ask()   { echo -en "${BOLD}$1${NC} "; }
 
-# Prompt with default value.  Usage: result=$(prompt "Question?" "default")
+# Prompt with default value.  Sets REPLY global.
+# Usage: prompt "Question?" "default"; myvar="$REPLY"
 prompt() {
   local answer
-  ask "$1 [${2:-}]:"
-  read -r answer
-  echo "${answer:-$2}"
+  echo -en "${BOLD}$1 [${2:-}]:${NC} " >/dev/tty
+  read -r answer </dev/tty
+  REPLY="${answer:-$2}"
 }
 
 # Yes/no prompt.  Usage: if confirm "Continue?"; then ...
 confirm() {
   local answer
-  ask "$1 [Y/n]:"
-  read -r answer
+  echo -en "${BOLD}$1 [Y/n]:${NC} " >/dev/tty
+  read -r answer </dev/tty
   [[ "${answer,,}" != "n" ]]
 }
 
@@ -210,9 +211,11 @@ EOF
   fi
 
   # If config already exists, ask whether to reconfigure
+  SKIP_WRITE_CONFIG=false
   if [ -f "$yaml_file" ]; then
     info "mowgli_robot.yaml already exists"
     if ! confirm "Do you want to reconfigure it?"; then
+      SKIP_WRITE_CONFIG=true
       return
     fi
   fi
@@ -222,30 +225,54 @@ EOF
   echo -e "  ${DIM}$yaml_file${NC}"
   echo ""
 
-  # GPS datum — will be overridden by auto-detect if available
-  echo -e "${CYAN}GPS Datum${NC} — coordinates of your docking station (WGS84)"
-  echo -e "${DIM}Find them on Google Maps: right-click your dock location > copy coordinates${NC}"
-  echo -e "${DIM}Leave as 0.0 to auto-detect from GPS after startup (mower must be on dock)${NC}"
-  local datum_lat datum_lon
-  datum_lat=$(prompt "  Latitude?" "0.0")
-  datum_lon=$(prompt "  Longitude?" "0.0")
+  # GPS datum
+  echo -e "${CYAN}GPS Datum${NC} — map origin coordinates (should be near your dock)"
+  echo ""
+  echo -e "  ${BOLD}1)${NC} Auto-detect from GPS after startup (mower must be on the dock)"
+  echo -e "  ${BOLD}2)${NC} Enter coordinates manually"
+  echo -e "  ${BOLD}3)${NC} Skip (configure later)"
+  echo ""
+  local datum_lat="0.0" datum_lon="0.0"
+  prompt "  Choose" "1"; local datum_choice="$REPLY"
+
+  case "$datum_choice" in
+    2)
+      echo -e "  ${DIM}Find coordinates on Google Maps: right-click dock > copy coordinates${NC}"
+      prompt "  Latitude?" "0.0";  datum_lat="$REPLY"
+      prompt "  Longitude?" "0.0"; datum_lon="$REPLY"
+      if [[ "$datum_lat" == "0.0" || "$datum_lon" == "0.0" ]]; then
+        warn "Datum is 0.0 — GPS localisation won't work"
+        add_issue "Set datum_lat and datum_lon in config/mowgli/mowgli_robot.yaml"
+      fi
+      ;;
+    1)
+      info "Datum will be auto-detected from GPS after startup"
+      ;;
+    *)
+      warn "Datum skipped — you must set it before mowing"
+      add_issue "Set datum_lat and datum_lon in config/mowgli/mowgli_robot.yaml"
+      ;;
+  esac
 
   # NTRIP
   echo ""
   echo -e "${CYAN}NTRIP RTK${NC} — correction stream for centimetre-level GPS accuracy"
   echo -e "${DIM}Free in France: caster.centipede.fr (user: centipede / pass: centipede)${NC}"
+  echo -e "${DIM}Find your nearest base station at https://centipede.fr${NC}"
   local ntrip_enabled="false"
   local ntrip_host="" ntrip_port="2101" ntrip_user="" ntrip_password="" ntrip_mountpoint=""
 
   if confirm "  Enable NTRIP corrections?"; then
     ntrip_enabled="true"
-    ntrip_host=$(prompt "  NTRIP host?" "caster.centipede.fr")
-    ntrip_port=$(prompt "  NTRIP port?" "2101")
-    ntrip_user=$(prompt "  NTRIP user?" "centipede")
-    ntrip_password=$(prompt "  NTRIP password?" "centipede")
-    ntrip_mountpoint=$(prompt "  Mountpoint (base station)?" "")
+    echo ""
+    echo -e "  ${DIM}Enter NTRIP parameters (press Enter to accept defaults):${NC}"
+    prompt "    Host?" "caster.centipede.fr";  ntrip_host="$REPLY"
+    prompt "    Port?" "2101";                 ntrip_port="$REPLY"
+    prompt "    User?" "centipede";            ntrip_user="$REPLY"
+    prompt "    Password?" "centipede";        ntrip_password="$REPLY"
+    prompt "    Mountpoint (nearest base station)?" ""; ntrip_mountpoint="$REPLY"
     if [[ -z "$ntrip_mountpoint" ]]; then
-      warn "No mountpoint set — NTRIP won't connect"
+      warn "No mountpoint set — NTRIP won't connect without one"
       add_issue "Set ntrip_mountpoint in $yaml_file to your nearest base station"
     fi
   fi
@@ -254,11 +281,10 @@ EOF
   echo ""
   echo -e "${CYAN}LiDAR mounting${NC} — position relative to base_link centre (metres)"
   echo -e "${DIM}x=forward, y=left, z=up. yaw in radians (3.14159 = 180 degrees)${NC}"
-  local lidar_x lidar_y lidar_z lidar_yaw
-  lidar_x=$(prompt "  LiDAR x (forward)?" "0.20")
-  lidar_y=$(prompt "  LiDAR y (left)?" "0.0")
-  lidar_z=$(prompt "  LiDAR z (height)?" "0.22")
-  lidar_yaw=$(prompt "  LiDAR yaw (rotation)?" "0.0")
+  prompt "  LiDAR x (forward)?" "0.20";   local lidar_x="$REPLY"
+  prompt "  LiDAR y (left)?" "0.0";       local lidar_y="$REPLY"
+  prompt "  LiDAR z (height)?" "0.22";    local lidar_z="$REPLY"
+  prompt "  LiDAR yaw (rotation)?" "0.0"; local lidar_yaw="$REPLY"
 
   # Store config vars for write_config and auto_detect
   CONFIG_DATUM_LAT="$datum_lat"
@@ -764,10 +790,15 @@ main() {
     install_udev_rules
     setup_directory
     setup_env
+    SKIP_WRITE_CONFIG=false
     interactive_config
-    write_config
+    if ! $SKIP_WRITE_CONFIG; then
+      write_config
+    fi
     pull_and_start
-    auto_detect_position
+    if ! $SKIP_WRITE_CONFIG; then
+      auto_detect_position
+    fi
   else
     INSTALL_DIR="${MOWGLI_HOME:-$HOME/mowgli-docker}"
     if [ ! -f "$INSTALL_DIR/docker-compose.yaml" ]; then
