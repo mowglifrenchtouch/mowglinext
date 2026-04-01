@@ -6,6 +6,11 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      no-cache:
+        description: 'Build without Docker layer cache'
+        type: boolean
+        default: false
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -69,7 +74,8 @@ jobs:
           platforms: ${{ matrix.arch }}
           build-args: |
             BUILD_TYPE=Release
-          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}${{ matrix.suffix }}:buildcache-${{ matrix.arch == 'linux/arm64' && 'arm64' || 'amd64' }}
+          no-cache: ${{ inputs.no-cache == true }}
+          cache-from: ${{ inputs.no-cache != true && format('type=registry,ref={0}{1}:buildcache-{2}', env.IMAGE_NAME, matrix.suffix, matrix.arch == 'linux/arm64' && 'arm64' || 'amd64') || '' }}
           cache-to: type=registry,ref=${{ env.IMAGE_NAME }}${{ matrix.suffix }}:buildcache-${{ matrix.arch == 'linux/arm64' && 'arm64' || 'amd64' }},mode=max
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.IMAGE_NAME }}${{ matrix.suffix }},push-by-digest=true,name-canonical=true,push=true
