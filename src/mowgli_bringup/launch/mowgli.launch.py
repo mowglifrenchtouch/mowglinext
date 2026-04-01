@@ -137,6 +137,7 @@ def generate_launch_description() -> LaunchDescription:
             {"dock_pose_x": float(robot_params.get("dock_pose_x", 0.0))},
             {"dock_pose_y": float(robot_params.get("dock_pose_y", 0.0))},
             {"dock_pose_yaw": float(robot_params.get("dock_pose_yaw", 0.0))},
+            {"imu_yaw": float(robot_params.get("imu_yaw", 0.0))},
         ],
         # The node publishes on ~/topic (e.g. /hardware_bridge/wheel_odom)
         # but the EKF and other nodes expect unprefixed names.

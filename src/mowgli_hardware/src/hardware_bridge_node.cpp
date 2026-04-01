@@ -88,6 +88,7 @@ private:
     dock_x_ = declare_parameter<double>("dock_pose_x", 0.0);
     dock_y_ = declare_parameter<double>("dock_pose_y", 0.0);
     dock_yaw_ = declare_parameter<double>("dock_pose_yaw", 0.0);
+    imu_yaw_offset_ = declare_parameter<double>("imu_yaw", 0.0);
 
     RCLCPP_INFO(get_logger(),
                 "Parameters: serial_port=%s baud_rate=%d heartbeat_rate=%.1f Hz "
@@ -445,8 +446,8 @@ private:
     // atan2(mag_y, mag_x) gives the heading relative to magnetic north.
     const double mag_x = static_cast<double>(pkt.mag_uT[0]);
     const double mag_y = static_cast<double>(pkt.mag_uT[1]);
-    // Add π because the mag sensor axes are 180° from the robot frame
-    const double mag_heading = std::atan2(-mag_y, mag_x) + M_PI;
+    // Apply imu_yaw offset to correct for IMU mounting rotation
+    const double mag_heading = std::atan2(-mag_y, mag_x) - imu_yaw_offset_;
 
     // Track magnetometer heading with EMA when stationary (for dock yaw)
     if (wheels_stationary_ && (mag_x != 0.0 || mag_y != 0.0))
@@ -740,6 +741,7 @@ private:
   double dock_x_{0.0};
   double dock_y_{0.0};
   double dock_yaw_{0.0};
+  double imu_yaw_offset_{0.0};
   bool mow_enabled_{false};
   bool is_charging_{false};
   uint8_t current_mode_{0};
