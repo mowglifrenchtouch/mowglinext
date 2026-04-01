@@ -445,7 +445,8 @@ private:
     // atan2(mag_y, mag_x) gives the heading relative to magnetic north.
     const double mag_x = static_cast<double>(pkt.mag_uT[0]);
     const double mag_y = static_cast<double>(pkt.mag_uT[1]);
-    const double mag_heading = std::atan2(-mag_y, mag_x);
+    // Add π because the mag sensor axes are 180° from the robot frame
+    const double mag_heading = std::atan2(-mag_y, mag_x) + M_PI;
 
     // Track magnetometer heading with EMA when stationary (for dock yaw)
     if (wheels_stationary_ && (mag_x != 0.0 || mag_y != 0.0))
