@@ -308,18 +308,22 @@ private:
       auto msg = mowgli_interfaces::msg::Emergency{};
       msg.stamp = stamp;
       msg.latched_emergency = (pkt.emergency_bitmask & EMERGENCY_BIT_LATCH) != 0u;
-      msg.active_emergency = pkt.emergency_bitmask != 0u;
-      if ((pkt.emergency_bitmask & EMERGENCY_BIT_STOP) != 0u)
+      // Active emergency = a trigger (STOP or LIFT) is currently asserted,
+      // not just a latched state from a previous event.
+      const bool stop_active = (pkt.emergency_bitmask & EMERGENCY_BIT_STOP) != 0u;
+      const bool lift_active = (pkt.emergency_bitmask & EMERGENCY_BIT_LIFT) != 0u;
+      msg.active_emergency = stop_active || lift_active;
+      if (stop_active)
       {
         msg.reason = "STOP button";
       }
-      else if ((pkt.emergency_bitmask & EMERGENCY_BIT_LIFT) != 0u)
+      else if (lift_active)
       {
         msg.reason = "Lift detected";
       }
-      else if (msg.active_emergency)
+      else if (msg.latched_emergency)
       {
-        msg.reason = "Unknown emergency";
+        msg.reason = "Latched (press play button to release)";
       }
       pub_emergency_->publish(msg);
     }
