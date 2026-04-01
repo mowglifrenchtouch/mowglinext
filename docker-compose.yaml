@@ -22,8 +22,6 @@ services:
     network_mode: host
     ipc: host
     privileged: true
-    devices:
-      - /dev/mowgli:/dev/mowgli
     environment:
       <<: *ros2-env
     command: >
@@ -32,6 +30,7 @@ services:
       enable_foxglove:=true
       enable_coverage:=true
     volumes:
+      - /dev:/dev
       - mowgli_maps:/ros2_ws/maps
       - ./config/mowgli:/ros2_ws/config:ro
 
