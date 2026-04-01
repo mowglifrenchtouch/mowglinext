@@ -368,20 +368,25 @@ private:
     msg.linear_acceleration.y = static_cast<double>(pkt.acceleration_mss[1]);
     msg.linear_acceleration.z = static_cast<double>(pkt.acceleration_mss[2]);
 
-    // When docked/charging the robot is stationary — zero out gyro to prevent
-    // yaw drift from IMU bias accumulating in the EKF.
-    if (is_charging_)
+    // Gyro bias compensation: when wheels are stationary the gyro should
+    // read zero.  Any residual is bias.  Track it with an exponential
+    // moving average and subtract from all readings.
+    const double raw_gx = static_cast<double>(pkt.gyro_rads[0]);
+    const double raw_gy = static_cast<double>(pkt.gyro_rads[1]);
+    const double raw_gz = static_cast<double>(pkt.gyro_rads[2]);
+
+    if (wheels_stationary_)
     {
-      msg.angular_velocity.x = 0.0;
-      msg.angular_velocity.y = 0.0;
-      msg.angular_velocity.z = 0.0;
+      // Update bias estimate (low-pass filter, alpha ~0.01 = slow adaptation)
+      constexpr double kAlpha = 0.01;
+      gyro_bias_x_ += kAlpha * (raw_gx - gyro_bias_x_);
+      gyro_bias_y_ += kAlpha * (raw_gy - gyro_bias_y_);
+      gyro_bias_z_ += kAlpha * (raw_gz - gyro_bias_z_);
     }
-    else
-    {
-      msg.angular_velocity.x = static_cast<double>(pkt.gyro_rads[0]);
-      msg.angular_velocity.y = static_cast<double>(pkt.gyro_rads[1]);
-      msg.angular_velocity.z = static_cast<double>(pkt.gyro_rads[2]);
-    }
+
+    msg.angular_velocity.x = raw_gx - gyro_bias_x_;
+    msg.angular_velocity.y = raw_gy - gyro_bias_y_;
+    msg.angular_velocity.z = raw_gz - gyro_bias_z_;
 
     // Orientation not computed here; fill with identity and mark as unknown.
     msg.orientation.w = 1.0;
@@ -426,6 +431,9 @@ private:
     const int32_t d_right = pkt.right_ticks - prev_right_ticks_;
     prev_left_ticks_ = pkt.left_ticks;
     prev_right_ticks_ = pkt.right_ticks;
+
+    // Track whether wheels are stationary (for gyro bias compensation)
+    wheels_stationary_ = (d_left == 0 && d_right == 0);
 
     // Skip the first packet (no valid delta yet)
     if (!odom_initialized_)
@@ -639,6 +647,12 @@ private:
   int32_t prev_left_ticks_{0};
   int32_t prev_right_ticks_{0};
   bool odom_initialized_{false};
+  bool wheels_stationary_{true};
+
+  // Gyro bias estimate (updated when wheels are stationary)
+  double gyro_bias_x_{0.0};
+  double gyro_bias_y_{0.0};
+  double gyro_bias_z_{0.0};
 };
 
 }  // namespace mowgli_hardware
