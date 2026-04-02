@@ -89,12 +89,14 @@ ObstacleTrackerNode::ObstacleTrackerNode(const rclcpp::NodeOptions& options)
                                                                        rclcpp::QoS(1));
 
   // ── Subscribers ──────────────────────────────────────────────────────────
-  scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
-      "/scan",
-      rclcpp::SensorDataQoS(),
-      [this](sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
+  // Use global costmap obstacle layer instead of raw scan — much cheaper
+  // than DBSCAN on every scan, and gives cleaner obstacle shapes.
+  costmap_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
+      "/global_costmap/costmap",
+      rclcpp::QoS(1),
+      [this](nav_msgs::msg::OccupancyGrid::ConstSharedPtr msg)
       {
-        on_scan(std::move(msg));
+        on_costmap(std::move(msg));
       });
 
   // slam_toolbox publishes with a transient-local QoS so late subscribers
@@ -176,74 +178,71 @@ ObstacleTrackerNode::ObstacleTrackerNode(const rclcpp::NodeOptions& options)
 // Scan callback
 // ─────────────────────────────────────────────────────────────────────────────
 
-void ObstacleTrackerNode::on_scan(sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
+void ObstacleTrackerNode::on_costmap(nav_msgs::msg::OccupancyGrid::ConstSharedPtr msg)
 {
-  // Clamp usable range to 90 % of max to avoid spurious edge returns.
-  const double max_valid_range = static_cast<double>(msg->range_max) * 0.9;
-  const double min_filter_dist = 0.5;  // discard robot-body self-returns
+  const int w = static_cast<int>(msg->info.width);
+  const int h = static_cast<int>(msg->info.height);
+  const double res = msg->info.resolution;
+  const double ox = msg->info.origin.position.x;
+  const double oy = msg->info.origin.position.y;
 
-  // Collect valid map-frame points.
-  std::vector<std::pair<double, double>> map_points;
-  map_points.reserve(msg->ranges.size());
+  if (w == 0 || h == 0) return;
 
-  const std::string scan_frame = msg->header.frame_id;
-  const rclcpp::Time scan_time(msg->header.stamp);
+  // Mark occupied cells (cost >= LETHAL_OBSTACLE = 100 in Nav2 costmaps)
+  constexpr int8_t LETHAL = 100;
+  std::vector<bool> visited(w * h, false);
+  std::vector<std::vector<std::pair<double, double>>> clusters;
 
-  for (size_t i = 0; i < msg->ranges.size(); ++i)
+  // Flood-fill to find connected components of obstacle cells
+  for (int y = 0; y < h; ++y)
   {
-    const float r = msg->ranges[i];
-    if (!std::isfinite(r) || r < msg->range_min || r > max_valid_range)
+    for (int x = 0; x < w; ++x)
     {
-      continue;
-    }
+      const int idx = y * w + x;
+      if (visited[idx] || msg->data[idx] < LETHAL) continue;
 
-    // Build point in scan frame.
-    const double angle = msg->angle_min + static_cast<double>(i) * msg->angle_increment;
-    geometry_msgs::msg::PointStamped pt_scan;
-    pt_scan.header.frame_id = scan_frame;
-    pt_scan.header.stamp = msg->header.stamp;
-    pt_scan.point.x = static_cast<double>(r) * std::cos(angle);
-    pt_scan.point.y = static_cast<double>(r) * std::sin(angle);
-    pt_scan.point.z = 0.0;
+      // BFS flood-fill
+      std::vector<std::pair<double, double>> cluster;
+      std::vector<std::pair<int, int>> queue;
+      queue.emplace_back(x, y);
+      visited[idx] = true;
 
-    // Transform to map frame.
-    geometry_msgs::msg::PointStamped pt_map;
-    try
-    {
-      tf_buffer_->transform(pt_scan, pt_map, map_frame_, tf2::durationFromSec(0.1));
-    }
-    catch (const tf2::TransformException& ex)
-    {
-      RCLCPP_WARN_THROTTLE(get_logger(),
-                           *get_clock(),
-                           5000,
-                           "TF lookup failed (%s→%s): %s",
-                           scan_frame.c_str(),
-                           map_frame_.c_str(),
-                           ex.what());
-      return;  // Skip this whole scan; TF may not be ready yet.
-    }
+      while (!queue.empty())
+      {
+        auto [cx, cy] = queue.back();
+        queue.pop_back();
 
-    // Filter points too close to the robot (need robot pose for this —
-    // approximate: discard scan ranges below min_filter_dist in sensor frame).
-    if (r < min_filter_dist)
-    {
-      continue;
-    }
+        // Convert cell to map frame
+        double mx = ox + (cx + 0.5) * res;
+        double my = oy + (cy + 0.5) * res;
+        cluster.emplace_back(mx, my);
 
-    map_points.emplace_back(pt_map.point.x, pt_map.point.y);
+        // 4-connected neighbors
+        for (auto [dx, dy] : std::vector<std::pair<int,int>>{{1,0},{-1,0},{0,1},{0,-1}})
+        {
+          int nx = cx + dx, ny = cy + dy;
+          if (nx >= 0 && nx < w && ny >= 0 && ny < h)
+          {
+            int nidx = ny * w + nx;
+            if (!visited[nidx] && msg->data[nidx] >= LETHAL)
+            {
+              visited[nidx] = true;
+              queue.emplace_back(nx, ny);
+            }
+          }
+        }
+      }
+
+      if (static_cast<int>(cluster.size()) >= min_cluster_points_)
+      {
+        clusters.push_back(std::move(cluster));
+      }
+    }
   }
 
-  if (map_points.empty())
-  {
-    return;
-  }
-
-  // Cluster and associate.
-  const auto clusters = dbscan(map_points, cluster_tolerance_, min_cluster_points_);
-
+  const rclcpp::Time stamp(msg->header.stamp);
   std::lock_guard<std::mutex> lock(mutex_);
-  associate_clusters(clusters, scan_time);
+  associate_clusters(clusters, stamp);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

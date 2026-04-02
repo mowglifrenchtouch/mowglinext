@@ -92,9 +92,9 @@ private:
 
   // ── ROS callbacks ─────────────────────────────────────────────────────────
 
-  /// Transform scan ranges to map frame, cluster with DBSCAN, associate
-  /// clusters with existing tracked obstacles.
-  void on_scan(sensor_msgs::msg::LaserScan::ConstSharedPtr msg);
+  /// Extract obstacle cells from the global costmap, cluster with flood-fill,
+  /// and associate clusters with existing tracked obstacles.
+  void on_costmap(nav_msgs::msg::OccupancyGrid::ConstSharedPtr msg);
 
   /// Extract occupied cells from the SLAM occupancy grid, filter by boundary
   /// distance, cluster with DBSCAN, and associate clusters.  Primary source.
@@ -195,7 +195,7 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
 
   // ── Subscribers ───────────────────────────────────────────────────────────
-  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr costmap_sub_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
 
   // ── Services ──────────────────────────────────────────────────────────────
