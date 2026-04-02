@@ -54,7 +54,7 @@ func AddMapAreaRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 		if CallReq.Area.Obstacles == nil {
 			CallReq.Area.Obstacles = []geometry.Polygon{}
 		}
-		err = provider.CallService(c.Request.Context(), "/map_server_node/add_area", &CallReq, &mowgli.AddMowingAreaRes{})
+		err = provider.CallService(c.Request.Context(), "/mowgli/map/add_area", &CallReq, &mowgli.AddMowingAreaRes{})
 		if err != nil {
 			c.JSON(500, ErrorResponse{Error: err.Error()})
 		} else {
@@ -75,7 +75,7 @@ func AddMapAreaRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 // @Router /openmower/map [delete]
 func ClearMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.DELETE("/map", func(c *gin.Context) {
-		err := provider.CallService(c.Request.Context(), "/map_server_node/clear_map", &mowgli.ClearMapReq{}, &mowgli.ClearMapRes{})
+		err := provider.CallService(c.Request.Context(), "/mowgli/map/clear", &mowgli.ClearMapReq{}, &mowgli.ClearMapRes{})
 		if err != nil {
 			c.JSON(500, ErrorResponse{Error: err.Error()})
 		} else {
@@ -96,7 +96,7 @@ func ClearMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 // @Router /openmower/map [put]
 func ReplaceMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.PUT("/map", func(c *gin.Context) {
-		err := provider.CallService(c.Request.Context(), "/map_server_node/clear_map", &mowgli.ClearMapReq{}, &mowgli.ClearMapRes{})
+		err := provider.CallService(c.Request.Context(), "/mowgli/map/clear", &mowgli.ClearMapReq{}, &mowgli.ClearMapRes{})
 		if err != nil {
 			c.JSON(500, ErrorResponse{Error: err.Error()})
 			return
@@ -117,7 +117,7 @@ func ReplaceMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 					Area:             element.Area,
 					IsNavigationArea: element.IsNavigationArea,
 				}
-				err = provider.CallService(c.Request.Context(), "/map_server_node/add_area", &areaReq, &mowgli.AddMowingAreaRes{})
+				err = provider.CallService(c.Request.Context(), "/mowgli/map/add_area", &areaReq, &mowgli.AddMowingAreaRes{})
 				if err != nil {
 					c.JSON(500, ErrorResponse{Error: err.Error()})
 					return
@@ -125,7 +125,7 @@ func ReplaceMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			}
 
 			// Persist areas to disk so they survive container restarts
-			_ = provider.CallService(c.Request.Context(), "/map_server_node/save_areas", &mowgli.ClearMapReq{}, &mowgli.ClearMapRes{})
+			_ = provider.CallService(c.Request.Context(), "/mowgli/map/save_areas", &mowgli.ClearMapReq{}, &mowgli.ClearMapRes{})
 
 			c.JSON(200, OkResponse{})
 		}
@@ -150,7 +150,7 @@ func SetDockingPointRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 		if err != nil {
 			return
 		}
-		err = provider.CallService(c.Request.Context(), "/map_server_node/set_docking_point", &CallReq, &mowgli.SetDockingPointRes{})
+		err = provider.CallService(c.Request.Context(), "/mowgli/map/set_docking_point", &CallReq, &mowgli.SetDockingPointRes{})
 		if err != nil {
 			c.JSON(500, ErrorResponse{Error: err.Error()})
 		} else {
@@ -316,7 +316,7 @@ func ServiceRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			if err != nil {
 				return
 			}
-			err = provider.CallService(c.Request.Context(), "/behavior_tree_node/high_level_control", &CallReq, &mowgli.HighLevelControlRes{})
+			err = provider.CallService(c.Request.Context(), "/mowgli/behavior/command", &CallReq, &mowgli.HighLevelControlRes{})
 		case "emergency":
 			var CallReq mowgli.EmergencyStopReq
 			err = c.BindJSON(&CallReq)
@@ -337,7 +337,7 @@ func ServiceRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			if err != nil {
 				return
 			}
-			err = provider.CallService(c.Request.Context(), "/behavior_tree_node/start_in_area", &CallReq, &mowgli.StartInAreaRes{})
+			err = provider.CallService(c.Request.Context(), "/mowgli/behavior/start_in_area", &CallReq, &mowgli.StartInAreaRes{})
 		default:
 			err = errors.New("unknown command")
 		}
