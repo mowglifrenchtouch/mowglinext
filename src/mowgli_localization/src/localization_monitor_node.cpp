@@ -69,8 +69,8 @@ void LocalizationMonitorNode::create_publishers()
   // subscribers always receive the current mode.
   const auto latched_qos = rclcpp::QoS(1).transient_local();
 
-  mode_pub_ = create_publisher<std_msgs::msg::String>("/localization/mode", latched_qos);
-  mode_id_pub_ = create_publisher<std_msgs::msg::Int32>("/localization/mode_id", latched_qos);
+  mode_pub_ = create_publisher<std_msgs::msg::String>("/mowgli/localization/mode", latched_qos);
+  mode_id_pub_ = create_publisher<std_msgs::msg::Int32>("/mowgli/localization/mode_id", latched_qos);
 }
 
 void LocalizationMonitorNode::create_subscribers()
@@ -85,7 +85,7 @@ void LocalizationMonitorNode::create_subscribers()
                                                    });
 
   abs_pose_sub_ = create_subscription<mowgli_interfaces::msg::AbsolutePose>(
-      "/gps/absolute_pose",
+      "/mowgli/gps/absolute_pose",
       rclcpp::QoS(10),
       [this](mowgli_interfaces::msg::AbsolutePose::ConstSharedPtr msg)
       {

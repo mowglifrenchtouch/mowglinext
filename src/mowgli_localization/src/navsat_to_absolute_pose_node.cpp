@@ -69,13 +69,13 @@ void NavSatToAbsolutePoseNode::declare_parameters()
 void NavSatToAbsolutePoseNode::create_publishers()
 {
   pose_pub_ = create_publisher<mowgli_interfaces::msg::AbsolutePose>(
-      "/gps/absolute_pose", rclcpp::QoS(10));
+      "/mowgli/gps/absolute_pose", rclcpp::QoS(10));
 }
 
 void NavSatToAbsolutePoseNode::create_subscribers()
 {
   fix_sub_ = create_subscription<sensor_msgs::msg::NavSatFix>(
-      "/ublox_gps_node/fix",
+      "/mowgli/gps/fix",
       rclcpp::QoS(10),
       [this](sensor_msgs::msg::NavSatFix::ConstSharedPtr msg)
       {

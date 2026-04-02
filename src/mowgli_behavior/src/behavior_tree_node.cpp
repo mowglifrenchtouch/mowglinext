@@ -62,21 +62,21 @@ private:
   {
     using namespace mowgli_interfaces::msg;
 
-    status_sub_ = create_subscription<Status>("/hardware_bridge/status",
+    status_sub_ = create_subscription<Status>("/mowgli/hardware/status",
                                               10,
                                               [this](Status::ConstSharedPtr msg)
                                               {
                                                 context_->latest_status = *msg;
                                               });
 
-    emergency_sub_ = create_subscription<Emergency>("/hardware_bridge/emergency",
+    emergency_sub_ = create_subscription<Emergency>("/mowgli/hardware/emergency",
                                                     10,
                                                     [this](Emergency::ConstSharedPtr msg)
                                                     {
                                                       context_->latest_emergency = *msg;
                                                     });
 
-    power_sub_ = create_subscription<Power>("/hardware_bridge/power",
+    power_sub_ = create_subscription<Power>("/mowgli/hardware/power",
                                             10,
                                             [this](Power::ConstSharedPtr msg)
                                             {
@@ -112,7 +112,7 @@ private:
 
     // GPS position for heading calibration during undock
     gps_sub_ = create_subscription<mowgli_interfaces::msg::AbsolutePose>(
-        "/gps/absolute_pose", 10,
+        "/mowgli/gps/absolute_pose", 10,
         [this](mowgli_interfaces::msg::AbsolutePose::ConstSharedPtr msg)
         {
           context_->gps_x = msg->pose.pose.position.x;

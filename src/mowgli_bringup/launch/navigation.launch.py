@@ -225,7 +225,7 @@ def generate_launch_description() -> LaunchDescription:
             localization_params,
             {"use_sim_time": use_sim_time},
         ],
-        remappings=[("odometry/filtered", "odometry/filtered_odom")],
+        remappings=[("odometry/filtered", "/mowgli/localization/odom")],
     )
 
     # 3. robot_localization – map EKF
@@ -239,7 +239,7 @@ def generate_launch_description() -> LaunchDescription:
             localization_params,
             {"use_sim_time": use_sim_time},
         ],
-        remappings=[("odometry/filtered", "odometry/filtered_map")],
+        remappings=[("odometry/filtered", "/mowgli/localization/odom_map")],
     )
 
     # ------------------------------------------------------------------

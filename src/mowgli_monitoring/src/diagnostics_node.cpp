@@ -184,7 +184,7 @@ void DiagnosticsNode::create_subscriptions()
                                                    });
 
   sub_gps_ = create_subscription<sensor_msgs::msg::NavSatFix>(
-      "/gps/fix",
+      "/mowgli/gps/fix",
       sensor_qos,
       [this](sensor_msgs::msg::NavSatFix::ConstSharedPtr msg)
       {
@@ -194,7 +194,7 @@ void DiagnosticsNode::create_subscriptions()
 
 void DiagnosticsNode::create_publishers()
 {
-  pub_diagnostics_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
+  pub_diagnostics_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/mowgli/diagnostics", 10);
 }
 
 void DiagnosticsNode::create_timer()

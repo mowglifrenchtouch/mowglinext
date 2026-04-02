@@ -107,7 +107,7 @@ private:
     pub_power_ = create_publisher<mowgli_interfaces::msg::Power>("~/power", 10);
     pub_imu_ = create_publisher<sensor_msgs::msg::Imu>("~/imu/data_raw", 10);
     pub_wheel_odom_ = create_publisher<nav_msgs::msg::Odometry>("~/wheel_odom", 10);
-    pub_dock_pose_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/dock_pose_fix", 10);
+    pub_dock_pose_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/mowgli/dock/pose_fix", 10);
   }
 
   void create_subscribers()
@@ -123,7 +123,7 @@ private:
     // Mirror the behavior tree's high-level state to the firmware so it
     // knows when to accept cmd_vel (mode != IDLE).
     sub_hl_status_ = create_subscription<mowgli_interfaces::msg::HighLevelStatus>(
-        "/behavior_tree_node/high_level_status",
+        "/mowgli/behavior/status",
         10,
         [this](mowgli_interfaces::msg::HighLevelStatus::ConstSharedPtr msg)
         {

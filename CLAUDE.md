@@ -65,19 +65,38 @@ Two-tier launch:
 
 ## Key Topics
 
+All Mowgli-specific topics are now namespaced under `/mowgli/` for clean separation from Nav2/system topics.
+
 | Topic | Type | Source | Rate |
 |-------|------|--------|------|
-| `/status` | `mowgli_interfaces/msg/Status` | hardware_bridge | ~10 Hz |
-| `/power` | `mowgli_interfaces/msg/Power` | hardware_bridge | ~1 Hz |
-| `/emergency` | `mowgli_interfaces/msg/Emergency` | hardware_bridge | ~1 Hz |
-| `/imu/data` | `sensor_msgs/msg/Imu` | hardware_bridge | ~50 Hz |
+| `/status` | `mowgli_interfaces/msg/Status` | hardware_bridge (remapped) | ~10 Hz |
+| `/power` | `mowgli_interfaces/msg/Power` | hardware_bridge (remapped) | ~1 Hz |
+| `/emergency` | `mowgli_interfaces/msg/Emergency` | hardware_bridge (remapped) | ~1 Hz |
+| `/imu/data` | `sensor_msgs/msg/Imu` | hardware_bridge (remapped) | ~50 Hz |
 | `/wheel_odom` | `nav_msgs/msg/Odometry` | wheel_odometry_node | ~50 Hz |
-| `/gps/absolute_pose` | `mowgli_interfaces/msg/AbsolutePose` | navsat_to_absolute_pose | ~5 Hz |
+| `/mowgli/gps/fix` | `sensor_msgs/msg/NavSatFix` | ublox_gps_node (remapped) | ~5 Hz |
+| `/mowgli/gps/absolute_pose` | `mowgli_interfaces/msg/AbsolutePose` | navsat_to_absolute_pose | ~5 Hz |
+| `/mowgli/gps/pose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | gps_pose_converter | ~5 Hz |
+| `/mowgli/gps/pose_sim` | `geometry_msgs/msg/PoseWithCovarianceStamped` | gps_degradation_sim | ~5 Hz |
+| `/mowgli/slam/heading` | `geometry_msgs/msg/PoseWithCovarianceStamped` | slam_heading_node | ~5 Hz |
+| `/mowgli/localization/mode` | `std_msgs/msg/String` | localization_monitor | ~10 Hz |
+| `/mowgli/localization/mode_id` | `std_msgs/msg/Int32` | localization_monitor | ~10 Hz |
+| `/mowgli/dock/pose_fix` | `geometry_msgs/msg/PoseWithCovarianceStamped` | hardware_bridge | on dock |
+| `/mowgli/hardware/status` | `mowgli_interfaces/msg/Status` | hardware_bridge (remapped) | ~10 Hz |
+| `/mowgli/hardware/emergency` | `mowgli_interfaces/msg/Emergency` | hardware_bridge (remapped) | ~1 Hz |
+| `/mowgli/hardware/power` | `mowgli_interfaces/msg/Power` | hardware_bridge (remapped) | ~1 Hz |
+| `/mowgli/hardware/mower_control` | service | hardware_bridge | on demand |
+| `/mowgli/behavior/status` | `mowgli_interfaces/msg/HighLevelStatus` | behavior_tree_node (remapped) | on BT tick |
+| `/mowgli/coverage/plan` | action | coverage_planner_node (remapped) | on demand |
+| `/mowgli/map/get_area` | service | map_server_node (remapped) | on demand |
+| `/mowgli/obstacles/tracked` | `mowgli_interfaces/msg/ObstacleArray` | obstacle_tracker_node (remapped) | ~1 Hz |
+| `/mowgli/obstacles/markers` | `visualization_msgs/msg/MarkerArray` | obstacle_tracker_node (remapped) | ~1 Hz |
+| `/mowgli/obstacles/save` | service | obstacle_tracker_node (remapped) | on demand |
+| `/mowgli/diagnostics` | `diagnostic_msgs/msg/DiagnosticArray` | diagnostics_node | ~1 Hz |
 | `/odometry/filtered_map` | `nav_msgs/msg/Odometry` | robot_localization (ekf_map) | ~20 Hz |
 | `/scan` | `sensor_msgs/msg/LaserScan` | LiDAR driver / Gazebo | ~10 Hz |
-| `/behavior_tree_node/high_level_status` | `mowgli_interfaces/msg/HighLevelStatus` | behavior_tree_node | on BT tick |
-| `/coverage_planner_node/coverage_path` | `nav_msgs/msg/Path` | coverage_server | on plan |
-| `/diagnostics` | `diagnostic_msgs/msg/DiagnosticArray` | diagnostics_node | ~1 Hz |
+
+**Note:** Topics published on `~/` (node-relative) in C++ source are remapped to `/mowgli/` paths in launch files. The C++ source remains unchanged for relative names.
 
 ## mowgli_interfaces
 

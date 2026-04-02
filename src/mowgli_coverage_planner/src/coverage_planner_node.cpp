@@ -111,7 +111,7 @@ CoveragePlannerNode::CoveragePlannerNode(const rclcpp::NodeOptions & options)
   // Persistent obstacles are merged as holes in the F2C cell so
   // coverage paths are planned around them.
   obstacle_sub_ = create_subscription<mowgli_interfaces::msg::ObstacleArray>(
-    "/obstacle_tracker/obstacles",
+    "/mowgli/obstacles/tracked",
     rclcpp::QoS(10),
     [this](mowgli_interfaces::msg::ObstacleArray::ConstSharedPtr msg) {
       std::lock_guard<std::mutex> lock(obstacle_mutex_);

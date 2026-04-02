@@ -177,6 +177,11 @@ def generate_launch_description() -> LaunchDescription:
             coverage_params,
             {"use_sim_time": True},
         ],
+        remappings=[
+            ("~/coverage_path", "/mowgli/coverage/path"),
+            ("~/coverage_outline", "/mowgli/coverage/outline"),
+            ("~/plan_coverage", "/mowgli/coverage/plan"),
+        ],
     )
 
     # ------------------------------------------------------------------

@@ -39,7 +39,7 @@ ekf_odom:
     # Wheel odometry: fuse linear velocity (vx, vy) and yaw rate.
     # Wheel ticks slip on wet/soft ground — treat as low-confidence velocity
     # hint, NOT a position source.  The IMU and GPS provide the real position.
-    odom0: /wheel_odom
+    odom0: /mowgli/hardware/wheel_odom
     odom0_config: [false, false, false,
                    false, false, false,
                    true,  true,  false,
@@ -56,7 +56,7 @@ ekf_odom:
     # still giving the EKF smooth heading dynamics. Absolute heading
     # references come from: GPS velocity heading (when moving with RTK)
     # and dock_pose_fix (when docked).
-    imu0: /imu/data
+    imu0: /mowgli/hardware/imu
     imu0_config: [false, false, false,
                   false, false, true,
                   false, false, false,
@@ -111,7 +111,7 @@ ekf_map:
     # Position comes from GPS.  Using odom position here would let wheel-tick
     # drift contaminate the map frame.  We only fuse velocity + yaw rate so
     # the EKF has inter-GPS dynamics.
-    odom0: /odometry/filtered_odom
+    odom0: /mowgli/localization/odom
     odom0_config: [false, false, false,
                    false, false, false,
                    true,  true,  false,
@@ -128,7 +128,7 @@ ekf_map:
     #   covariance is speed-dependent: tight when moving (GPS heading reliable),
     #   very large when stationary (IMU dominates). This aligns the map frame
     #   with geographic ENU when the robot is moving.
-    pose0: /gps/pose
+    pose0: /mowgli/gps/pose
     pose0_config: [true,  true,  false,
                    false, false, true,
                    false, false, false,
@@ -147,7 +147,7 @@ ekf_map:
     # known dock position (and orientation if configured) with very tight
     # covariance. This anchors the robot to the dock and prevents drift.
     # When not charging, nothing is published so this has no effect.
-    pose1: /dock_pose_fix
+    pose1: /mowgli/dock/pose_fix
     pose1_config: [true,  true,  false,
                    false, false, true,
                    false, false, false,
@@ -163,7 +163,7 @@ ekf_map:
     # Only yaw is fused (position has 1e6 covariance).
     # Provides absolute heading from LiDAR features — works without
     # magnetometer, when stationary, and under tree canopy.
-    pose2: /slam/heading
+    pose2: /mowgli/slam/heading
     pose2_config: [false, false, false,
                    false, false, true,
                    false, false, false,

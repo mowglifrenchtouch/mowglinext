@@ -68,13 +68,13 @@ void GpsPoseConverterNode::declare_parameters()
 void GpsPoseConverterNode::create_publishers()
 {
   pose_pub_ =
-    create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/gps/pose", rclcpp::QoS(10));
+    create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/mowgli/gps/pose", rclcpp::QoS(10));
 }
 
 void GpsPoseConverterNode::create_subscribers()
 {
   abs_pose_sub_ = create_subscription<mowgli_interfaces::msg::AbsolutePose>(
-    "/gps/absolute_pose",
+    "/mowgli/gps/absolute_pose",
     rclcpp::QoS(10),
     [this](mowgli_interfaces::msg::AbsolutePose::ConstSharedPtr msg) {
       on_absolute_pose(msg);

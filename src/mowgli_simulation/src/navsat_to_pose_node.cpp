@@ -43,7 +43,7 @@ NavSatToPoseNode::NavSatToPoseNode(const rclcpp::NodeOptions& options)
   }
 
   pose_pub_ =
-      create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/gps/pose", rclcpp::QoS(10));
+      create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/mowgli/gps/pose", rclcpp::QoS(10));
 
   fix_sub_ = create_subscription<sensor_msgs::msg::NavSatFix>(
       "/gps/fix",

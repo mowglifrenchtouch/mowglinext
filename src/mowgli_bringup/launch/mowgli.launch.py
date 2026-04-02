@@ -150,11 +150,11 @@ def generate_launch_description() -> LaunchDescription:
         # The node publishes on ~/topic (e.g. /hardware_bridge/wheel_odom)
         # but the EKF and other nodes expect unprefixed names.
         remappings=[
-            ("~/imu/data_raw", "/imu/data"),
-            ("~/wheel_odom", "/wheel_odom"),
-            ("~/emergency", "/emergency"),
-            ("~/power", "/power"),
-            ("~/status", "/status"),
+            ("~/imu/data_raw", "/mowgli/hardware/imu"),
+            ("~/wheel_odom", "/mowgli/hardware/wheel_odom"),
+            ("~/emergency", "/mowgli/hardware/emergency"),
+            ("~/power", "/mowgli/hardware/power"),
+            ("~/status", "/mowgli/hardware/status"),
             ("~/cmd_vel", "/cmd_vel"),
         ],
     )

@@ -59,7 +59,7 @@ protected:
     client_node_ = rclcpp::Node::make_shared("test_client_node");
     action_client_ =
         rclcpp_action::create_client<PlanCoverageAction>(client_node_,
-                                                         "/coverage_planner_node/plan_coverage");
+                                                         "/mowgli/coverage/plan");
 
     // Spin both nodes on a background thread.
     executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();

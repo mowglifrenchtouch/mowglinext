@@ -407,7 +407,7 @@ void MqttBridgeNode::create_subscriptions()
                                                    });
 
   sub_diagnostics_ = create_subscription<diagnostic_msgs::msg::DiagnosticArray>(
-      "/diagnostics",
+      "/mowgli/diagnostics",
       10,
       [this](diagnostic_msgs::msg::DiagnosticArray::ConstSharedPtr msg)
       {

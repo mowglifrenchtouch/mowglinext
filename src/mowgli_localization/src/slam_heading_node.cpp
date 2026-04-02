@@ -47,7 +47,7 @@ SlamHeadingNode::SlamHeadingNode(const rclcpp::NodeOptions & options)
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
   heading_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
-    "/slam/heading", rclcpp::QoS(10));
+    "/mowgli/slam/heading", rclcpp::QoS(10));
 
   timer_ = create_wall_timer(
     std::chrono::duration<double>(1.0 / publish_rate_),

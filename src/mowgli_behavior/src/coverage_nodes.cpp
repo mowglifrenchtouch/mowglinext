@@ -38,7 +38,7 @@ BT::NodeStatus ComputeCoverage::onStart()
   if (!action_client_) {
     action_client_ =
       rclcpp_action::create_client<CoverageAction>(
-      ctx->node, "/coverage_planner_node/plan_coverage");
+      ctx->node, "/mowgli/coverage/plan");
   }
 
   if (!action_client_->wait_for_action_server(std::chrono::seconds(5))) {
@@ -53,7 +53,7 @@ BT::NodeStatus ComputeCoverage::onStart()
   {
     auto tmp_node = rclcpp::Node::make_shared("_compute_coverage_srv_helper");
     auto tmp_client = tmp_node->create_client<mowgli_interfaces::srv::GetMowingArea>(
-      "/map_server_node/get_mowing_area");
+      "/mowgli/map/get_area");
 
     if (!tmp_client->wait_for_service(std::chrono::milliseconds(2000))) {
       RCLCPP_ERROR(ctx->node->get_logger(),
@@ -300,7 +300,7 @@ void ExecuteSwathBySwath::setBladeEnabled(bool enabled)
 
   if (!blade_client_) {
     blade_client_ = ctx->node->create_client<mowgli_interfaces::srv::MowerControl>(
-      "/hardware_bridge/mower_control");
+      "/mowgli/hardware/mower_control");
   }
 
   if (!blade_client_->service_is_ready()) {

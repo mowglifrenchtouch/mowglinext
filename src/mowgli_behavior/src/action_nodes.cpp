@@ -100,7 +100,7 @@ BT::NodeStatus SetMowerEnabled::tick()
   if (!client_)
   {
     client_ = ctx->node->create_client<mowgli_interfaces::srv::MowerControl>(
-        "/hardware_bridge/mower_control");
+        "/mowgli/hardware/mower_control");
   }
 
   if (!waitForService(client_, ctx->node))
@@ -514,7 +514,7 @@ BT::NodeStatus PlanCoveragePath::onStart()
   {
     action_client_ =
         rclcpp_action::create_client<PlanCoverageAction>(ctx->node,
-                                                         "/coverage_planner_node/plan_coverage");
+                                                         "/mowgli/coverage/plan");
   }
 
   if (!action_client_->wait_for_action_server(std::chrono::milliseconds(500)))
@@ -536,7 +536,7 @@ BT::NodeStatus PlanCoveragePath::onStart()
     // (the main behavior_tree_node is already spinning in rclcpp::spin).
     auto tmp_node = rclcpp::Node::make_shared("_plan_coverage_srv_helper");
     auto tmp_client = tmp_node->create_client<mowgli_interfaces::srv::GetMowingArea>(
-        "/map_server_node/get_mowing_area");
+        "/mowgli/map/get_area");
     if (!tmp_client->wait_for_service(std::chrono::milliseconds(2000)))
     {
       RCLCPP_ERROR(
@@ -935,7 +935,7 @@ BT::NodeStatus ReplanCoverage::onStart()
   {
     action_client_ =
         rclcpp_action::create_client<PlanCoverageAction>(ctx->node,
-                                                         "/coverage_planner_node/plan_coverage");
+                                                         "/mowgli/coverage/plan");
   }
 
   if (!action_client_->wait_for_action_server(std::chrono::milliseconds(500)))
@@ -956,7 +956,7 @@ BT::NodeStatus ReplanCoverage::onStart()
     // Use a temporary node to avoid "already added to an executor" error.
     auto tmp_node = rclcpp::Node::make_shared("_replan_coverage_srv_helper");
     auto tmp_client = tmp_node->create_client<mowgli_interfaces::srv::GetMowingArea>(
-        "/map_server_node/get_mowing_area");
+        "/mowgli/map/get_area");
     if (!tmp_client->wait_for_service(std::chrono::milliseconds(2000)))
     {
       RCLCPP_ERROR(ctx->node->get_logger(),
@@ -1084,7 +1084,7 @@ BT::NodeStatus SaveObstacles::tick()
 
   if (!client_)
   {
-    client_ = ctx->node->create_client<std_srvs::srv::Trigger>("/obstacle_tracker/save_obstacles");
+    client_ = ctx->node->create_client<std_srvs::srv::Trigger>("/mowgli/obstacles/save");
   }
 
   if (!client_->service_is_ready())
