@@ -156,6 +156,22 @@ ekf_map:
     pose1_differential: false
     pose1_relative: false
 
+    # SLAM heading: slam_heading_node extracts yaw from SLAM's scan matching
+    # (slam_map→odom TF) and publishes it as PoseWithCovarianceStamped.
+    # Only yaw is fused (position has 1e6 covariance).
+    # Provides absolute heading from LiDAR features — works without
+    # magnetometer, when stationary, and under tree canopy.
+    pose2: /slam/heading
+    pose2_config: [false, false, false,
+                   false, false, true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    pose2_queue_size: 5
+    pose2_nodelay: false
+    pose2_differential: false
+    pose2_relative: false
+
     # Process noise — elevated for position (x=0, y=1) because without GPS
     # the filter relies on wheel-derived velocity which drifts.  This makes
     # the filter rapidly snap back to GPS when it returns.

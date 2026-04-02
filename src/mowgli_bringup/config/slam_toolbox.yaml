@@ -18,8 +18,11 @@ slam_toolbox:
     map_start_at_dock: true
 
     # Frame IDs
+    # SLAM uses a separate map frame (slam_map) to avoid TF conflicts with
+    # ekf_map which publishes the authoritative map→odom transform.
+    # The slam_heading_node extracts yaw from slam_map→odom for EKF fusion.
     odom_frame: odom
-    map_frame: map
+    map_frame: slam_map
     base_frame: base_link
     scan_topic: /scan
 
@@ -28,8 +31,9 @@ slam_toolbox:
     throttle_scans: 1
 
     # TF / map update
-    # TF disabled — ekf_map publishes map→odom using GPS + dock pose.
-    transform_publish_period: 0.0     # 0 = don't publish TF
+    # SLAM publishes slam_map→odom TF for the slam_heading_node to extract yaw.
+    # ekf_map publishes the authoritative map→odom transform for navigation.
+    transform_publish_period: 0.2     # 5 Hz — just enough for heading extraction
     map_update_interval: 2.0          # seconds
     resolution: 0.05                  # metres/cell
 

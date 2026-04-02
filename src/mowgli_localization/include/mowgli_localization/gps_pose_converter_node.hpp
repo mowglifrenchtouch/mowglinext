@@ -1,4 +1,10 @@
-// SPDX-License-Identifier: GPL-3.0
+// Copyright 2026 Mowgli Project
+//
+// Licensed under the GNU General Public License, version 3 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.gnu.org/licenses/gpl-3.0.html
 /**
  * @file gps_pose_converter_node.hpp
  * @brief GPS pose converter — publishes position + heading for EKF fusion.
@@ -27,7 +33,7 @@ namespace mowgli_localization
 class GpsPoseConverterNode : public rclcpp::Node
 {
 public:
-  explicit GpsPoseConverterNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
+  explicit GpsPoseConverterNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
   ~GpsPoseConverterNode() override = default;
 
 private:
@@ -37,7 +43,7 @@ private:
 
   void on_absolute_pose(mowgli_interfaces::msg::AbsolutePose::ConstSharedPtr msg);
 
-  double compute_xy_variance(const mowgli_interfaces::msg::AbsolutePose& msg) const;
+  double compute_xy_variance(const mowgli_interfaces::msg::AbsolutePose & msg) const;
 
   // ---------------------------------------------------------------------------
   // Parameters

@@ -274,6 +274,23 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
+    # 7c. SLAM heading extractor
+    # ------------------------------------------------------------------
+    # Extracts yaw from SLAM's slam_map→odom TF and publishes it as a
+    # PoseWithCovarianceStamped for the EKF to fuse. Provides absolute
+    # heading from LiDAR map matching — works without magnetometer,
+    # when stationary, and under canopy.
+    slam_heading_node = Node(
+        package="mowgli_localization",
+        executable="slam_heading_node",
+        name="slam_heading",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+        ],
+    )
+
+    # ------------------------------------------------------------------
     # 8. Localization monitor
     # ------------------------------------------------------------------
     localization_monitor_node = Node(
@@ -414,6 +431,7 @@ def generate_launch_description() -> LaunchDescription:
             wheel_odometry_node,
             navsat_converter_node,
             gps_pose_converter_node,
+            slam_heading_node,
             localization_monitor_node,
             diagnostics_node,
             mqtt_bridge_node,
