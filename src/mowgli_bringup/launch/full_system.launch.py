@@ -19,6 +19,7 @@ Brings up all subsystems:
 
 import os
 
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
@@ -130,6 +131,13 @@ def generate_launch_description() -> LaunchDescription:
     # Robot-specific config (bind-mounted from mowgli-docker/config/mowgli/)
     robot_config = "/ros2_ws/config/mowgli_robot.yaml"
 
+    # Load robot config to extract mowgli parameters for nodes that need
+    # explicit values (e.g. navsat_to_absolute_pose needs datum from mowgli).
+    robot_params = {}
+    if os.path.isfile(robot_config):
+        with open(robot_config, "r") as f:
+            robot_config_yaml = yaml.safe_load(f) or {}
+        robot_params = robot_config_yaml.get("mowgli", {}).get("ros__parameters", {})
 
     # ------------------------------------------------------------------
     # 1. mowgli.launch.py — hardware bridge, RSP, twist_mux
@@ -243,7 +251,10 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[
             localization_params,
-            robot_config,
+            {
+                "datum_lat": robot_params.get("datum_lat", 0.0),
+                "datum_lon": robot_params.get("datum_lon", 0.0),
+            },
             {"use_sim_time": use_sim_time},
         ],
     )
