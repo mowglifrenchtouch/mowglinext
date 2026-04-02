@@ -1,176 +1,91 @@
-# =============================================================================
-# Yardforce Classic 500 — Default configuration
-#
-# This file is the single source of truth for your mower's physical and
-# operational parameters.  It is bind-mounted into the container at
-# /ros2_ws/config/mowgli_robot.yaml and overrides the image defaults.
-#
-# Full built-in reference:
-#   docker exec mowgli-ros2 cat /ros2_ws/install/mowgli_bringup/share/mowgli_bringup/config/mowgli_robot.yaml
-# =============================================================================
+# Mowgli Robot Configuration — managed by openmower-gui
+# This file is the single source of truth for robot parameters.
+# Changes made here are picked up on container restart.
 
 mowgli:
-  ros__parameters:
-
-    # =================================================================
-    # Robot hardware
-    # =================================================================
-    mower_model: "YardForce500"
-
-    # Chassis dimensions (metres)
-    chassis_length: 0.54
-    chassis_width: 0.40
-    chassis_height: 0.19
-    chassis_mass_kg: 8.76
-
-    # Drive wheels (rear, differential)
-    wheel_radius: 0.04475         # m (diameter 0.0895)
-    wheel_width: 0.04
-    wheel_track: 0.325            # centre-to-centre distance (YF500 measured)
-    wheel_x_offset: -0.18         # behind base_link centre
-    ticks_per_revolution: 1050    # encoder ticks per full wheel revolution
-
-    # Front casters
-    caster_radius: 0.03
-    caster_track: 0.36
-
-    # Mowing blade
-    blade_radius: 0.09
-    tool_width: 0.18              # effective cut width (2 x blade_radius)
-
-    # =================================================================
-    # Sensor positions (relative to base_link, metres)
-    #
-    # Coordinate frame: x=forward, y=left, z=up (REP-103)
-    # base_link is at the geometric centre of the chassis, at wheel
-    # axle height (0.04475 m above ground).
-    # =================================================================
-
-    # --- LiDAR (LD19 / LD06 / YDLidar X2L / etc.) --------------------
-    lidar_enabled: true
-    lidar_x: 0.20                 # front of chassis
-    lidar_y: 0.0                  # centred
-    lidar_z: 0.22                 # base_height(0.19) + 0.03 above top surface
-    lidar_yaw: 0.0                # rotation in radians (3.14159 = 180 degrees)
-    lidar_frame: "lidar_link"
-
-    # --- GPS antenna (u-blox F9P / simpleRTK2B / RTK1010) ------------
-    gps_antenna_x: 0.0            # centred on chassis
-    gps_antenna_y: 0.0
-    gps_antenna_z: 0.20           # base_height(0.19) + 0.01
-    gps_frame: "gps_link"
-
-    # --- IMU (WT901 / LSM6DSO on mainboard) --------------------------
-    imu_x: 0.0                    # centre of base
-    imu_y: 0.0
-    imu_z: 0.095                  # base_height / 2
-    imu_frame: "imu_link"
-
-    # =================================================================
-    # GPS / Positioning — MUST be set for your location
-    # =================================================================
-    gps_protocol: "UBX"           # UBX for u-blox, NMEA for others
-    datum_lat: 48.87948444968149         # map origin latitude  (WGS84)
-    datum_lon: 2.1730724056657826          # map origin longitude (WGS84)
-    use_relative_position: false  # false=datum origin, true=base station origin
-
-    gps_wait_after_undock_sec: 10.0  # wait for RTK fix after undocking
-    gps_timeout_sec: 5.0             # pause mowing if no fix for this long
-
-    # GPS serial (direct USB connection)
-    gps_port: "/dev/gps"
-    gps_baudrate: 921600
-
-    # NTRIP (RTK correction stream) — required for cm-level accuracy
-    ntrip_enabled: true
-    ntrip_host: "caster.centipede.fr"
-    ntrip_port: 2101
-    ntrip_user: "centipede"
-    ntrip_password: "centipede"
-    ntrip_mountpoint: "OUIL"
-
-    use_f9r_sensor_fusion: false  # u-blox F9R dead-reckoning (experimental)
-
-    # =================================================================
-    # Docking — MUST be set to your dock's position in the map frame
-    # =================================================================
-    # Drive the robot manually to the dock, then read the pose:
-    #   docker exec mowgli-ros2 bash -c \
-    #     'source /opt/ros/jazzy/setup.bash && ros2 topic echo /gps/pose --once'
-    dock_pose_x: 0.0
-    dock_pose_y: 0.0
-    dock_pose_yaw: 0.0
-    undock_distance: 1.5          # m — reverse distance, must clear dock + get GPS
-    undock_speed: 0.15            # m/s
-    dock_approach_distance: 1.0   # staging pose distance in front of dock
-    dock_max_retries: 3
-    dock_use_charger_detection: true
-
-    # =================================================================
-    # Mowing — adjust to your garden
-    # =================================================================
-    mowing_enabled: true
-    mowing_speed: 0.3             # m/s — conservative for YF500
-    transit_speed: 0.4            # m/s — speed between zones and to dock
-    outline_passes: 1             # perimeter passes before fill
-    outline_overlap: 0            # overlap between outline passes
-    outline_offset: 0.05          # inward offset from recorded boundary (m)
-    path_spacing: 0.13            # m — 0.13 gives overlap with 0.18 blade
-    mow_angle_offset_deg: -1.0   # -1 = auto-detect optimal angle
-    mow_angle_increment_deg: 0.0 # rotate pattern each full pass (deg)
-    headland_width: 0.18          # = tool_width
-    min_turning_radius: 0.30
-
-    # automatic_mode: 0=manual, 1=semi-auto (mow once), 2=full auto
-    automatic_mode: 0
-
-    # =================================================================
-    # Battery — Yardforce 500 (25.2V nominal, 7S Li-ion)
-    # =================================================================
-    battery_full_voltage: 28.5
-    battery_empty_voltage: 24.0
-    battery_critical_voltage: 23.0
-    battery_full_percent: 95.0    # resume mowing above this %
-    battery_low_percent: 20.0     # start heading to dock
-    battery_critical_percent: 10.0
-
-    # =================================================================
-    # Safety
-    # =================================================================
-    motor_temp_high_c: 80.0       # stop blade above this
-    motor_temp_low_c: 40.0        # resume blade below this
-    emergency_stop_on_tilt: true
-    emergency_stop_on_lift: true
-    max_obstacle_avoidance_distance: 2.0  # m — max detour around obstacle
-
-    # =================================================================
-    # Rain
-    # =================================================================
-    # Modes: 0=ignore, 1=dock, 2=dock_until_dry, 3=pause_auto
-    rain_mode: 2
-    rain_delay_minutes: 30.0
-    rain_debounce_sec: 10.0
-
-    # =================================================================
-    # SLAM / Mapping
-    # =================================================================
-    slam_mode: "lifelong"         # mapping | localization | lifelong
-    map_save_path: "/ros2_ws/maps/garden_map"
-    map_save_on_dock: true
-
-    # =================================================================
-    # Navigation tolerances
-    # =================================================================
-    xy_goal_tolerance: 0.75       # m — acceptable goal position error
-    yaw_goal_tolerance: 1.0       # rad — acceptable heading error
-    coverage_xy_tolerance: 0.5    # m — for coverage waypoints
-    progress_timeout_sec: 60.0    # s — without progress before recovery
-
-# ---------------------------------------------------------------------------
-# NavSat -> AbsolutePose converter
-# datum_lat/datum_lon MUST match the values above (map origin).
-# ---------------------------------------------------------------------------
-navsat_to_absolute_pose:
-  ros__parameters:
-    datum_lat: 48.87948444968149
-    datum_lon: 2.1730724056657826
+    ros__parameters:
+        automatic_mode: 0
+        battery_critical_percent: 10
+        battery_critical_voltage: 23
+        battery_empty_voltage: 24
+        battery_full_percent: 95
+        battery_full_voltage: 28.5
+        battery_low_percent: 20
+        blade_radius: 0.09
+        caster_radius: 0.03
+        caster_track: 0.36
+        chassis_height: 0.19
+        chassis_length: 0.54
+        chassis_mass_kg: 8.76
+        chassis_width: 0.4
+        coverage_xy_tolerance: 0.5
+        datum_lat: 48.879640599999995
+        datum_lon: 2.1728332999999997
+        dock_approach_distance: 1
+        dock_max_retries: 3
+        dock_pose_x: 0
+        dock_pose_y: 0
+        dock_pose_yaw: -2.60054
+        dock_use_charger_detection: true
+        emergency_stop_on_lift: true
+        emergency_stop_on_tilt: true
+        gps_antenna_x: 0
+        gps_antenna_y: 0
+        gps_antenna_z: 0.2
+        gps_baudrate: 921600
+        gps_frame: gps_link
+        gps_port: /dev/gps
+        gps_protocol: UBX
+        gps_timeout_sec: 5
+        gps_wait_after_undock_sec: 10
+        headland_width: 0.18
+        imu_frame: imu_link
+        imu_x: 0.0
+        imu_y: -0.20
+        imu_yaw: -2.8763
+        imu_z: 0.0
+        lidar_enabled: true
+        lidar_frame: lidar_link
+        lidar_x: 0.01
+        lidar_y: -0.025
+        lidar_yaw: 3.14159
+        lidar_z: 0.10
+        map_save_on_dock: true
+        map_save_path: /ros2_ws/maps/garden_map
+        max_obstacle_avoidance_distance: 2
+        min_turning_radius: 0.3
+        motor_temp_high_c: 80
+        motor_temp_low_c: 40
+        mow_angle_increment_deg: 0
+        mow_angle_offset_deg: -1
+        mower_model: YardForce500
+        mowing_enabled: true
+        mowing_speed: 0.3
+        ntrip_enabled: true
+        ntrip_host: caster.centipede.fr
+        ntrip_mountpoint: OUIL
+        ntrip_password: centipede
+        ntrip_port: 2101
+        ntrip_user: centipede
+        outline_offset: 0.05
+        outline_overlap: 0
+        outline_passes: 1
+        path_spacing: 0.13
+        progress_timeout_sec: 60
+        rain_debounce_sec: 10
+        rain_delay_minutes: 30
+        rain_mode: 2
+        slam_mode: lifelong
+        ticks_per_revolution: 1050
+        tool_width: 0.18
+        transit_speed: 0.4
+        undock_distance: 1.5
+        undock_speed: 0.15
+        use_f9r_sensor_fusion: false
+        use_relative_position: false
+        wheel_radius: 0.04475
+        wheel_track: 0.325
+        wheel_width: 0.04
+        wheel_x_offset: -0.18
+        xy_goal_tolerance: 0.75
+        yaw_goal_tolerance: 1
