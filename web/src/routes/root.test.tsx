@@ -26,7 +26,7 @@ function renderWithRouter(initialPath = '/openmower') {
                     {path: 'settings', element: <div>Settings Content</div>},
                     {path: 'schedule', element: <div>Schedule Content</div>},
                     {path: 'logs', element: <div>Logs Content</div>},
-                    {path: 'setup', element: <div>Setup Content</div>},
+                    {path: 'onboarding', element: <div>Onboarding Content</div>},
                 ],
             },
         ],

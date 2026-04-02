@@ -24,6 +24,21 @@ func SettingsRoutes(r *gin.RouterGroup, dbProvider types.IDBProvider) {
 	GetSettingsSchema(r, dbProvider)
 	GetSettingsYAML(r, dbProvider)
 	PostSettingsYAML(r, dbProvider)
+	GetSettingsStatus(r, dbProvider)
+}
+
+// GetSettingsStatus returns whether the mowgli_robot.yaml config file exists.
+// Used by the frontend to decide whether to show the onboarding wizard.
+func GetSettingsStatus(r *gin.RouterGroup, dbProvider types.IDBProvider) gin.IRoutes {
+	return r.GET("/settings/status", func(c *gin.Context) {
+		configFilePath, err := dbProvider.Get("system.mower.yamlConfigFile")
+		if err != nil {
+			c.JSON(200, gin.H{"configured": false})
+			return
+		}
+		_, err = os.Stat(string(configFilePath))
+		c.JSON(200, gin.H{"configured": err == nil})
+	})
 }
 
 func extractDefaults(schema map[string]any, defaults map[string]any) {

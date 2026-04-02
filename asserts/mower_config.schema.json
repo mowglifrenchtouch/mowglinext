@@ -8,7 +8,7 @@
         "mower_model": {
           "type": "string",
           "title": "Mower Model",
-          "enum": ["YardForce500", "YardForceSA650", "CUSTOM"],
+          "enum": ["YardForce500", "YardForce500B", "YardForceSA650", "YardForce900ECO", "LUV1000RI", "Sabo", "CUSTOM"],
           "default": "YardForce500",
           "description": "The type of mower you are using."
         },

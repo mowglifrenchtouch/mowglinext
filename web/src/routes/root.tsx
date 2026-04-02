@@ -22,7 +22,7 @@ const navItems = [
     {key: '/openmower', label: 'Dashboard', icon: <RobotOutlined/>},
     {key: '/map', label: 'Map', icon: <HeatMapOutlined/>},
     {key: '/schedule', label: 'Schedule', icon: <ClockCircleOutlined/>},
-    {key: '/setup', label: 'Setup', icon: <RocketOutlined/>},
+    {key: '/onboarding', label: 'Onboarding', icon: <RocketOutlined/>},
     {key: '/settings', label: 'Settings', icon: <SettingOutlined/>},
     {key: '/logs', label: 'Logs', icon: <MessageOutlined/>},
 ];
@@ -36,7 +36,7 @@ const bottomNavItems = [
 
 const pageTitles: Record<string, string> = {
     '/openmower': 'Dashboard',
-    '/setup': 'Setup',
+    '/onboarding': 'Onboarding',
     '/settings': 'Settings',
     '/map': 'Map',
     '/schedule': 'Schedule',
@@ -51,6 +51,23 @@ export default function Root() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [railExpanded, setRailExpanded] = useState(false);
     const {showPrompt: showInstallPrompt, dismiss: dismissInstallPrompt} = useIOSInstallPrompt();
+
+    // On first load, check if the robot is configured. If not, redirect to onboarding.
+    const [configChecked, setConfigChecked] = useState(false);
+    useEffect(() => {
+        if (configChecked) return;
+        (async () => {
+            try {
+                const base = import.meta.env.DEV ? 'http://localhost:4006' : '';
+                const res = await fetch(`${base}/api/settings/status`);
+                const data = await res.json();
+                if (!data.configured && currentPath !== '/onboarding') {
+                    navigate({pathname: '/onboarding'});
+                }
+            } catch { /* ignore — backend not reachable */ }
+            setConfigChecked(true);
+        })();
+    }, [configChecked]);
 
     useEffect(() => {
         if (route.length === 1 && route[0].pathname === "/") {

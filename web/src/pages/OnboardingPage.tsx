@@ -12,6 +12,7 @@ import {
 import { useThemeMode } from "../theme/ThemeContext.tsx";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useSettingsSchema } from "../hooks/useSettingsSchema.ts";
+import { useApi } from "../hooks/useApi.ts";
 import { RobotComponentEditor } from "../components/RobotComponentEditor.tsx";
 import { FlashBoardComponent } from "../components/FlashBoardComponent.tsx";
 
@@ -95,7 +96,18 @@ const MOWER_MODELS = [
         value: "YardForce500",
         label: "YardForce Classic 500",
         description: "Most common model. 28V battery, 18cm blade, rear-wheel drive.",
-        tag: "Recommended",
+        tag: "Popular",
+        defaults: {
+            wheel_radius: 0.04475, wheel_track: 0.325, wheel_x_offset: -0.18,
+            blade_radius: 0.09, tool_width: 0.18, ticks_per_revolution: 1050,
+            battery_full_voltage: 28.5, battery_empty_voltage: 24.0,
+            battery_critical_voltage: 23.0,
+        },
+    },
+    {
+        value: "YardForce500B",
+        label: "YardForce 500B",
+        description: "500 B variant with different blade motor UART and panel layout.",
         defaults: {
             wheel_radius: 0.04475, wheel_track: 0.325, wheel_x_offset: -0.18,
             blade_radius: 0.09, tool_width: 0.18, ticks_per_revolution: 1050,
@@ -106,12 +118,45 @@ const MOWER_MODELS = [
     {
         value: "YardForceSA650",
         label: "YardForce SA650",
-        description: "Larger model with wider cutting deck and higher voltage battery.",
+        description: "Larger model with higher encoder resolution (1964 ticks/m).",
         defaults: {
             wheel_radius: 0.04475, wheel_track: 0.325, wheel_x_offset: -0.18,
             blade_radius: 0.09, tool_width: 0.18, ticks_per_revolution: 1050,
             battery_full_voltage: 28.5, battery_empty_voltage: 24.0,
             battery_critical_voltage: 23.0,
+        },
+    },
+    {
+        value: "YardForce900ECO",
+        label: "YardForce 900 ECO",
+        description: "Larger 900 ECO model with wider chassis.",
+        defaults: {
+            wheel_radius: 0.04475, wheel_track: 0.325, wheel_x_offset: -0.18,
+            blade_radius: 0.09, tool_width: 0.18, ticks_per_revolution: 1050,
+            battery_full_voltage: 28.5, battery_empty_voltage: 24.0,
+            battery_critical_voltage: 23.0,
+        },
+    },
+    {
+        value: "LUV1000RI",
+        label: "YardForce LUV1000RI",
+        description: "LUV1000RI model with narrower wheelbase (0.285m) and ultrasonic sensor.",
+        defaults: {
+            wheel_radius: 0.04475, wheel_track: 0.285, wheel_x_offset: -0.18,
+            blade_radius: 0.09, tool_width: 0.18, ticks_per_revolution: 1050,
+            battery_full_voltage: 28.5, battery_empty_voltage: 24.0,
+            battery_critical_voltage: 23.0,
+        },
+    },
+    {
+        value: "Sabo",
+        label: "Sabo",
+        description: "Sabo mower with wider wheelbase (0.45m) and higher charge current.",
+        defaults: {
+            wheel_radius: 0.04475, wheel_track: 0.45, wheel_x_offset: -0.18,
+            blade_radius: 0.09, tool_width: 0.18, ticks_per_revolution: 1050,
+            battery_full_voltage: 28.5, battery_empty_voltage: 21.0,
+            battery_critical_voltage: 20.0,
         },
     },
     {
@@ -137,7 +182,7 @@ const RobotModelStep: React.FC<RobotModelStepProps> = ({ values, onChange }) => 
     };
 
     return (
-        <div style={{ maxWidth: 640, margin: "0 auto" }}>
+        <div style={{ maxWidth: 800, margin: "0 auto" }}>
             <Title level={4}>
                 <SettingOutlined /> Choose Your Robot
             </Title>
@@ -149,7 +194,7 @@ const RobotModelStep: React.FC<RobotModelStepProps> = ({ values, onChange }) => 
                 {MOWER_MODELS.map((model) => {
                     const isSelected = selectedModel === model.value;
                     return (
-                        <Col xs={24} sm={8} key={model.value}>
+                        <Col xs={12} sm={8} md={6} key={model.value}>
                             <Card
                                 hoverable
                                 size="small"
@@ -187,7 +232,7 @@ const RobotModelStep: React.FC<RobotModelStepProps> = ({ values, onChange }) => 
                         type="info"
                         showIcon
                         message="Custom configuration"
-                        description="You can fine-tune all hardware parameters in Settings after completing setup."
+                        description="You can fine-tune all hardware parameters in Settings after completing onboarding."
                         style={{ marginBottom: 16 }}
                     />
                     <Form layout="vertical">
@@ -454,6 +499,42 @@ const FirmwareStep: React.FC<{ onNext: () => void }> = ({ onNext }) => {
 
 const CompleteStep: React.FC = () => {
     const { colors } = useThemeMode();
+    const guiApi = useApi();
+    const [restarting, setRestarting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        // Auto-restart the OpenMower container on mount
+        (async () => {
+            setRestarting(true);
+            try {
+                const res = await guiApi.containers.containersList();
+                if (res.error) throw new Error(res.error.error);
+                const container = res.data.containers?.find(
+                    (c) => c.labels?.app === "openmower" || c.names?.includes("/openmower")
+                );
+                if (container?.id) {
+                    const restartRes = await guiApi.containers.containersCreate(container.id, "restart");
+                    if (restartRes.error) throw new Error(restartRes.error.error);
+                }
+            } catch (e: any) {
+                setError(e.message);
+            } finally {
+                setRestarting(false);
+            }
+        })();
+    }, []);
+
+    if (restarting) {
+        return (
+            <Result
+                icon={<RocketOutlined style={{ color: colors.primary }} spin />}
+                title="Applying configuration..."
+                subTitle="Restarting the mower service with your new settings. This takes a few seconds."
+            />
+        );
+    }
+
     return (
         <Result
             icon={<CheckCircleOutlined style={{ color: colors.primary }} />}
@@ -477,7 +558,17 @@ const CompleteStep: React.FC = () => {
                     Go to Dashboard
                 </Button>,
             ]}
-        />
+        >
+            {error && (
+                <Alert
+                    type="warning"
+                    showIcon
+                    message="Could not restart the mower service"
+                    description={`${error}. You may need to restart it manually.`}
+                    style={{ maxWidth: 500, margin: "0 auto" }}
+                />
+            )}
+        </Result>
     );
 };
 
@@ -501,7 +592,7 @@ const STEP_TITLES = [
     "Complete",
 ];
 
-const SetupWizard: React.FC = () => {
+const OnboardingWizard: React.FC = () => {
     const { colors } = useThemeMode();
     const isMobile = useIsMobile();
     const { values: savedValues, saveValues, loading } = useSettingsSchema();
@@ -604,4 +695,4 @@ const SetupWizard: React.FC = () => {
     );
 };
 
-export default SetupWizard;
+export default OnboardingWizard;
