@@ -36,7 +36,6 @@ jobs:
         if: steps.changed.outputs.count != '0'
         uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           model: claude-sonnet-4-20250514
           direct_prompt: |
             You are a code reviewer for MowgliNext, an open-source ROS2 autonomous robot mower.
