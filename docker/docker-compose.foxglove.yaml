@@ -1,0 +1,37 @@
+# Foxglove Bridge override — add as a separate container
+#
+# Use when you want foxglove_bridge isolated from the main mowgli launch,
+# e.g. to restart it independently or disable it without touching the main stack.
+#
+# Launch:
+#   docker compose -f docker-compose.yaml -f docker-compose.foxglove.yaml up -d
+#
+# NOTE: When using this override, launch the main mowgli service WITHOUT the
+# built-in foxglove bridge to avoid port conflicts:
+#   Change the mowgli command to: enable_foxglove:=false
+
+x-ros2-env: &ros2-env
+  ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+  RCUTILS_COLORIZED_OUTPUT: "1"
+  RCUTILS_LOGGING_USE_STDOUT: "1"
+
+services:
+
+  foxglove_bridge:
+    container_name: mowgli-foxglove
+    image: ${MOWGLI_ROS2_IMAGE}
+    network_mode: host
+    environment:
+      <<: *ros2-env
+    command: >
+      ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+      port:=8765
+    depends_on:
+      - mowgli
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m

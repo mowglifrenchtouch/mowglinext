@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  FastDDS profile for Mowgli ROS2 multi-container setup on ARM.
+
+  Problem: 35+ DDS participants start simultaneously across 3 containers.
+  Default SHM transport + discovery settings can fail to discover all
+  participants on resource-constrained ARM platforms.
+
+  Fix: disable SHM, use UDPv4 only, increase discovery announcement
+  frequency and lease duration so all participants are found reliably.
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <participant profile_name="default_participant" is_default_profile="true">
+    <rtps>
+      <builtinTransports max_msg_size="65500">UDPv4</builtinTransports>
+      <builtin>
+        <discovery_config>
+          <!-- Send more initial announcements to ensure discovery -->
+          <initialAnnouncements>
+            <count>50</count>
+            <period>
+              <nanosec>100000000</nanosec>
+            </period>
+          </initialAnnouncements>
+          <!-- Longer lease so slow participants aren't evicted -->
+          <leaseDuration>
+            <sec>20</sec>
+          </leaseDuration>
+          <leaseAnnouncement>
+            <sec>3</sec>
+          </leaseAnnouncement>
+        </discovery_config>
+      </builtin>
+    </rtps>
+  </participant>
+</profiles>
