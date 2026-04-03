@@ -21,31 +21,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get changed files
-        id: changed
-        run: |
-          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only | head -50)
-          echo "files<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$FILES" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-          echo "count=$(echo "$FILES" | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Claude Review
-        if: steps.changed.outputs.count != '0'
         uses: anthropics/claude-code-action@v1
         with:
           model: claude-sonnet-4-20250514
           direct_prompt: |
-            You are a code reviewer for MowgliNext, an open-source ROS2 autonomous robot mower.
-            Review this pull request and provide constructive feedback.
-
-            PR Title: ${{ github.event.pull_request.title }}
-            PR Body: ${{ github.event.pull_request.body }}
-
-            Changed files (${{ steps.changed.outputs.count }}):
-            ${{ steps.changed.outputs.files }}
+            Review this pull request for the MowgliNext project (open-source ROS2 autonomous robot mower).
 
             Review the changes for:
             1. **Safety** — This is a robot with blades. Flag anything that could cause unsafe physical behavior.
@@ -60,4 +41,4 @@ jobs:
             - 🟢 **Nice**: Looks good, optional polish
 
             If the PR looks good, say so briefly. Don't nitpick.
-          timeout_minutes: 5
+          timeout_minutes: 10
