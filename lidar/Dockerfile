@@ -41,6 +41,11 @@ RUN /bin/bash -c "\
 # =============================================================================
 FROM ros:jazzy-ros-base AS runtime
 
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-jazzy-rmw-cyclonedds-cpp \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /ros2_ws
 
 COPY --from=build /ros2_ws/install/ install/
