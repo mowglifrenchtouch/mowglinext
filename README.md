@@ -1,8 +1,13 @@
-# MowgliNext
+<p align="center">
+  <img src="logo.svg" alt="MowgliNext" width="320">
+</p>
 
-Autonomous robot mower built on ROS2 Jazzy — a complete rewrite of OpenMower for YardForce Classic 500 hardware with LiDAR, behavior trees, and modern navigation.
+<p align="center">
+  Autonomous robot mower built on ROS2 Jazzy — a complete rewrite of OpenMower<br>
+  with LiDAR SLAM, RTK-GPS, behavior trees, and intelligent coverage planning.
+</p>
 
-**[Website](https://cedbossneo.github.io/mowglinext/)** | **[Wiki](https://github.com/cedbossneo/mowglinext/wiki)** | **[Discussions](https://github.com/cedbossneo/mowglinext/discussions)** | **[Issues](https://github.com/cedbossneo/mowglinext/issues)**
+**[Website](https://mowgli.garden)** | **[Wiki](https://github.com/cedbossneo/mowglinext/wiki)** | **[Discussions](https://github.com/cedbossneo/mowglinext/discussions)** | **[Issues](https://github.com/cedbossneo/mowglinext/issues)**
 
 ## Monorepo Structure
 
@@ -57,7 +62,7 @@ See the [Getting Started](https://github.com/cedbossneo/mowglinext/wiki/Getting-
 
 | Resource | What's there |
 |----------|-------------|
-| [Website](https://cedbossneo.github.io/mowglinext/) | Landing page, features overview, getting started |
+| [Website](https://mowgli.garden) | Landing page, features overview, getting started |
 | [Wiki](https://github.com/cedbossneo/mowglinext/wiki) | Full reference: architecture, configuration, deployment, sensors, firmware, BT, FAQ |
 | [Discussions](https://github.com/cedbossneo/mowglinext/discussions) | Community Q&A |
 
