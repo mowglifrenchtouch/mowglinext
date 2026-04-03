@@ -260,31 +260,27 @@
 <!-- ─── Getting Started ─────────────────────────────── -->
 <section class="getting-started" id="getting-started">
   <div class="container">
-    <h2>Get Started in 3 Steps</h2>
+    <h2>Get Started</h2>
     <div class="steps">
 
       <div class="step">
         <div class="step-number">1</div>
-        <h3>Clone the Repo</h3>
-        <p>Get the full monorepo — ROS2 stack, Docker, GUI, sensors, and firmware.</p>
-        <code>git clone https://github.com/cedbossneo/mowglinext.git
-cd mowglinext</code>
+        <h3>One-Line Install</h3>
+        <p>SSH into your mower's board and run the interactive installer. It handles everything — Docker, udev rules, sensors, configuration.</p>
+        <code>curl -sSL https://raw.githubusercontent.com/cedbossneo/mowglinext/main/docker/install.sh | bash</code>
       </div>
 
       <div class="step">
         <div class="step-number">2</div>
-        <h3>Configure Your Mower</h3>
-        <p>Edit the robot config with your GPS datum, dock position, and sensor setup.</p>
-        <code>cp docker/.env.example docker/.env
-nano docker/config/mowgli/mowgli_robot.yaml</code>
+        <h3>Follow the Wizard</h3>
+        <p>The installer walks you through GPS datum, dock position, NTRIP credentials, sensor positions, and battery thresholds. No manual config editing needed.</p>
       </div>
 
       <div class="step">
         <div class="step-number">3</div>
-        <h3>Launch</h3>
-        <p>Start all services with Docker Compose. GUI available at port 4006.</p>
-        <code>cd docker
-docker compose up -d</code>
+        <h3>Open the GUI</h3>
+        <p>Once running, open the web interface to define mowing areas, monitor the robot, and fine-tune settings.</p>
+        <code>http://&lt;mower-ip&gt;:4006</code>
       </div>
 
     </div>

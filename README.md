@@ -51,17 +51,17 @@ Thank you, OpenMower team. You showed us what's possible.
 
 ## Quick Start
 
+Run the interactive install script on your mower's board:
+
 ```bash
-git clone https://github.com/cedbossneo/mowglinext.git
-cd mowglinext/docker
-cp .env.example .env
-nano config/mowgli/mowgli_robot.yaml  # Set your GPS datum, dock pose, NTRIP
-docker compose up -d
+curl -sSL https://raw.githubusercontent.com/cedbossneo/mowglinext/main/docker/install.sh | bash
 ```
+
+It walks you through udev rules, sensor setup, GPS datum, dock position, NTRIP credentials, and launches everything automatically.
 
 GUI at `http://<mower-ip>:4006` | Foxglove at `ws://<mower-ip>:8765`
 
-See the [Getting Started](https://github.com/cedbossneo/mowglinext/wiki/Getting-Started) wiki page for full setup instructions.
+See the [Getting Started](https://github.com/cedbossneo/mowglinext/wiki/Getting-Started) wiki page for full setup instructions and manual install options.
 
 ## Architecture
 

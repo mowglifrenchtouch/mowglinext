@@ -3,7 +3,7 @@
 # Mowgli ROS2 v3 — Interactive Install / Upgrade / Diagnose Script
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/cedbossneo/mowgli-docker/v3/install.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/cedbossneo/mowglinext/main/docker/install.sh | bash
 #   # or locally:
 #   ./install.sh            # full install + diagnostics
 #   ./install.sh --check    # diagnostics only (skip install)
