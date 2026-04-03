@@ -1,0 +1,197 @@
+# =============================================================================
+# Dockerfile.dev — Full development toolchain (Jazzy)
+#
+# Designed for mounting source as a volume so changes are immediately
+# available without rebuilding the image. Includes compilers, debuggers,
+# Gazebo Harmonic, and simulation runtime — edit, build, and test in one
+# container.
+#
+# Usage:
+#   make dev-sim        # build image + launch sim with volume mounts
+#   make dev-build      # rebuild packages inside running dev container
+#   make dev-build-pkg PKG=mowgli_behavior   # rebuild single package
+#   make dev-restart    # restart the sim launch inside the dev container
+#
+# Or standalone:
+#   docker build -f Dockerfile.dev -t mowgli-dev .
+#   docker run -it --rm \
+#       -v $(pwd)/src:/ros2_ws/src \
+#       -v $(pwd)/foxglove:/ros2_ws/foxglove \
+#       --network host \
+#       mowgli-dev bash
+# =============================================================================
+FROM ros:jazzy-ros-base AS dev
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# ---- Runtime dependencies (mirrors base stage in Dockerfile) ----------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Navigation
+    ros-jazzy-nav2-bringup \
+    ros-jazzy-nav2-bt-navigator \
+    ros-jazzy-nav2-controller \
+    ros-jazzy-nav2-planner \
+    ros-jazzy-nav2-behaviors \
+    ros-jazzy-nav2-regulated-pure-pursuit-controller \
+    ros-jazzy-nav2-smac-planner \
+    ros-jazzy-nav2-costmap-2d \
+    ros-jazzy-nav2-map-server \
+    ros-jazzy-nav2-lifecycle-manager \
+    ros-jazzy-nav2-waypoint-follower \
+    ros-jazzy-nav2-velocity-smoother \
+    ros-jazzy-nav2-rotation-shim-controller \
+    ros-jazzy-nav2-core \
+    ros-jazzy-nav2-util \
+    ros-jazzy-nav2-msgs \
+    # SLAM and localization
+    ros-jazzy-slam-toolbox \
+    ros-jazzy-robot-localization \
+    # Motion control
+    ros-jazzy-twist-mux \
+    # Behavior trees
+    ros-jazzy-behaviortree-cpp \
+    # Robot description / TF
+    ros-jazzy-xacro \
+    ros-jazzy-robot-state-publisher \
+    ros-jazzy-joint-state-publisher \
+    ros-jazzy-tf2-ros \
+    ros-jazzy-tf2-eigen \
+    ros-jazzy-tf2-geometry-msgs \
+    # Grid map
+    ros-jazzy-grid-map-core \
+    ros-jazzy-grid-map-ros \
+    ros-jazzy-grid-map-msgs \
+    # Diagnostics
+    ros-jazzy-diagnostic-msgs \
+    ros-jazzy-diagnostic-updater \
+    # Foxglove Bridge
+    ros-jazzy-foxglove-bridge \
+    # Rosbridge (WebSocket bridge for openmower-gui)
+    ros-jazzy-rosbridge-suite \
+    # Coverage planning (F2C v1.2.1-devel built from source below)
+    # ros-jazzy-fields2cover -- removed: opennav_coverage requires F2C v1.2.1
+    libgdal-dev \
+    # Gazebo Harmonic + ROS bridge
+    ros-jazzy-ros-gz-sim \
+    ros-jazzy-ros-gz-bridge \
+    ros-jazzy-ros-gz-interfaces \
+    # VNC for Gazebo GUI
+    tigervnc-standalone-server \
+    tigervnc-common \
+    novnc \
+    websockify \
+    openbox \
+    xterm \
+    x11-utils \
+ && true
+
+# ---- Build tools ------------------------------------------------------------
+RUN apt-get install -y --no-install-recommends \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    python3-vcstool \
+    ros-jazzy-ament-cmake \
+    ros-jazzy-rosidl-default-generators \
+    build-essential \
+    cmake \
+    ninja-build \
+    git \
+    git-lfs \
+ && true
+
+# ---- Fields2Cover v1.2.1-devel from source (required by opennav_coverage) ----
+RUN git clone --branch v1.2.1-devel --depth 1 \
+      https://github.com/Fields2Cover/Fields2Cover.git /tmp/f2c && \
+    cd /tmp/f2c && mkdir build && cd build && \
+    cmake .. \
+      -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_TESTING=OFF \
+      -DBUILD_PYTHON=OFF && \
+    make -j"$(nproc)" && make install && ldconfig && \
+    rm -rf /tmp/f2c
+
+# ---- opennav_coverage from source (jazzy branch) ----------------------------
+# In dev mode, src/ is bind-mounted from the host, so we clone opennav_coverage
+# into the host src/ directory instead. This clone provides a fallback for
+# non-bind-mounted builds (e.g., docker build without compose).
+RUN git clone --branch jazzy --depth 1 \
+      https://github.com/open-navigation/opennav_coverage.git \
+      /ros2_ws/src/opennav_coverage
+
+# ---- Compiler cache (significantly speeds up incremental builds) -------------
+RUN apt-get install -y --no-install-recommends ccache \
+ && true
+
+ENV PATH="/usr/lib/ccache:${PATH}"
+ENV CCACHE_DIR="/ccache"
+VOLUME ["/ccache"]
+
+# ---- Debuggers and profilers -------------------------------------------------
+RUN apt-get install -y --no-install-recommends \
+    gdb \
+    gdbserver \
+    valgrind \
+    strace \
+    ltrace \
+ || true
+
+# ---- Static analysis and code quality ----------------------------------------
+RUN apt-get install -y --no-install-recommends \
+    clang \
+    clang-tidy \
+    clang-format \
+    cppcheck \
+    python3-pytest \
+ && true
+
+# ---- Convenience utilities ---------------------------------------------------
+RUN apt-get install -y --no-install-recommends \
+    bash-completion \
+    python3-argcomplete \
+    vim \
+    nano \
+    curl \
+    wget \
+    htop \
+    tree \
+    tmux \
+    iproute2 \
+    iputils-ping \
+ && rm -rf /var/lib/apt/lists/*
+
+# ---- Workspace layout -------------------------------------------------------
+WORKDIR /ros2_ws
+
+# Source volume will be bind-mounted at runtime; provide an empty placeholder
+# so the layer cache is valid even without a mount.
+RUN mkdir -p src build install log
+
+# Initialise rosdep once at image build time
+RUN rosdep update --rosdistro jazzy
+
+# ---- Shell initialisation ---------------------------------------------------
+RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc && \
+    echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /root/.bashrc && \
+    echo "eval \"\$(register-python-argcomplete3 ros2)\"" >> /root/.bashrc && \
+    echo "export RCUTILS_COLORIZED_OUTPUT=1" >> /root/.bashrc && \
+    echo "export RCUTILS_LOGGING_USE_STDOUT=1" >> /root/.bashrc
+
+COPY scripts/ros2_entrypoint.sh /ros2_entrypoint.sh
+RUN chmod +x /ros2_entrypoint.sh
+
+# Copy VNC and dev-sim startup scripts
+COPY scripts/start_vnc.sh /ros2_ws/scripts/start_vnc.sh
+COPY scripts/start_dev_sim.sh /ros2_ws/scripts/start_dev_sim.sh
+RUN chmod +x /ros2_ws/scripts/start_vnc.sh /ros2_ws/scripts/start_dev_sim.sh
+
+ENTRYPOINT ["/ros2_entrypoint.sh"]
+
+# Foxglove Bridge WebSocket port
+EXPOSE 8765
+# noVNC web port (Gazebo GUI via browser)
+EXPOSE 6080
+
+# Default: open an interactive shell so developers can run colcon commands
+# manually. Override CMD in docker-compose or Makefile as needed.
+CMD ["bash"]

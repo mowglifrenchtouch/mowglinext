@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  main_tree.xml — Mowgli BehaviorTree.CPP v4 main tree
+
+  State constants (HighLevelStatus.msg):
+    HIGH_LEVEL_STATE_NULL       = 0
+    HIGH_LEVEL_STATE_IDLE       = 1
+    HIGH_LEVEL_STATE_AUTONOMOUS = 2
+    HIGH_LEVEL_STATE_RECORDING  = 3
+
+  HighLevelControl commands (HighLevelControl.srv):
+    COMMAND_START = 1
+    COMMAND_HOME  = 2
+    COMMAND_S1    = 3   (recording)
+    COMMAND_S2    = 4
+-->
+<root BTCPP_format="4" main_tree_to_execute="MowgliMain">
+
+  <BehaviorTree ID="MowgliMain">
+    <ReactiveSequence name="Root">
+
+      <!-- ================================================================
+           GUARD 1: Emergency (always checked, highest priority)
+           Polls every 1s. If emergency can't be cleared, robot stays
+           stopped — which is the correct safety behavior.
+           ================================================================ -->
+      <Fallback name="EmergencyGuard">
+        <Inverter><IsEmergency/></Inverter>
+        <Sequence name="EmergencyHandler">
+          <SetMowerEnabled enabled="false"/>
+          <StopMoving/>
+          <PublishHighLevelStatus state="0" state_name="EMERGENCY"/>
+          <WaitForDuration duration_sec="1.0"/>
+        </Sequence>
+      </Fallback>
+
+      <!-- ================================================================
+           GUARD 2: Boundary violation (stop + back up if outside area)
+           BackUp failure is non-fatal — robot stays stopped either way.
+           ================================================================ -->
+      <Fallback name="BoundaryGuard">
+        <Inverter><IsBoundaryViolation/></Inverter>
+        <Sequence name="BoundaryHandler">
+          <SetMowerEnabled enabled="false"/>
+          <StopMoving/>
+          <PublishHighLevelStatus state="0" state_name="BOUNDARY_VIOLATION"/>
+          <Fallback name="BoundaryBackUpOrWait">
+            <BackUp backup_dist="1.0" backup_speed="0.15"/>
+            <AlwaysSuccess/>
+          </Fallback>
+          <WaitForDuration duration_sec="2.0"/>
+        </Sequence>
+      </Fallback>
+
+      <!-- ================================================================
+           GUARD 3: GPS quality adaptation (reactive)
+           ================================================================ -->
+      <Fallback name="GPSModeSelector">
+        <Sequence name="PreciseMode">
+          <IsGPSFixed/>
+          <SetNavMode mode="precise"/>
+        </Sequence>
+        <SetNavMode mode="degraded"/>
+      </Fallback>
+
+      <!-- ================================================================
+           MAIN LOGIC
+           Priority: critical battery → mow → home → record → idle
+           ================================================================ -->
+      <Fallback name="MainLogic">
+
+        <!-- ============================================================
+             a. Critical battery — emergency dock, clear command
+             Navigation failure is non-fatal (stay where we are).
+             ============================================================ -->
+        <Sequence name="CriticalBatteryDock">
+          <IsBatteryLow threshold="10.0"/>
+          <SetMowerEnabled enabled="false"/>
+          <StopMoving/>
+          <PublishHighLevelStatus state="1" state_name="CRITICAL_BATTERY_DOCKING"/>
+          <SaveObstacles/>
+          <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
+          <Fallback name="CriticalNavOrStop">
+            <NavigateToPose goal="{dock_pose}"/>
+            <!-- Navigation failed — stay stopped, battery is critical -->
+            <Sequence>
+              <PublishHighLevelStatus state="0" state_name="CRITICAL_BATTERY_NAV_FAILED"/>
+              <AlwaysSuccess/>
+            </Sequence>
+          </Fallback>
+          <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
+          <ClearCommand/>
+        </Sequence>
+
+        <!-- ============================================================
+             b. Mowing (COMMAND_START = 1)
+             ============================================================ -->
+        <Sequence name="MowingSequence">
+          <IsCommand command="1"/>
+
+          <!-- Undock: only if currently charging (on dock).
+               If already undocked, skip entirely. -->
+          <PublishHighLevelStatus state="2" state_name="UNDOCKING"/>
+          <WaitForDuration duration_sec="1.0"/>
+          <Fallback name="UndockOrSkip">
+            <!-- Already undocked? Skip. -->
+            <Inverter><IsCharging/></Inverter>
+            <!-- On dock — record GPS, back up, verify, calibrate heading -->
+            <Sequence name="UndockSequence">
+              <RecordUndockStart/>
+              <RetryUntilSuccessful num_attempts="3" name="UndockRetry">
+                <Sequence name="UndockAndVerify">
+                  <BackUp backup_dist="1.5" backup_speed="0.15"/>
+                  <WaitForDuration duration_sec="2.0"/>
+                  <Inverter><IsCharging/></Inverter>
+                </Sequence>
+              </RetryUntilSuccessful>
+              <!-- Compute heading from GPS displacement during undock -->
+              <CalibrateHeadingFromUndock/>
+            </Sequence>
+            <!-- Undock failed — abort -->
+            <Sequence name="UndockFailed">
+              <StopMoving/>
+              <PublishHighLevelStatus state="1" state_name="UNDOCK_FAILED"/>
+              <ClearCommand/>
+              <AlwaysFailure/>
+            </Sequence>
+          </Fallback>
+
+          <!-- Record if it was raining at start — user chose to mow in rain -->
+          <WasRainingAtStart/>
+
+          <!-- Compute coverage path -->
+          <PublishHighLevelStatus state="2" state_name="PLANNING"/>
+          <ComputeCoverage area_index="0" first_swath_start="{first_wp}"/>
+
+          <!-- Mowing with battery awareness -->
+          <PublishHighLevelStatus state="2" state_name="MOWING"/>
+
+          <Fallback name="CoverageWithRecovery">
+
+            <ReactiveSequence name="AdaptiveCoverage">
+
+              <!-- Reactive rain check: only if rain started DURING mowing.
+                   If user started mowing while already raining, ignore rain. -->
+              <Fallback name="RainGuard">
+                <Inverter><IsNewRain/></Inverter>
+                <Sequence name="RainDockAndResume">
+                  <SetMowerEnabled enabled="false"/>
+                  <StopMoving/>
+                  <PublishHighLevelStatus state="1" state_name="RAIN_DETECTED_DOCKING"/>
+                  <SaveObstacles/>
+                  <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
+                  <Fallback name="RainNavOrStay">
+                    <NavigateToPose goal="{dock_pose}"/>
+                    <AlwaysSuccess/>
+                  </Fallback>
+                  <PublishHighLevelStatus state="1" state_name="RAIN_WAITING"/>
+                  <!-- Wait for rain to stop, max ~12h -->
+                  <RetryUntilSuccessful num_attempts="1440">
+                    <Fallback>
+                      <Inverter><IsRainDetected/></Inverter>
+                      <Sequence>
+                        <WaitForDuration duration_sec="30.0"/>
+                        <AlwaysFailure/>
+                      </Sequence>
+                    </Fallback>
+                  </RetryUntilSuccessful>
+                  <PublishHighLevelStatus state="1" state_name="RAIN_DELAY"/>
+                  <WaitForDuration duration_sec="1800.0"/>
+                  <!-- Rain over — undock and resume mowing -->
+                  <PublishHighLevelStatus state="2" state_name="RESUMING_AFTER_RAIN"/>
+                  <WaitForDuration duration_sec="1.0"/>
+                  <Fallback name="RainResumeUndock">
+                    <RetryUntilSuccessful num_attempts="3">
+                      <Sequence>
+                        <BackUp backup_dist="1.5" backup_speed="0.15"/>
+                        <WaitForDuration duration_sec="2.0"/>
+                        <Inverter><IsCharging/></Inverter>
+                      </Sequence>
+                    </RetryUntilSuccessful>
+                    <Sequence>
+                      <StopMoving/>
+                      <PublishHighLevelStatus state="1" state_name="UNDOCK_FAILED"/>
+                      <ClearCommand/>
+                      <AlwaysFailure/>
+                    </Sequence>
+                  </Fallback>
+                  <PublishHighLevelStatus state="2" state_name="MOWING"/>
+                </Sequence>
+              </Fallback>
+
+              <!-- Reactive battery check -->
+              <Fallback name="BatteryGuard">
+                <Inverter><NeedsDocking threshold="20.0"/></Inverter>
+                <Sequence name="BatteryDockAndResume">
+                  <SetMowerEnabled enabled="false"/>
+                  <StopMoving/>
+                  <PublishHighLevelStatus state="1" state_name="LOW_BATTERY_DOCKING"/>
+                  <SaveObstacles/>
+                  <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
+                  <NavigateToPose goal="{dock_pose}"/>
+                  <PublishHighLevelStatus state="1" state_name="CHARGING"/>
+                  <!-- Wait for charge, max ~8 hours (960 × 30s) -->
+                  <RetryUntilSuccessful num_attempts="960">
+                    <Fallback>
+                      <IsBatteryAbove threshold="95.0"/>
+                      <Sequence>
+                        <WaitForDuration duration_sec="30.0"/>
+                        <AlwaysFailure/>
+                      </Sequence>
+                    </Fallback>
+                  </RetryUntilSuccessful>
+                  <!-- Charged — undock and verify -->
+                  <PublishHighLevelStatus state="2" state_name="RESUMING_UNDOCKING"/>
+                  <WaitForDuration duration_sec="1.0"/>
+                  <Fallback name="ResumeUndockOrAbort">
+                    <RetryUntilSuccessful num_attempts="3" name="ResumeUndockRetry">
+                      <Sequence>
+                        <BackUp backup_dist="1.5" backup_speed="0.15"/>
+                        <WaitForDuration duration_sec="2.0"/>
+                        <Inverter><IsCharging/></Inverter>
+                      </Sequence>
+                    </RetryUntilSuccessful>
+                    <!-- Resume undock failed — abort mowing -->
+                    <Sequence>
+                      <StopMoving/>
+                      <PublishHighLevelStatus state="1" state_name="UNDOCK_FAILED"/>
+                      <ClearCommand/>
+                      <AlwaysFailure/>
+                    </Sequence>
+                  </Fallback>
+                  <PublishHighLevelStatus state="2" state_name="MOWING"/>
+                </Sequence>
+              </Fallback>
+
+              <!-- Swath execution with recovery -->
+              <RetryUntilSuccessful num_attempts="3" name="RetrySwathExecution">
+                <Fallback name="ExecuteOrRecover">
+                  <ExecuteSwathBySwath/>
+                  <Sequence name="RecoverAndRetry">
+                    <PublishHighLevelStatus state="2" state_name="RECOVERING"/>
+                    <SetMowerEnabled enabled="false"/>
+                    <StopMoving/>
+                    <Fallback>
+                      <BackUp backup_dist="0.5" backup_speed="0.1"/>
+                      <AlwaysSuccess/>
+                    </Fallback>
+                    <ClearCostmap/>
+                    <WaitForDuration duration_sec="3.0"/>
+                    <AlwaysFailure/>
+                  </Sequence>
+                </Fallback>
+              </RetryUntilSuccessful>
+
+            </ReactiveSequence>
+
+            <!-- All retries exhausted — dock gracefully -->
+            <Sequence name="FailedCoverageDock">
+              <SetMowerEnabled enabled="false"/>
+              <SaveObstacles/>
+              <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
+              <PublishHighLevelStatus state="1" state_name="COVERAGE_FAILED_DOCKING"/>
+              <Fallback name="FailedCoverageNavOrStop">
+                <NavigateToPose goal="{dock_pose}"/>
+                <Sequence>
+                  <PublishHighLevelStatus state="0" state_name="NAV_TO_DOCK_FAILED"/>
+                  <AlwaysSuccess/>
+                </Sequence>
+              </Fallback>
+              <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
+              <ClearCommand/>
+            </Sequence>
+          </Fallback>
+
+          <!-- Mowing complete — dock -->
+          <SetMowerEnabled enabled="false"/>
+          <PublishHighLevelStatus state="1" state_name="MOWING_COMPLETE"/>
+          <SaveObstacles/>
+          <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
+          <NavigateToPose goal="{dock_pose}"/>
+          <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
+          <ClearCommand/>
+        </Sequence>
+
+        <!-- ============================================================
+             c. Home (COMMAND_HOME = 2)
+             ============================================================ -->
+        <Sequence name="HomeSequence">
+          <IsCommand command="2"/>
+          <SetMowerEnabled enabled="false"/>
+          <StopMoving/>
+          <PublishHighLevelStatus state="1" state_name="RETURNING_HOME"/>
+          <SaveObstacles/>
+          <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
+          <Fallback name="HomeNavOrStop">
+            <NavigateToPose goal="{dock_pose}"/>
+            <Sequence>
+              <PublishHighLevelStatus state="0" state_name="NAV_TO_DOCK_FAILED"/>
+              <AlwaysSuccess/>
+            </Sequence>
+          </Fallback>
+          <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
+          <ClearCommand/>
+        </Sequence>
+
+        <!-- ============================================================
+             d. Recording (COMMAND_S1 = 3)
+             ============================================================ -->
+        <Sequence name="RecordingSequence">
+          <IsCommand command="3"/>
+          <PublishHighLevelStatus state="3" state_name="RECORDING"/>
+          <WaitForDuration duration_sec="0.5"/>
+        </Sequence>
+
+        <!-- ============================================================
+             e. Idle default
+             ============================================================ -->
+        <Sequence name="IdleSequence">
+          <PublishHighLevelStatus state="1" state_name="IDLE"/>
+          <WaitForDuration duration_sec="0.5"/>
+        </Sequence>
+
+      </Fallback>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+</root>

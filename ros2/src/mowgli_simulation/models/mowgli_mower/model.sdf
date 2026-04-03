@@ -1,0 +1,540 @@
+<?xml version="1.0"?>
+<!--
+  model.sdf  — Mowgli Mower standalone Gazebo Ignition model (SDF 1.9)
+
+  Coordinate conventions (REP-103):
+    x  forward   y  left   z  up
+
+  Key geometry (YardForce Classic 500):
+    Base (chassis):  0.54 m long, 0.40 m wide, 0.19 m high, 8.76 kg
+    Drive wheels:    radius 0.04475 m, width 0.04 m, track 0.40 m (rear, x=-0.18)
+    Front casters:   radius 0.03 m, width 0.03 m, track 0.36 m (x=+0.22)
+    Blade disc:      radius 0.09 m, height 0.01 m (beneath chassis)
+    IMU:             at chassis centre, half-height
+    LiDAR:           0.20 m forward, 0.03 m above chassis top
+    GPS:             at chassis centre top (+0.01 m)
+
+  base_link is placed at wheel-axle height:
+    z = wheel_radius = 0.04475 m above ground
+
+  All joints are relative to base_link unless noted.
+-->
+<sdf version="1.9">
+  <model name="mowgli_mower">
+    <pose>0 0 0.04475 0 0 0</pose>
+
+    <!-- ==============================================================
+         BASE LINK — chassis body
+         ============================================================== -->
+    <link name="base_link">
+      <inertial>
+        <mass>8.76</mass>
+        <!-- Box inertia: m/12 * (y^2+z^2), etc. for 0.54×0.40×0.19 -->
+        <inertia>
+          <ixx>0.1459</ixx>  <!-- 8.76/12*(0.40^2+0.19^2) = 0.73*(0.16+0.0361) -->
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.2396</iyy>  <!-- 8.76/12*(0.54^2+0.19^2) = 0.73*(0.2916+0.0361) -->
+          <iyz>0</iyz>
+          <izz>0.3296</izz>  <!-- 8.76/12*(0.54^2+0.40^2) = 0.73*(0.2916+0.16) -->
+        </inertia>
+      </inertial>
+
+      <!-- Chassis visual — green
+           visibility_flags 0x0001: invisible to LiDAR (mask 0xFFFF0000) -->
+      <visual name="chassis_visual">
+        <pose>0 0 0.095 0 0 0</pose>
+        <geometry>
+          <box><size>0.54 0.40 0.19</size></box>
+        </geometry>
+        <material>
+          <ambient>0.18 0.55 0.18 1</ambient>
+          <diffuse>0.20 0.60 0.20 1</diffuse>
+          <specular>0.1 0.3 0.1 1</specular>
+        </material>
+        <visibility_flags>0x0001</visibility_flags>
+      </visual>
+
+      <!-- Chassis collision -->
+      <collision name="chassis_collision">
+        <pose>0 0 0.095 0 0 0</pose>
+        <geometry>
+          <box><size>0.54 0.40 0.19</size></box>
+        </geometry>
+        <surface>
+          <friction>
+            <ode><mu>0.6</mu><mu2>0.6</mu2></ode>
+          </friction>
+        </surface>
+      </collision>
+
+      <!-- IMU sensor embedded in base_link -->
+      <sensor name="imu_sensor" type="imu">
+        <pose>0 0 0.095 0 0 0</pose>
+        <always_on>true</always_on>
+        <update_rate>100</update_rate>
+        <visualize>false</visualize>
+        <topic>/imu/data_raw</topic>
+        <imu>
+          <angular_velocity>
+            <x>
+              <noise type="gaussian">
+                <mean>0.0</mean><stddev>0.009</stddev>
+                <bias_mean>0.00075</bias_mean><bias_stddev>0.005</bias_stddev>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0.0</mean><stddev>0.009</stddev>
+                <bias_mean>0.00075</bias_mean><bias_stddev>0.005</bias_stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0.0</mean><stddev>0.009</stddev>
+                <bias_mean>0.00075</bias_mean><bias_stddev>0.005</bias_stddev>
+              </noise>
+            </z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x>
+              <noise type="gaussian">
+                <mean>0.0</mean><stddev>0.021</stddev>
+                <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0.0</mean><stddev>0.021</stddev>
+                <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0.0</mean><stddev>0.021</stddev>
+                <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev>
+              </noise>
+            </z>
+          </linear_acceleration>
+          <orientation_reference_frame>
+            <localization>GRAV_UP</localization>
+          </orientation_reference_frame>
+        </imu>
+      </sensor>
+
+      <!-- GPS / NavSat sensor -->
+      <sensor name="navsat_sensor" type="navsat">
+        <pose>0 0 0.20 0 0 0</pose>
+        <always_on>true</always_on>
+        <update_rate>5</update_rate>
+        <topic>/gps/fix</topic>
+        <navsat>
+          <position_sensing>
+            <horizontal>
+              <noise type="gaussian">
+                <!-- RTK-fixed: ~2cm accuracy → ~1.8e-7 degrees -->
+                <mean>0.0</mean><stddev>0.0000002</stddev>
+              </noise>
+            </horizontal>
+            <vertical>
+              <noise type="gaussian">
+                <mean>0.0</mean><stddev>0.05</stddev>
+              </noise>
+            </vertical>
+          </position_sensing>
+        </navsat>
+      </sensor>
+    </link>
+
+    <!-- ==============================================================
+         LEFT DRIVE WHEEL (rear)
+         Position: x=-0.18, y=+0.20 (track/2), z=0
+         ============================================================== -->
+    <link name="left_wheel">
+      <pose>-0.18 0.20 0 -1.5708 0 0</pose>
+      <inertial>
+        <mass>0.5</mass>
+        <!-- Cylinder axis along z (after rotation): ixx=iyy=m/12*(3r^2+h^2), izz=m/2*r^2 -->
+        <inertia>
+          <ixx>0.000317</ixx>  <!-- 0.5/12*(3*0.04475^2+0.04^2) -->
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000317</iyy>
+          <iyz>0</iyz>
+          <izz>0.000501</izz>  <!-- 0.5/2*0.04475^2 -->
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <cylinder><radius>0.04475</radius><length>0.04</length></cylinder>
+        </geometry>
+        <material>
+          <ambient>0.2 0.2 0.2 1</ambient>
+          <diffuse>0.2 0.2 0.2 1</diffuse>
+        </material>
+        <visibility_flags>0x0001</visibility_flags>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <cylinder><radius>0.04475</radius><length>0.04</length></cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>0.5</mu2>
+              <fdir1>0 0 1</fdir1>
+              <slip1>0.0</slip1>
+              <slip2>0.0</slip2>
+            </ode>
+            <torsional>
+              <ode><slip>0.0</slip></ode>
+            </torsional>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1000000.0</kp>
+              <kd>100.0</kd>
+              <max_vel>0.1</max_vel>
+              <min_depth>0.001</min_depth>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+    </link>
+
+    <joint name="left_wheel_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>left_wheel</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <dynamics><damping>0.1</damping><friction>0.1</friction></dynamics>
+        <limit><lower>-1e+16</lower><upper>1e+16</upper></limit>
+      </axis>
+    </joint>
+
+    <!-- ==============================================================
+         RIGHT DRIVE WHEEL (rear)
+         Position: x=-0.18, y=-0.20 (track/2), z=0
+         ============================================================== -->
+    <link name="right_wheel">
+      <pose>-0.18 -0.20 0 1.5708 0 0</pose>
+      <inertial>
+        <mass>0.5</mass>
+        <inertia>
+          <ixx>0.000317</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000317</iyy>
+          <iyz>0</iyz>
+          <izz>0.000501</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <cylinder><radius>0.04475</radius><length>0.04</length></cylinder>
+        </geometry>
+        <material>
+          <ambient>0.2 0.2 0.2 1</ambient>
+          <diffuse>0.2 0.2 0.2 1</diffuse>
+        </material>
+        <visibility_flags>0x0001</visibility_flags>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <cylinder><radius>0.04475</radius><length>0.04</length></cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>0.5</mu2>
+              <fdir1>0 0 1</fdir1>
+              <slip1>0.0</slip1>
+              <slip2>0.0</slip2>
+            </ode>
+            <torsional>
+              <ode><slip>0.0</slip></ode>
+            </torsional>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1000000.0</kp>
+              <kd>100.0</kd>
+              <max_vel>0.1</max_vel>
+              <min_depth>0.001</min_depth>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+    </link>
+
+    <joint name="right_wheel_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>right_wheel</child>
+      <axis>
+        <xyz>0 0 -1</xyz>
+        <dynamics><damping>0.1</damping><friction>0.1</friction></dynamics>
+        <limit><lower>-1e+16</lower><upper>1e+16</upper></limit>
+      </axis>
+    </joint>
+
+    <!-- ==============================================================
+         FRONT LEFT CASTER WHEEL
+         Position: x=+0.22, y=+0.18 (caster_track/2), z drops to ground
+         z = -(wheel_radius - caster_radius) = -(0.04475 - 0.03) = -0.01475
+         ============================================================== -->
+    <link name="front_left_caster">
+      <pose>0.22 0.18 -0.01475 0 0 0</pose>
+      <inertial>
+        <mass>0.2</mass>
+        <!-- Sphere: I = 2/5 * m * r^2 = 2/5 * 0.2 * 0.03^2 -->
+        <inertia>
+          <ixx>0.000072</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000072</iyy>
+          <iyz>0</iyz>
+          <izz>0.000072</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <sphere><radius>0.03</radius></sphere>
+        </geometry>
+        <material>
+          <ambient>0.5 0.5 0.5 1</ambient>
+          <diffuse>0.6 0.6 0.6 1</diffuse>
+        </material>
+        <visibility_flags>0x0001</visibility_flags>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <sphere><radius>0.03</radius></sphere>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.01</mu>
+              <mu2>0.01</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1000000.0</kp>
+              <kd>100.0</kd>
+              <max_vel>1.0</max_vel>
+              <min_depth>0.001</min_depth>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+    </link>
+
+    <joint name="front_left_caster_joint" type="ball">
+      <parent>base_link</parent>
+      <child>front_left_caster</child>
+    </joint>
+
+    <!-- ==============================================================
+         FRONT RIGHT CASTER WHEEL
+         Position: x=+0.22, y=-0.18 (caster_track/2), z=-0.01475
+         ============================================================== -->
+    <link name="front_right_caster">
+      <pose>0.22 -0.18 -0.01475 0 0 0</pose>
+      <inertial>
+        <mass>0.2</mass>
+        <inertia>
+          <ixx>0.000072</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000072</iyy>
+          <iyz>0</iyz>
+          <izz>0.000072</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <sphere><radius>0.03</radius></sphere>
+        </geometry>
+        <material>
+          <ambient>0.5 0.5 0.5 1</ambient>
+          <diffuse>0.6 0.6 0.6 1</diffuse>
+        </material>
+        <visibility_flags>0x0001</visibility_flags>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <sphere><radius>0.03</radius></sphere>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.01</mu>
+              <mu2>0.01</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1000000.0</kp>
+              <kd>100.0</kd>
+              <max_vel>1.0</max_vel>
+              <min_depth>0.001</min_depth>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+    </link>
+
+    <joint name="front_right_caster_joint" type="ball">
+      <parent>base_link</parent>
+      <child>front_right_caster</child>
+    </joint>
+
+    <!-- ==============================================================
+         BLADE DISC
+         Centred under chassis, just above ground
+         z = -(wheel_radius) + 0.05 = -0.04475 + 0.05 = 0.00525
+         ============================================================== -->
+    <link name="blade_link">
+      <pose>0 0 0.00525 0 0 0</pose>
+      <inertial>
+        <mass>0.3</mass>
+        <inertia>
+          <ixx>0.000610</ixx>  <!-- m/12*(3r^2+h^2) = 0.3/12*(3*0.0081+0.0001) = 0.000610 -->
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000610</iyy>
+          <iyz>0</iyz>
+          <izz>0.001215</izz>  <!-- m/2*r^2 = 0.3/2*0.0081 -->
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <cylinder><radius>0.09</radius><length>0.01</length></cylinder>
+        </geometry>
+        <material>
+          <ambient>0.75 0.75 0.75 1</ambient>
+          <diffuse>0.80 0.80 0.80 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+        </material>
+        <visibility_flags>0x0001</visibility_flags>
+      </visual>
+      <!-- No collision — blade is virtual in simulation -->
+    </link>
+
+    <joint name="blade_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>blade_link</child>
+    </joint>
+
+    <!-- ==============================================================
+         LIDAR LINK
+         Mounted 0.20 m forward and 0.03 m above chassis top
+         chassis top = base_height = 0.19 m, so lidar z = 0.19 + 0.03 = 0.22
+         ============================================================== -->
+    <link name="laser_link">
+      <pose>0.20 0 0.22 0 0 0</pose>
+      <inertial>
+        <mass>0.18</mass>
+        <inertia>
+          <ixx>0.0001</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0001</iyy><iyz>0</iyz><izz>0.0001</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <cylinder><radius>0.04</radius><length>0.06</length></cylinder>
+        </geometry>
+        <material>
+          <ambient>0.15 0.15 0.15 1</ambient>
+          <diffuse>0.15 0.15 0.15 1</diffuse>
+        </material>
+        <visibility_flags>0x0001</visibility_flags>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <cylinder><radius>0.04</radius><length>0.06</length></cylinder>
+        </geometry>
+      </collision>
+
+      <!-- 2-D LiDAR sensor — 360 deg, 720 samples, 10 Hz -->
+      <!-- visibility_mask 0xFFFF0000: the LiDAR ignores geometry tagged with
+           visibility_flags in the lower 16 bits (0x0001 = robot self). This
+           prevents self-reflections from the chassis/wheels without needing
+           to increase range_min. -->
+      <sensor name="lidar_sensor" type="gpu_lidar">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+        <visibility_mask>0xFFFF0000</visibility_mask>
+        <topic>/scan</topic>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>720</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159265</min_angle>
+              <max_angle>3.14159265</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <!-- Reduced from 0.35m: visibility_mask now filters self-reflections -->
+            <min>0.10</min>
+            <max>12.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.01</stddev>
+          </noise>
+        </lidar>
+      </sensor>
+    </link>
+
+    <joint name="laser_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>laser_link</child>
+    </joint>
+
+    <!-- ==============================================================
+         DIFFERENTIAL DRIVE PLUGIN
+         gz-sim-diff-drive-system (Ignition Fortress)
+         ============================================================== -->
+    <plugin
+        filename="gz-sim-diff-drive-system"
+        name="gz::sim::systems::DiffDrive">
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>0.40</wheel_separation>
+      <wheel_radius>0.04475</wheel_radius>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <topic>/cmd_vel</topic>
+      <odom_topic>/odom</odom_topic>
+      <tf_topic>/tf</tf_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+      <min_velocity>-1.0</min_velocity>
+      <max_velocity>1.0</max_velocity>
+      <min_acceleration>-3.0</min_acceleration>
+      <max_acceleration>3.0</max_acceleration>
+    </plugin>
+
+    <!-- Joint state publisher — broadcasts wheel joint positions -->
+    <plugin
+        filename="gz-sim-joint-state-publisher-system"
+        name="gz::sim::systems::JointStatePublisher">
+      <topic>/joint_states</topic>
+      <joint_name>left_wheel_joint</joint_name>
+      <joint_name>right_wheel_joint</joint_name>
+    </plugin>
+
+  </model>
+</sdf>

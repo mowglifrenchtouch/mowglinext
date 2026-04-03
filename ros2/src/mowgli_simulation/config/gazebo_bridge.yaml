@@ -1,0 +1,55 @@
+# gazebo_bridge.yaml
+#
+# ros_gz_bridge parameter file for the Mowgli simulation.
+# Maps Gazebo Ignition topics to/from ROS2 topics.
+#
+# direction convention:
+#   ROS_TO_GZ  — ROS2 publisher → Gazebo subscriber
+#   GZ_TO_ROS  — Gazebo publisher → ROS2 subscriber
+#   BIDIRECTIONAL — both directions
+
+- ros_topic_name: /cmd_vel
+  gz_topic_name: /cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: gz.msgs.Twist
+  direction: ROS_TO_GZ
+
+- ros_topic_name: /wheel_odom
+  gz_topic_name: /odom
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /scan
+  gz_topic_name: /scan
+  ros_type_name: sensor_msgs/msg/LaserScan
+  gz_type_name: gz.msgs.LaserScan
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /imu/data
+  gz_topic_name: /imu/data_raw
+  ros_type_name: sensor_msgs/msg/Imu
+  gz_type_name: gz.msgs.IMU
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /gps/fix
+  gz_topic_name: /gps/fix
+  ros_type_name: sensor_msgs/msg/NavSatFix
+  gz_type_name: gz.msgs.NavSat
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /joint_states
+  gz_topic_name: /joint_states
+  ros_type_name: sensor_msgs/msg/JointState
+  gz_type_name: gz.msgs.Model
+  direction: GZ_TO_ROS
+
+# NOTE: /tf is NOT bridged — Gazebo's diff-drive publishes odom→base_link
+# which conflicts with ekf_odom's odom→base_link, causing pose flickering.
+# All TF is handled by robot_state_publisher, ekf_odom, and slam_toolbox.
+
+- ros_topic_name: /clock
+  gz_topic_name: /clock
+  ros_type_name: rosgraph_msgs/msg/Clock
+  gz_type_name: gz.msgs.Clock
+  direction: GZ_TO_ROS

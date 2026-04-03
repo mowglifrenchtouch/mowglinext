@@ -1,0 +1,21 @@
+# Goal
+geometry_msgs/Polygon outer_boundary
+geometry_msgs/Polygon[] obstacles
+float64 mow_angle_deg  # -1 = auto-optimize
+bool skip_outline
+---
+# Result
+bool success
+string message
+nav_msgs/Path path             # Full discretized coverage path (swaths + turns)
+nav_msgs/Path outline_path     # Headland outline for visualization
+float64 total_distance
+float64 coverage_area
+# Swath endpoints for swath-by-swath execution (blade on/off control).
+# swath_starts[i] and swath_ends[i] define swath i.
+geometry_msgs/Point[] swath_starts
+geometry_msgs/Point[] swath_ends
+---
+# Feedback
+float32 progress_percent
+string phase  # "headland", "decomposition", "swaths", "routing", "path_planning"

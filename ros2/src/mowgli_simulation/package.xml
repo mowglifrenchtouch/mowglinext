@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mowgli_simulation</name>
+  <version>0.1.0</version>
+  <description>
+    Gazebo Ignition (Fortress) simulation package for the Mowgli autonomous robot mower.
+    Provides SDF worlds, a standalone Gazebo mower model, ros_gz_bridge configuration,
+    and ROS2 launch files for running the full simulation stack.
+  </description>
+  <maintainer email="cedric@example.com">Cedric</maintainer>
+  <license>GPL-3.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- C++ node dependencies -->
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <!-- Gazebo Ignition integration -->
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+
+  <!-- ROS2 core launch infrastructure -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <!-- Robot description and state publishing -->
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <!-- Visualisation -->
+  <exec_depend>rviz2</exec_depend>
+
+  <!-- Mowgli packages -->
+  <exec_depend>mowgli_bringup</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
