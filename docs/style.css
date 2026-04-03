@@ -10,6 +10,7 @@
   --text-heading: #f8fafc;
   --accent: #38bdf8;
   --border: #334155;
+  --yellow: #facc15;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -28,6 +29,34 @@ a:hover { text-decoration: underline; }
   max-width: 1100px;
   margin: 0 auto;
   padding: 0 24px;
+}
+
+/* ─── Beta Banner ─────────────────────────────────── */
+.beta-banner {
+  background: linear-gradient(90deg, #422006, #713f12);
+  color: var(--yellow);
+  text-align: center;
+  padding: 10px 24px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.beta-banner a {
+  color: #fef08a;
+  text-decoration: underline;
+  margin-left: 4px;
+}
+
+.beta-tag {
+  display: inline-block;
+  background: var(--yellow);
+  color: #000;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: 8px;
+  letter-spacing: 0.05em;
 }
 
 /* ─── Nav ─────────────────────────────────────────── */
@@ -71,7 +100,7 @@ nav .links a:hover { color: var(--text-heading); text-decoration: none; }
 
 /* ─── Hero ────────────────────────────────────────── */
 .hero {
-  padding: 100px 0 80px;
+  padding: 60px 0 80px;
   text-align: center;
 }
 
@@ -97,6 +126,17 @@ nav .links a:hover { color: var(--text-heading); text-decoration: none; }
   gap: 16px;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+/* Mower animation */
+.mower-scene {
+  max-width: 700px;
+  margin: 0 auto 32px;
+}
+
+.mower-svg {
+  width: 100%;
+  height: auto;
 }
 
 .btn {
@@ -129,6 +169,59 @@ nav .links a:hover { color: var(--text-heading); text-decoration: none; }
 .btn-secondary:hover {
   background: var(--bg-code);
   text-decoration: none;
+}
+
+/* ─── How It Works ────────────────────────────────── */
+.how-it-works {
+  padding: 80px 0;
+  background: linear-gradient(180deg, var(--bg) 0%, rgba(22, 163, 74, 0.05) 50%, var(--bg) 100%);
+}
+
+.how-it-works h2 {
+  font-size: 2rem;
+  color: var(--text-heading);
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.flow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 16px;
+}
+
+.flow-step {
+  flex: 1;
+  max-width: 300px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  text-align: center;
+}
+
+.flow-step .flow-icon {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+}
+
+.flow-step h3 {
+  font-size: 1.2rem;
+  color: var(--text-heading);
+  margin-bottom: 8px;
+}
+
+.flow-step p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.flow-arrow {
+  font-size: 2rem;
+  color: var(--green);
+  padding-top: 60px;
+  font-weight: 300;
 }
 
 /* ─── Features ────────────────────────────────────── */
@@ -266,35 +359,93 @@ nav .links a:hover { color: var(--text-heading); text-decoration: none; }
   white-space: pre;
 }
 
-/* ─── Hardware ────────────────────────────────────── */
-.hardware {
+/* ─── Tribute ─────────────────────────────────────── */
+.tribute {
+  padding: 80px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--bg) 0%, rgba(56, 189, 248, 0.03) 50%, var(--bg) 100%);
+}
+
+.tribute h2 {
+  font-size: 2rem;
+  color: var(--text-heading);
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.tribute-text {
+  color: var(--text-muted);
+  max-width: 720px;
+  margin: 0 auto 20px;
+  text-align: center;
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+
+.tribute-text strong {
+  color: var(--text-heading);
+}
+
+.tribute-text:last-child {
+  margin-bottom: 0;
+}
+
+/* ─── Acknowledgments ─────────────────────────────── */
+.acknowledgments {
   padding: 80px 0;
 }
 
-.hardware h2 {
+.acknowledgments h2 {
   font-size: 2rem;
   color: var(--text-heading);
   text-align: center;
   margin-bottom: 48px;
 }
 
-.hw-grid {
+.thanks-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
 }
 
-.hw-item {
+.thanks-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 20px;
+  padding: 24px;
   text-align: center;
+  transition: border-color 0.2s;
 }
 
-.hw-item .icon { font-size: 2.5rem; margin-bottom: 8px; }
-.hw-item h4 { color: var(--text-heading); font-size: 0.95rem; }
-.hw-item p { color: var(--text-muted); font-size: 0.8rem; }
+.thanks-card:hover {
+  border-color: var(--green);
+}
+
+.thanks-icon {
+  font-size: 2rem;
+  margin-bottom: 12px;
+}
+
+.thanks-card h3 {
+  color: var(--text-heading);
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.thanks-card h3 a {
+  color: var(--text-heading);
+}
+
+.thanks-card h3 a:hover {
+  color: var(--green);
+}
+
+.thanks-card p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
 
 /* ─── Community ───────────────────────────────────── */
 .community {
@@ -334,9 +485,25 @@ footer a { color: var(--text-muted); }
 footer a:hover { color: var(--text-heading); }
 
 /* ─── Responsive ──────────────────────────────────── */
+@media (max-width: 768px) {
+  .flow {
+    flex-direction: column;
+    align-items: center;
+  }
+  .flow-arrow {
+    transform: rotate(90deg);
+    padding-top: 0;
+  }
+  .flow-step {
+    max-width: 100%;
+  }
+}
+
 @media (max-width: 640px) {
   .hero h1 { font-size: 2.25rem; }
   .hero .tagline { font-size: 1rem; }
-  .hero { padding: 60px 0 40px; }
-  .features, .architecture, .getting-started, .hardware, .community { padding: 48px 0; }
+  .hero { padding: 40px 0; }
+  .mower-scene { margin-bottom: 16px; }
+  .features, .architecture, .getting-started, .how-it-works, .tribute, .community { padding: 48px 0; }
+  nav .links { gap: 12px; font-size: 0.8rem; }
 }

@@ -113,6 +113,14 @@ We welcome contributions! Claude AI reviews every PR and assists in issues.
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - Mention **@claude** in any issue or PR for AI assistance
 
+## Acknowledgments
+
+- **[cloudn1ne](https://github.com/cloudn1ne)** — for the original Mowgli reverse engineering work that made everything possible
+- **nekraus** — for the countless late nights spent together making things actually work
+- **[OpenMower](https://openmower.de/)** — for proving robot mowers can be truly intelligent and inspiring this entire effort
+- **Mowgli French Community** — for all the testing, feedback, and encouragement that kept us going
+- **Every Mowgli user** — every install, every bug report, every "it works!" gives us the courage to keep spending nights on this project
+
 ## License
 
 [GPLv3](LICENSE) — same as OpenMower, because open source is how we all win.

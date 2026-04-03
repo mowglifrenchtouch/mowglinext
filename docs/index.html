@@ -10,15 +10,21 @@
 </head>
 <body>
 
+<!-- ─── Beta Banner ─────────────────────────────────── -->
+<div class="beta-banner">
+  <span class="beta-tag">BETA</span>
+  MowgliNext is under active development — not yet ready for production use.
+  <a href="https://github.com/cedbossneo/mowglinext">Follow progress on GitHub</a>
+</div>
+
 <!-- ─── Navigation ──────────────────────────────────── -->
 <nav>
   <div class="container">
     <div class="logo"><img src="icon.svg" alt="" width="28" height="28" style="vertical-align: middle; margin-right: 8px;">Mowgli<span>Next</span></div>
     <ul class="links">
+      <li><a href="#how-it-works">How It Works</a></li>
       <li><a href="#features">Features</a></li>
-      <li><a href="#architecture">Architecture</a></li>
       <li><a href="#getting-started">Get Started</a></li>
-      <li><a href="#hardware">Hardware</a></li>
       <li><a href="https://github.com/cedbossneo/mowglinext/wiki">Wiki</a></li>
       <li><a href="https://github.com/cedbossneo/mowglinext">GitHub</a></li>
     </ul>
@@ -28,16 +34,129 @@
 <!-- ─── Hero ────────────────────────────────────────── -->
 <section class="hero">
   <div class="container">
-    <img src="logo.svg" alt="MowgliNext" width="280" style="margin-bottom: 24px;">
+    <!-- Animated mower scene -->
+    <div class="mower-scene">
+      <svg viewBox="0 0 800 200" class="mower-svg">
+        <!-- Grass -->
+        <rect x="0" y="140" width="800" height="60" fill="#166534" rx="4"/>
+        <rect x="0" y="135" width="800" height="20" fill="#22c55e" rx="4"/>
+
+        <!-- Mowed path (lighter) -->
+        <rect class="mowed-path" x="0" y="135" width="0" height="20" fill="#4ade80" rx="4">
+          <animate attributeName="width" from="0" to="800" dur="8s" repeatCount="indefinite"/>
+        </rect>
+
+        <!-- Mowing lines -->
+        <g class="mow-lines" opacity="0.3">
+          <line x1="0" y1="140" x2="0" y2="152" stroke="#86efac" stroke-width="1">
+            <animate attributeName="x1" from="40" to="840" dur="8s" repeatCount="indefinite"/>
+            <animate attributeName="x2" from="40" to="840" dur="8s" repeatCount="indefinite"/>
+          </line>
+        </g>
+
+        <!-- LiDAR scan cone -->
+        <g class="lidar-cone">
+          <path d="M0,110 L-60,50 A70,70 0 0,1 60,50 Z" fill="#22c55e" opacity="0.08">
+            <animateTransform attributeName="transform" type="translate" from="80,0" to="880,0" dur="8s" repeatCount="indefinite"/>
+          </path>
+          <path d="M0,110 L-40,65 A50,50 0 0,1 40,65 Z" fill="#22c55e" opacity="0.12">
+            <animateTransform attributeName="transform" type="translate" from="80,0" to="880,0" dur="8s" repeatCount="indefinite"/>
+          </path>
+          <!-- LiDAR rays -->
+          <g opacity="0.2">
+            <line x1="0" y1="110" x2="-50" y2="55" stroke="#22c55e" stroke-width="1">
+              <animateTransform attributeName="transform" type="translate" from="80,0" to="880,0" dur="8s" repeatCount="indefinite"/>
+            </line>
+            <line x1="0" y1="110" x2="-25" y2="48" stroke="#22c55e" stroke-width="1">
+              <animateTransform attributeName="transform" type="translate" from="80,0" to="880,0" dur="8s" repeatCount="indefinite"/>
+            </line>
+            <line x1="0" y1="110" x2="0" y2="45" stroke="#22c55e" stroke-width="1">
+              <animateTransform attributeName="transform" type="translate" from="80,0" to="880,0" dur="8s" repeatCount="indefinite"/>
+            </line>
+            <line x1="0" y1="110" x2="25" y2="48" stroke="#22c55e" stroke-width="1">
+              <animateTransform attributeName="transform" type="translate" from="80,0" to="880,0" dur="8s" repeatCount="indefinite"/>
+            </line>
+            <line x1="0" y1="110" x2="50" y2="55" stroke="#22c55e" stroke-width="1">
+              <animateTransform attributeName="transform" type="translate" from="80,0" to="880,0" dur="8s" repeatCount="indefinite"/>
+            </line>
+          </g>
+        </g>
+
+        <!-- GPS satellite signals -->
+        <g opacity="0.15">
+          <circle cx="650" cy="20" r="3" fill="#38bdf8"/>
+          <line x1="650" y1="23" x2="0" y2="100" stroke="#38bdf8" stroke-width="0.5" stroke-dasharray="4,4">
+            <animate attributeName="x2" from="80" to="880" dur="8s" repeatCount="indefinite"/>
+          </line>
+          <circle cx="720" cy="35" r="2" fill="#38bdf8"/>
+          <line x1="720" y1="37" x2="0" y2="100" stroke="#38bdf8" stroke-width="0.5" stroke-dasharray="4,4">
+            <animate attributeName="x2" from="85" to="885" dur="8s" repeatCount="indefinite"/>
+          </line>
+        </g>
+
+        <!-- Robot mower -->
+        <g class="mower-bot">
+          <animateTransform attributeName="transform" type="translate" from="80,0" to="880,0" dur="8s" repeatCount="indefinite"/>
+          <!-- Body -->
+          <rect x="-32" y="104" rx="10" ry="10" width="64" height="32" fill="#334155" stroke="#475569" stroke-width="1.5"/>
+          <!-- Wheels -->
+          <circle cx="-18" cy="138" r="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+          <circle cx="18" cy="138" r="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+          <!-- LiDAR dome -->
+          <circle cx="0" cy="102" r="6" fill="#22c55e"/>
+          <circle cx="0" cy="102" r="3" fill="#0f172a"/>
+          <!-- GPS antenna -->
+          <line x1="20" y1="104" x2="20" y2="90" stroke="#94a3b8" stroke-width="2"/>
+          <circle cx="20" cy="88" r="3" fill="#38bdf8"/>
+          <!-- Status LED -->
+          <circle cx="-12" cy="118" r="2.5" fill="#22c55e">
+            <animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite"/>
+          </circle>
+        </g>
+
+        <!-- Obstacle -->
+        <g>
+          <rect x="500" y="115" rx="4" ry="4" width="20" height="22" fill="#78716c" opacity="0.6"/>
+          <text x="510" y="110" text-anchor="middle" font-size="14" opacity="0.4">🪨</text>
+        </g>
+      </svg>
+    </div>
+
     <h1>Mowgli<span>Next</span></h1>
     <p class="tagline">
-      Open-source autonomous robot mower built on ROS2 Jazzy.
-      LiDAR SLAM, RTK-GPS, behavior trees, and intelligent coverage planning — all in one monorepo.
+      Your mower, but smarter. Open-source autonomous navigation built on ROS2 —
+      so your robot mower actually knows where it is, where it's going, and what's in the way.
     </p>
     <div class="buttons">
       <a href="#getting-started" class="btn btn-primary">Get Started</a>
       <a href="https://github.com/cedbossneo/mowglinext" class="btn btn-secondary">View on GitHub</a>
-      <a href="https://github.com/cedbossneo/mowglinext/wiki" class="btn btn-secondary">Documentation</a>
+      <a href="https://github.com/cedbossneo/mowglinext/wiki" class="btn btn-secondary">Read the Docs</a>
+    </div>
+  </div>
+</section>
+
+<!-- ─── How It Works ────────────────────────────────── -->
+<section class="how-it-works" id="how-it-works">
+  <div class="container">
+    <h2>How It Works</h2>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-icon">📡</div>
+        <h3>See</h3>
+        <p>LiDAR scans the surroundings 10x/second. RTK-GPS pinpoints position to centimeter accuracy. The robot builds a live map of your garden.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-icon">🧠</div>
+        <h3>Think</h3>
+        <p>A behavior tree decides what to do: mow, dock, avoid obstacles, wait for rain to stop. Nav2 plans optimal paths. No random bouncing.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-icon">🔄</div>
+        <h3>Mow</h3>
+        <p>Fields2Cover generates efficient stripe patterns. The robot follows them precisely, tracking progress and replanning around obstacles.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -67,12 +186,6 @@
       </div>
 
       <div class="feature-card">
-        <div class="icon">🔄</div>
-        <h3>Coverage Planning</h3>
-        <p>Fields2Cover v2 generates optimal boustrophedon mowing patterns with headland passes, configurable angles, and obstacle awareness.</p>
-      </div>
-
-      <div class="feature-card">
         <div class="icon">🚧</div>
         <h3>Obstacle Avoidance</h3>
         <p>Real-time collision monitor with polygon stop/slow zones. The robot navigates around obstacles, not just stops.</p>
@@ -80,7 +193,7 @@
 
       <div class="feature-card">
         <div class="icon">🐳</div>
-        <h3>Docker Deployment</h3>
+        <h3>Docker Deploy</h3>
         <p>One-command deployment with Docker Compose. Cyclone DDS for reliable inter-container communication on ARM boards.</p>
       </div>
 
@@ -92,8 +205,14 @@
 
       <div class="feature-card">
         <div class="icon">🤖</div>
-        <h3>AI-Powered Development</h3>
-        <p>Claude reviews every PR, proposes improvements weekly, and responds to @claude mentions in issues. Community + AI collaboration.</p>
+        <h3>AI-Powered Dev</h3>
+        <p>Claude reviews every PR, proposes improvements weekly, and responds to @claude mentions. Community + AI collaboration.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="icon">🔌</div>
+        <h3>Your Existing Hardware</h3>
+        <p>Works with your stock YardForce board — no need to replace electronics. Add sensors and capabilities on top of what you have.</p>
       </div>
 
       <div class="feature-card">
@@ -172,42 +291,60 @@ docker compose up -d</code>
   </div>
 </section>
 
-<!-- ─── Hardware ────────────────────────────────────── -->
-<section class="hardware" id="hardware">
+<!-- ─── OpenMower Tribute ───────────────────────────── -->
+<section class="tribute" id="openmower">
   <div class="container">
-    <h2>Supported Hardware</h2>
-    <div class="hw-grid">
+    <h2>Standing on the Shoulders of OpenMower</h2>
+    <p class="tribute-text">
+      MowgliNext exists because of <a href="https://openmower.de/">OpenMower</a>.
+      They proved that robot mowers can be truly intelligent — not just bouncing randomly
+      or following a buried wire, but actually knowing where they are and planning where to go.
+      That inspiration sparked everything you see here.
+    </p>
+    <p class="tribute-text">
+      We're not trying to replace OpenMower — we're taking a different path.
+      OpenMower replaces the stock electronics with custom boards designed for the job.
+      Mowgli works with your existing hardware, adding capabilities on top.
+      As our ambitions grew, we needed a fresh ROS2 foundation to keep evolving —
+      and by going our own way, we give OpenMower more freedom to iterate too.
+    </p>
+    <p class="tribute-text">
+      Different paths, same goal: smarter mowers for everyone.
+      <br><strong>Thank you, OpenMower team.</strong>
+    </p>
+  </div>
+</section>
 
-      <div class="hw-item">
-        <div class="icon">🏗️</div>
-        <h4>YardForce Classic 500</h4>
-        <p>500, 500B, LUV1000Ri</p>
+<!-- ─── Acknowledgments ──────────────────────────────── -->
+<section class="acknowledgments">
+  <div class="container">
+    <h2>Thank You</h2>
+    <div class="thanks-grid">
+      <div class="thanks-card">
+        <div class="thanks-icon">🔧</div>
+        <h3><a href="https://github.com/cloudn1ne">cloudn1ne</a></h3>
+        <p>For the original Mowgli reverse engineering work — cracking open the YardForce hardware and showing us what's inside. None of this would exist without that first step.</p>
       </div>
-
-      <div class="hw-item">
-        <div class="icon">💻</div>
-        <h4>ARM64 SBC</h4>
-        <p>Rockchip RK3566/RK3588, Pi 4/5</p>
+      <div class="thanks-card">
+        <div class="thanks-icon">🌙</div>
+        <h3>nekraus</h3>
+        <p>For the countless late nights spent together getting things to actually work. Debugging hardware at 2am is better with a friend.</p>
       </div>
-
-      <div class="hw-item">
-        <div class="icon">📡</div>
-        <h4>RTK GPS</h4>
-        <p>u-blox ZED-F9P, RTK1010</p>
+      <div class="thanks-card">
+        <div class="thanks-icon">🌍</div>
+        <h3><a href="https://openmower.de/">OpenMower</a></h3>
+        <p>For proving that robot mowers can be truly intelligent. You showed us what's possible and inspired an entire community of builders.</p>
       </div>
-
-      <div class="hw-item">
-        <div class="icon">🔴</div>
-        <h4>LiDAR</h4>
-        <p>LDRobot LD19, RPLiDAR</p>
+      <div class="thanks-card">
+        <div class="thanks-icon">🇫🇷</div>
+        <h3>Mowgli French Community</h3>
+        <p>For all your efforts — testing, feedback, bug reports, encouragement. You kept us going when things got hard.</p>
       </div>
-
-      <div class="hw-item">
-        <div class="icon">⚡</div>
-        <h4>STM32 Board</h4>
-        <p>Custom Mowgli PCB</p>
+      <div class="thanks-card">
+        <div class="thanks-icon">💚</div>
+        <h3>Every Mowgli User</h3>
+        <p>Every person who installed our firmware, filed a bug, asked a question, or just said "it works!" — you give us the courage to keep spending nights on this project.</p>
       </div>
-
     </div>
   </div>
 </section>
@@ -232,7 +369,8 @@ docker compose up -d</code>
 <footer>
   <div class="container">
     <p>
-      MowgliNext is <a href="https://github.com/cedbossneo/mowglinext/blob/main/LICENSE">GPLv3 licensed</a>.
+      MowgliNext is <a href="https://github.com/cedbossneo/mowglinext/blob/main/LICENSE">GPLv3 licensed</a> — same as OpenMower, because open source is how we all win.
+      <br>
       Built on <a href="https://docs.ros.org/en/jazzy/">ROS2 Jazzy</a>,
       <a href="https://docs.nav2.org/">Nav2</a>, and
       <a href="https://fields2cover.github.io/">Fields2Cover</a>.
