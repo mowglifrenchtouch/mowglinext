@@ -11,8 +11,8 @@ import (
 	"github.com/brutella/hap"
 	"github.com/brutella/hap/accessory"
 	log2 "github.com/brutella/hap/log"
-	"github.com/cedbossneo/openmower-gui/pkg/msgs/mowgli"
-	types2 "github.com/cedbossneo/openmower-gui/pkg/types"
+	"github.com/cedbossneo/mowglinext/pkg/msgs/mowgli"
+	types2 "github.com/cedbossneo/mowglinext/pkg/types"
 )
 
 type HomeKitProvider struct {
