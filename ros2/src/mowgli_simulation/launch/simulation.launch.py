@@ -17,6 +17,8 @@ so Gazebo handles its own physics/sensors, while robot_state_publisher provides
 """
 
 import os
+import shutil
+import subprocess
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -122,11 +124,26 @@ def generate_launch_description() -> LaunchDescription:
             # Assume it's an absolute path
             world_sdf = world_name
 
-        # --headless-rendering tells Gazebo to use EGL for off-screen
-        # rendering (Mesa llvmpipe).  Without it, the Sensors system blocks
-        # forever trying to create an ogre2 context when there is no GPU
-        # or display — stopping physics and /clock entirely.
-        server_only = " -s --headless-rendering " if is_headless == "true" else " "
+        if is_headless == "true":
+            # --headless-rendering tells Gazebo to use EGL for off-screen
+            # rendering (Mesa llvmpipe).  Without it, the Sensors system
+            # blocks forever trying to initialise an ogre2 context when
+            # there is no GPU or display — freezing physics and /clock.
+            #
+            # On containers without /dev/dri we also need a virtual X
+            # display so the Mesa EGL path has something to bind to.
+            if not os.environ.get("DISPLAY") and shutil.which("Xvfb"):
+                subprocess.Popen(
+                    ["Xvfb", ":99", "-screen", "0", "1024x768x24", "-ac"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                os.environ["DISPLAY"] = ":99"
+
+            server_only = " -s --headless-rendering "
+        else:
+            server_only = " "
+
         gz_args = f"-r -v3{server_only}{world_sdf}"
 
         return [

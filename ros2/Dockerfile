@@ -256,6 +256,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-ros-gz-sim \
     ros-jazzy-ros-gz-bridge \
     ros-jazzy-ros-gz-interfaces \
+    # Headless rendering (sensors need a virtual display when no GPU)
+    xvfb \
     # VNC + lightweight desktop for Gazebo GUI access from macOS
     tigervnc-standalone-server \
     tigervnc-common \

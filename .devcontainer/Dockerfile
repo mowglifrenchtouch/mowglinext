@@ -93,6 +93,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bash-completion \
     python3-pip \
     clang-format \
+    # ── Headless rendering (Gazebo sensors need a virtual display on ARM) ──
+    xvfb \
     # ── GitHub CLI ──
     gpg \
  && rm -rf /var/lib/apt/lists/* \
