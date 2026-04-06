@@ -122,7 +122,11 @@ def generate_launch_description() -> LaunchDescription:
             # Assume it's an absolute path
             world_sdf = world_name
 
-        server_only = " -s " if is_headless == "true" else " "
+        # --headless-rendering tells Gazebo to use EGL for off-screen
+        # rendering (Mesa llvmpipe).  Without it, the Sensors system blocks
+        # forever trying to create an ogre2 context when there is no GPU
+        # or display — stopping physics and /clock entirely.
+        server_only = " -s --headless-rendering " if is_headless == "true" else " "
         gz_args = f"-r -v3{server_only}{world_sdf}"
 
         return [
