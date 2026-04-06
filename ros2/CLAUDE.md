@@ -61,7 +61,20 @@ Two-tier launch:
    - `diagnostics_node`, `mqtt_bridge_node` (optional)
    - `foxglove_bridge` (ws://0.0.0.0:8765)
    - `rosbridge_websocket` (ws://0.0.0.0:9090, conditional on `enable_rosbridge`)
-   - `obstacle_tracker_node` (persistent LiDAR obstacle detection)
+   - `obstacle_tracker_node` (persistent LiDAR obstacle detection, conditional on `use_lidar`)
+
+## Sensor Modularity (use_lidar)
+
+The sensor stack is modular — LiDAR can be disabled for GPS-only operation:
+
+- **Launch arg:** `use_lidar:=false` (default: `true`, reads from `LIDAR_ENABLED` env var in Docker)
+- **When `use_lidar=false`:**
+  - SLAM is skipped entirely (no slam_toolbox)
+  - `obstacle_tracker_node` and `slam_heading_node` are not launched
+  - Nav2 uses `nav2_params_no_lidar.yaml` (no obstacle_layer in costmaps, no collision monitor sources)
+  - `ekf_map` publishes map→odom TF (instead of SLAM being the TF authority)
+  - Localization relies on GPS + IMU + wheel odometry only
+- **When `use_lidar=true` (default):** Behavior is unchanged from before
 
 ## Key Topics
 
@@ -169,6 +182,7 @@ All live-editable via docker-compose.override.yml bind-mounts (no rebuild needed
 | File | What it controls |
 |------|-----------------|
 | `src/mowgli_bringup/config/nav2_params.yaml` | All Nav2 params: controllers, planner, costmaps, collision monitor, velocity smoother |
+| `src/mowgli_bringup/config/nav2_params_no_lidar.yaml` | Nav2 params for GPS-only mode (no obstacle_layer, no collision monitor sources) |
 | `src/mowgli_bringup/config/coverage_planner.yaml` | F2C parameters: tool_width, spacing, headland, turning radius |
 | `src/mowgli_localization/config/localization.yaml` | Dual EKF tuning, GPS converter, wheel odometry |
 | `src/mowgli_bringup/config/obstacle_tracker.yaml` | LiDAR obstacle detection thresholds, promotion criteria |

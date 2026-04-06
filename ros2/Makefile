@@ -11,7 +11,7 @@ ROBOT_USER    ?= pi
 F2C_DIR       ?= /usr/local/cmake/fields2cover
 
 .PHONY: help build build-debug build-pkg test clean \
-        sim sim-stop e2e-test \
+        sim sim-stop e2e-test e2e-test-no-lidar \
         docker docker-sim \
         lint format format-check \
         deploy backup-maps
@@ -111,6 +111,26 @@ e2e-test: sim-stop
 	sleep 90; \
 	echo "Running E2E test..."; \
 	python3 src/e2e_test.py; \
+	TEST_EXIT=$$?; \
+	echo "Stopping simulation..."; \
+	kill $$SIM_PID 2>/dev/null; \
+	$(MAKE) sim-stop; \
+	exit $$TEST_EXIT
+
+e2e-test-no-lidar: sim-stop
+	@echo "Starting no-LiDAR E2E test (GPS-only simulation)..."
+	@echo ""
+	source /opt/ros/$(ROS_DISTRO)/setup.bash && \
+	source install/setup.bash && \
+	ros2 launch mowgli_bringup sim_full_system.launch.py \
+	  headless:=true use_rviz:=false use_lidar:=false \
+	  simulate_gps_degradation:=false &
+	SIM_PID=$$!; \
+	echo "Simulation PID: $$SIM_PID"; \
+	echo "Waiting 90s for Nav2 to activate..."; \
+	sleep 90; \
+	echo "Running no-LiDAR E2E test..."; \
+	python3 src/e2e_test_no_lidar.py; \
 	TEST_EXIT=$$?; \
 	echo "Stopping simulation..."; \
 	kill $$SIM_PID 2>/dev/null; \

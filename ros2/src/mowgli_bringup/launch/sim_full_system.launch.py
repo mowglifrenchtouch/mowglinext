@@ -79,6 +79,12 @@ def generate_launch_description() -> LaunchDescription:
         description="Enable GPS degradation simulation (periodic float mode).",
     )
 
+    use_lidar_arg = DeclareLaunchArgument(
+        "use_lidar",
+        default_value="true",
+        description="Enable LiDAR-dependent nodes (SLAM, obstacle tracker). Set to false for GPS-only.",
+    )
+
     # ------------------------------------------------------------------
     # Resolved substitutions
     # use_sim_time is always true in simulation — no argument needed.
@@ -89,6 +95,7 @@ def generate_launch_description() -> LaunchDescription:
     headless = LaunchConfiguration("headless")
     use_rviz = LaunchConfiguration("use_rviz")
     simulate_gps_degradation = LaunchConfiguration("simulate_gps_degradation")
+    use_lidar = LaunchConfiguration("use_lidar")
 
     # ------------------------------------------------------------------
     # Config paths
@@ -151,6 +158,7 @@ def generate_launch_description() -> LaunchDescription:
             "use_ekf": "True",
             "slam_mode": "lifelong",
             "map_file_name": "/ros2_ws/maps/garden_map",
+            "use_lidar": use_lidar,
         }.items(),
     )
 
@@ -274,6 +282,7 @@ def generate_launch_description() -> LaunchDescription:
     obstacle_tracker_params = os.path.join(map_dir, "config", "obstacle_tracker.yaml")
 
     obstacle_tracker_node = Node(
+        condition=IfCondition(use_lidar),
         package="mowgli_map",
         executable="obstacle_tracker_node",
         name="obstacle_tracker",
@@ -343,6 +352,7 @@ def generate_launch_description() -> LaunchDescription:
             headless_arg,
             use_rviz_arg,
             gps_degradation_arg,
+            use_lidar_arg,
             # Topic relays (sim → hardware namespace)
             relay_wheel_odom,
             relay_imu,

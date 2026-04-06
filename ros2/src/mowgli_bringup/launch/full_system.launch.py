@@ -87,6 +87,12 @@ def generate_launch_description() -> LaunchDescription:
         description="Launch rosbridge_server for the openmower-gui when true.",
     )
 
+    use_lidar_arg = DeclareLaunchArgument(
+        "use_lidar",
+        default_value="true",
+        description="Enable LiDAR-dependent nodes (SLAM, obstacle tracker, slam heading). Set to false for GPS-only operation.",
+    )
+
     rosbridge_port_arg = DeclareLaunchArgument(
         "rosbridge_port",
         default_value="9090",
@@ -111,6 +117,7 @@ def generate_launch_description() -> LaunchDescription:
     foxglove_port = LaunchConfiguration("foxglove_port")
     enable_rosbridge = LaunchConfiguration("enable_rosbridge")
     rosbridge_port = LaunchConfiguration("rosbridge_port")
+    use_lidar = LaunchConfiguration("use_lidar")
 
     # ------------------------------------------------------------------
     # Config paths
@@ -159,6 +166,7 @@ def generate_launch_description() -> LaunchDescription:
             "map": map_yaml,
             "slam_mode": "lifelong",
             "map_file_name": "/ros2_ws/maps/garden_map",
+            "use_lidar": use_lidar,
         }.items(),
     )
 
@@ -271,6 +279,7 @@ def generate_launch_description() -> LaunchDescription:
     # heading from LiDAR map matching — works without magnetometer,
     # when stationary, and under canopy.
     slam_heading_node = Node(
+        condition=IfCondition(use_lidar),
         package="mowgli_localization",
         executable="slam_heading_node",
         name="slam_heading",
@@ -388,6 +397,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     obstacle_tracker_node = Node(
+        condition=IfCondition(use_lidar),
         package="mowgli_map",
         executable="obstacle_tracker_node",
         name="obstacle_tracker",
@@ -413,6 +423,7 @@ def generate_launch_description() -> LaunchDescription:
             foxglove_port_arg,
             enable_rosbridge_arg,
             rosbridge_port_arg,
+            use_lidar_arg,
             # Subsystem includes
             mowgli_launch,
             navigation_launch,

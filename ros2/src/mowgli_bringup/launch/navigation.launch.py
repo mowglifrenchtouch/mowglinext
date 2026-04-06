@@ -77,6 +77,12 @@ def generate_launch_description() -> LaunchDescription:
         description="Full path (without extension) to a saved slam_toolbox .posegraph/.data file.",
     )
 
+    use_lidar_arg = DeclareLaunchArgument(
+        "use_lidar",
+        default_value="true",
+        description="Enable LiDAR-dependent nodes (SLAM, obstacle costmap layer). Set to false for GPS-only.",
+    )
+
     # ------------------------------------------------------------------
     # Resolved substitutions
     # ------------------------------------------------------------------
@@ -86,6 +92,7 @@ def generate_launch_description() -> LaunchDescription:
     use_ekf = LaunchConfiguration("use_ekf")
     slam_mode = LaunchConfiguration("slam_mode")
     map_file_name = LaunchConfiguration("map_file_name")
+    use_lidar = LaunchConfiguration("use_lidar")
 
     # ------------------------------------------------------------------
     # Config paths
@@ -94,12 +101,22 @@ def generate_launch_description() -> LaunchDescription:
     slam_toolbox_dir = get_package_share_directory("slam_toolbox")
     localization_params = os.path.join(bringup_dir, "config", "localization.yaml")
     nav2_params_file = os.path.join(bringup_dir, "config", "nav2_params.yaml")
+    nav2_params_no_lidar_file = os.path.join(
+        bringup_dir, "config", "nav2_params_no_lidar.yaml"
+    )
 
     # Rewrite use_sim_time throughout nav2_params.yaml so that all Nav2 nodes
     # use the correct clock source.  Nav2's navigation_launch.py does NOT
     # inject use_sim_time into the params file automatically.
     nav2_params = RewrittenYaml(
         source_file=nav2_params_file,
+        root_key="",
+        param_rewrites={"use_sim_time": use_sim_time},
+        convert_types=True,
+    )
+
+    nav2_params_no_lidar = RewrittenYaml(
+        source_file=nav2_params_no_lidar_file,
         root_key="",
         param_rewrites={"use_sim_time": use_sim_time},
         convert_types=True,
@@ -159,10 +176,16 @@ def generate_launch_description() -> LaunchDescription:
         resolved_map = context.launch_configurations["map_file_name"]
         resolved_slam = context.launch_configurations["slam"]
         resolved_sim = context.launch_configurations["use_sim_time"]
+        resolved_lidar = context.launch_configurations.get("use_lidar", "true")
 
-        # If slam is disabled, return nothing
+        # If slam is disabled or no LiDAR, return nothing
         if resolved_slam.lower() not in ("true", "1", "yes"):
             return []
+
+        if resolved_lidar.lower() not in ("true", "1", "yes"):
+            return [
+                LogInfo(msg="[navigation.launch.py] LiDAR disabled — skipping SLAM. Using GPS-only localization.")
+            ]
 
         # Check if the saved posegraph file exists
         posegraph_file = resolved_map + ".posegraph"
@@ -229,18 +252,42 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # 3. robot_localization – map EKF
-    ekf_map_node = Node(
-        condition=IfCondition(use_ekf),
-        package="robot_localization",
-        executable="ekf_node",
-        name="ekf_map",
-        output="screen",
-        parameters=[
-            localization_params,
-            {"use_sim_time": use_sim_time},
-        ],
-        remappings=[("odometry/filtered", "/mowgli/localization/odom_map")],
-    )
+    #    When LiDAR is available, SLAM publishes map→odom TF and ekf_map
+    #    has publish_tf: false. When no LiDAR (GPS-only), ekf_map must
+    #    publish the map→odom TF itself.
+    def _launch_ekf_map(context):
+        resolved_lidar = context.launch_configurations.get("use_lidar", "true")
+        resolved_ekf = context.launch_configurations.get("use_ekf", "true")
+        resolved_sim = context.launch_configurations["use_sim_time"]
+
+        if resolved_ekf.lower() not in ("true", "1", "yes"):
+            return []
+
+        lidar_enabled = resolved_lidar.lower() in ("true", "1", "yes")
+        sim_time = resolved_sim.lower() in ("true", "1", "yes")
+        # Without SLAM (no LiDAR), ekf_map becomes the TF authority for map→odom
+        publish_tf = not lidar_enabled
+
+        return [
+            Node(
+                package="robot_localization",
+                executable="ekf_node",
+                name="ekf_map",
+                output="screen",
+                parameters=[
+                    localization_params,
+                    {
+                        "use_sim_time": sim_time,
+                        "publish_tf": publish_tf,
+                    },
+                ],
+                remappings=[
+                    ("odometry/filtered", "/mowgli/localization/odom_map")
+                ],
+            )
+        ]
+
+    ekf_map_launch = OpaqueFunction(function=_launch_ekf_map)
 
     # ------------------------------------------------------------------
     # 4. Nav2 navigation (controllers, planners, behaviors, BT navigator)
@@ -256,27 +303,41 @@ def generate_launch_description() -> LaunchDescription:
     # map → odom transform.  Without this delay, the planner_server's
     # global costmap times out waiting for the map frame and the
     # lifecycle_manager aborts the entire bringup.
-    nav2_navigation = TimerAction(
-        period=20.0,
-        actions=[
-            GroupAction(
+    def _launch_nav2(context):
+        resolved_lidar = context.launch_configurations.get("use_lidar", "true")
+        resolved_sim = context.launch_configurations["use_sim_time"]
+        lidar_enabled = resolved_lidar.lower() in ("true", "1", "yes")
+
+        # Select nav2 params based on LiDAR availability
+        params = nav2_params if lidar_enabled else nav2_params_no_lidar
+
+        return [
+            TimerAction(
+                period=20.0,
                 actions=[
-                    SetParameter("bond_timeout", 10.0),
-                    IncludeLaunchDescription(
-                        PythonLaunchDescriptionSource(
-                            os.path.join(
-                                nav2_bringup_dir, "launch", "navigation_launch.py"
-                            )
-                        ),
-                        launch_arguments={
-                            "use_sim_time": use_sim_time,
-                            "params_file": nav2_params,
-                        }.items(),
+                    GroupAction(
+                        actions=[
+                            SetParameter("bond_timeout", 10.0),
+                            IncludeLaunchDescription(
+                                PythonLaunchDescriptionSource(
+                                    os.path.join(
+                                        nav2_bringup_dir,
+                                        "launch",
+                                        "navigation_launch.py",
+                                    )
+                                ),
+                                launch_arguments={
+                                    "use_sim_time": resolved_sim,
+                                    "params_file": params,
+                                }.items(),
+                            ),
+                        ]
                     ),
-                ]
-            ),
-        ],
-    )
+                ],
+            )
+        ]
+
+    nav2_navigation = OpaqueFunction(function=_launch_nav2)
 
     # ------------------------------------------------------------------
     # LaunchDescription
@@ -289,9 +350,10 @@ def generate_launch_description() -> LaunchDescription:
             use_ekf_arg,
             slam_mode_arg,
             map_file_arg,
+            use_lidar_arg,
             slam_toolbox_launch,
             ekf_odom_node,
-            ekf_map_node,
+            ekf_map_launch,
             nav2_navigation,
         ]
     )
