@@ -1,0 +1,39 @@
+name: Firmware CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firmware/**'
+  pull_request:
+    paths:
+      - 'firmware/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment:
+          - Yardforce500
+          - Yardforce500B
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.environment }}-${{ hashFiles('firmware/stm32/ros_usbnode/platformio.ini') }}
+          restore-keys: |
+            pio-${{ matrix.environment }}-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware (${{ matrix.environment }})
+        run: pio run -e ${{ matrix.environment }}
+        working-directory: firmware/stm32/ros_usbnode
