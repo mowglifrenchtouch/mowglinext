@@ -1,3 +1,18 @@
+// Copyright 2026 Mowgli Project
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 // SPDX-License-Identifier: GPL-3.0
 /**
  * @file mqtt_bridge_node.cpp
@@ -374,7 +389,7 @@ void MqttBridgeNode::create_subscriptions()
   const auto sensor_qos = rclcpp::SensorDataQoS();
 
   sub_status_ = create_subscription<mowgli_interfaces::msg::Status>(
-      "/status",
+      "/hardware_bridge/status",
       10,
       [this](mowgli_interfaces::msg::Status::ConstSharedPtr msg)
       {
@@ -382,7 +397,7 @@ void MqttBridgeNode::create_subscriptions()
       });
 
   sub_power_ = create_subscription<mowgli_interfaces::msg::Power>(
-      "/power",
+      "/hardware_bridge/power",
       10,
       [this](mowgli_interfaces::msg::Power::ConstSharedPtr msg)
       {
@@ -390,7 +405,7 @@ void MqttBridgeNode::create_subscriptions()
       });
 
   sub_emergency_ = create_subscription<mowgli_interfaces::msg::Emergency>(
-      "/emergency",
+      "/hardware_bridge/emergency",
       10,
       [this](mowgli_interfaces::msg::Emergency::ConstSharedPtr msg)
       {
@@ -407,7 +422,7 @@ void MqttBridgeNode::create_subscriptions()
                                                    });
 
   sub_diagnostics_ = create_subscription<diagnostic_msgs::msg::DiagnosticArray>(
-      "/mowgli/diagnostics",
+      "/diagnostics",
       10,
       [this](diagnostic_msgs::msg::DiagnosticArray::ConstSharedPtr msg)
       {

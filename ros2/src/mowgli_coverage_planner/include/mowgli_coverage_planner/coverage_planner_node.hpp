@@ -1,5 +1,17 @@
-// Copyright (C) 2024 Cedric
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Mowgli Project
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
  * @file coverage_planner_node.hpp
@@ -25,6 +37,7 @@
 #include <string>
 #include <vector>
 
+#include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "mowgli_coverage_planner/polygon_utils.hpp"
 #include "mowgli_interfaces/action/plan_coverage.hpp"
@@ -33,6 +46,7 @@
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "std_msgs/msg/string.hpp"
 
 namespace mowgli_coverage_planner
 {
@@ -138,6 +152,27 @@ private:
                                                    double yaw,
                                                    const std::string& frame);
 
+  /**
+   * @brief Convert swath start/end points into a GeoJSON route graph.
+   *
+   * Builds a GeoJSON FeatureCollection compatible with Nav2's route_server.
+   * Each swath endpoint becomes a Point node, each swath becomes a
+   * MultiLineString edge (operation=blade_on), and each turn between
+   * consecutive swaths becomes a connecting edge (operation=blade_off).
+   *
+   * The GeoJSON is written to /tmp/mowing_route.geojson and published
+   * on the ~/route_graph topic as a string message.
+   *
+   * @param swath_starts  Start points of each swath.
+   * @param swath_ends    End points of each swath.
+   * @param mowing_speed  Speed limit for mowing edges [m/s].
+   * @param transit_speed Speed limit for turn/transit edges [m/s].
+   */
+  void publish_route_graph(const std::vector<geometry_msgs::msg::Point>& swath_starts,
+                           const std::vector<geometry_msgs::msg::Point>& swath_ends,
+                           double mowing_speed,
+                           double transit_speed);
+
   // -------------------------------------------------------------------------
   // ROS interfaces
   // -------------------------------------------------------------------------
@@ -145,6 +180,7 @@ private:
   rclcpp_action::Server<PlanCoverageAction>::SharedPtr action_server_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr outline_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr route_graph_pub_;
   rclcpp::Subscription<mowgli_interfaces::msg::ObstacleArray>::SharedPtr obstacle_sub_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr costmap_sub_;
 
@@ -165,6 +201,9 @@ private:
   int costmap_min_cluster_size_{3};
   /// Inflation radius around costmap obstacles (metres).
   double costmap_obstacle_inflation_{0.10};
+  /// Whether to extract obstacles from the global costmap (SLAM map walls).
+  /// Default false — collision_monitor handles real-time avoidance instead.
+  bool use_costmap_obstacles_{false};
 
   // -------------------------------------------------------------------------
   // Parameters
@@ -178,6 +217,9 @@ private:
   double min_turning_radius_;  ///< Minimum robot turning radius [m].
   bool decompose_cells_;  ///< Enable cell decomposition for irregular polygons.
   std::string map_frame_;  ///< TF frame for output paths.
+  double mowing_speed_;  ///< Speed limit for mowing swath edges [m/s].
+  double transit_speed_;  ///< Speed limit for turn/transit edges [m/s].
+  std::string route_graph_filepath_;  ///< Output path for GeoJSON route graph.
 };
 
 }  // namespace mowgli_coverage_planner

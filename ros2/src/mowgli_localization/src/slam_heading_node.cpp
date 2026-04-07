@@ -1,10 +1,17 @@
 // Copyright 2026 Mowgli Project
 //
-// Licensed under the GNU General Public License, version 3 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 //
-//     https://www.gnu.org/licenses/gpl-3.0.html
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /**
  * @file slam_heading_node.cpp
  * @brief Extracts heading from SLAM's map→odom TF for EKF fusion.
@@ -35,7 +42,7 @@
 namespace mowgli_localization
 {
 
-SlamHeadingNode::SlamHeadingNode(const rclcpp::NodeOptions& options) : Node("slam_heading", options)
+SlamHeadingNode::SlamHeadingNode(const rclcpp::NodeOptions &options) : Node("slam_heading", options)
 {
   publish_rate_ = declare_parameter<double>("publish_rate", 5.0);
   yaw_variance_ = declare_parameter<double>("yaw_variance", 0.05);
@@ -45,9 +52,8 @@ SlamHeadingNode::SlamHeadingNode(const rclcpp::NodeOptions& options) : Node("sla
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  heading_pub_ =
-      create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/mowgli/slam/heading",
-                                                                      rclcpp::QoS(10));
+  heading_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/slam/heading",
+                                                                                 rclcpp::QoS(10));
 
   timer_ = create_wall_timer(std::chrono::duration<double>(1.0 / publish_rate_),
                              std::bind(&SlamHeadingNode::timer_callback, this));
@@ -67,7 +73,7 @@ void SlamHeadingNode::timer_callback()
     // SLAM is the authority for this transform (ekf_map has publish_tf=false).
     tf = tf_buffer_->lookupTransform("map", "odom", tf2::TimePointZero);
   }
-  catch (const tf2::TransformException&)
+  catch (const tf2::TransformException &)
   {
     // SLAM TF not available — don't publish anything.
     // The EKF will rely on GPS heading and IMU.
@@ -124,7 +130,7 @@ void SlamHeadingNode::timer_callback()
 
 }  // namespace mowgli_localization
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<mowgli_localization::SlamHeadingNode>());

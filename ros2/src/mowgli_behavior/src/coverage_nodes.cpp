@@ -1,14 +1,26 @@
 // Copyright 2026 Mowgli Project
 //
-// Licensed under the GNU General Public License, version 3 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 //
-//     https://www.gnu.org/licenses/gpl-3.0.html
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "mowgli_behavior/coverage_nodes.hpp"
 
 #include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <limits>
 #include <sstream>
 
 #include "action_msgs/msg/goal_status.hpp"
@@ -21,6 +33,74 @@ namespace mowgli_behavior
 {
 
 // ===========================================================================
+// Coverage checkpoint persistence helpers
+// ===========================================================================
+
+static const std::string kCheckpointPath = "/ros2_ws/maps/coverage_checkpoint.txt";
+
+/// Compute a simple hash of the coverage plan for identity comparison.
+/// Uses number of swaths + first/last swath positions.
+static uint64_t computePlanHash(const BTContext::CoveragePlan &plan)
+{
+  std::size_t h = std::hash<size_t>{}(plan.swaths.size());
+  if (!plan.swaths.empty())
+  {
+    const auto &first = plan.swaths.front();
+    const auto &last = plan.swaths.back();
+    auto combine = [&h](float v)
+    {
+      h ^= std::hash<float>{}(v) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    };
+    combine(first.start.x);
+    combine(first.start.y);
+    combine(first.end.x);
+    combine(first.end.y);
+    combine(last.start.x);
+    combine(last.start.y);
+    combine(last.end.x);
+    combine(last.end.y);
+  }
+  return static_cast<uint64_t>(h);
+}
+
+/// Save checkpoint: plan_hash and next_swath_index.
+static void saveCheckpoint(uint64_t plan_hash, size_t next_swath_index)
+{
+  try
+  {
+    std::filesystem::create_directories(std::filesystem::path(kCheckpointPath).parent_path());
+    std::ofstream ofs(kCheckpointPath);
+    if (ofs.is_open())
+    {
+      ofs << plan_hash << " " << next_swath_index << "\n";
+    }
+  }
+  catch (...)
+  {
+    // Non-fatal -- checkpoint is best-effort.
+  }
+}
+
+/// Load checkpoint.  Returns true if file exists and was parsed successfully.
+static bool loadCheckpoint(uint64_t &plan_hash, size_t &next_swath_index)
+{
+  try
+  {
+    std::ifstream ifs(kCheckpointPath);
+    if (!ifs.is_open())
+    {
+      return false;
+    }
+    ifs >> plan_hash >> next_swath_index;
+    return !ifs.fail();
+  }
+  catch (...)
+  {
+    return false;
+  }
+}
+
+// ===========================================================================
 // ComputeCoverage — calls coverage_planner_node's PlanCoverage action
 // ===========================================================================
 
@@ -28,8 +108,8 @@ BT::NodeStatus ComputeCoverage::onStart()
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
 
-  uint32_t area_index = 0u;
-  getInput<uint32_t>("area_index", area_index);
+  area_index_ = 0u;
+  getInput<uint32_t>("area_index", area_index_);
 
   result_received_ = false;
   latest_result_.reset();
@@ -38,7 +118,8 @@ BT::NodeStatus ComputeCoverage::onStart()
   if (!action_client_)
   {
     action_client_ =
-        rclcpp_action::create_client<CoverageAction>(ctx->node, "/mowgli/coverage/plan");
+        rclcpp_action::create_client<CoverageAction>(ctx->node,
+                                                     "/coverage_planner_node/plan_coverage");
   }
 
   if (!action_client_->wait_for_action_server(std::chrono::seconds(5)))
@@ -51,9 +132,9 @@ BT::NodeStatus ComputeCoverage::onStart()
   CoverageAction::Goal goal_msg;
 
   {
-    auto tmp_node = rclcpp::Node::make_shared("_compute_coverage_srv_helper");
-    auto tmp_client =
-        tmp_node->create_client<mowgli_interfaces::srv::GetMowingArea>("/mowgli/map/get_area");
+    auto helper = ctx->helper_node;
+    auto tmp_client = helper->create_client<mowgli_interfaces::srv::GetMowingArea>(
+        "/map_server_node/get_mowing_area");
 
     if (!tmp_client->wait_for_service(std::chrono::milliseconds(2000)))
     {
@@ -62,10 +143,10 @@ BT::NodeStatus ComputeCoverage::onStart()
     }
 
     auto request = std::make_shared<mowgli_interfaces::srv::GetMowingArea::Request>();
-    request->index = area_index;
+    request->index = area_index_;
 
     auto future = tmp_client->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(tmp_node, future, std::chrono::seconds(5)) !=
+    if (rclcpp::spin_until_future_complete(helper, future, std::chrono::seconds(5)) !=
         rclcpp::FutureReturnCode::SUCCESS)
     {
       RCLCPP_ERROR(ctx->node->get_logger(), "ComputeCoverage: get_mowing_area timed out");
@@ -77,7 +158,7 @@ BT::NodeStatus ComputeCoverage::onStart()
     {
       RCLCPP_ERROR(ctx->node->get_logger(),
                    "ComputeCoverage: map_server returned no area for index %u",
-                   area_index);
+                   area_index_);
       return BT::NodeStatus::FAILURE;
     }
 
@@ -85,7 +166,7 @@ BT::NodeStatus ComputeCoverage::onStart()
     {
       RCLCPP_WARN(ctx->node->get_logger(),
                   "ComputeCoverage: area %u is navigation-only, skipping",
-                  area_index);
+                  area_index_);
       return BT::NodeStatus::FAILURE;
     }
 
@@ -108,7 +189,7 @@ BT::NodeStatus ComputeCoverage::onStart()
 
   // Send goal.
   auto opts = rclcpp_action::Client<CoverageAction>::SendGoalOptions{};
-  opts.result_callback = [this](const GoalHandle::WrappedResult& wr)
+  opts.result_callback = [this](const GoalHandle::WrappedResult &wr)
   {
     latest_result_ = wr.result;
     result_received_ = true;
@@ -165,8 +246,8 @@ BT::NodeStatus ComputeCoverage::onRunning()
   // Extract swath endpoints into BTContext::CoveragePlan.
   BTContext::CoveragePlan plan;
 
-  const auto& starts = latest_result_->swath_starts;
-  const auto& ends = latest_result_->swath_ends;
+  const auto &starts = latest_result_->swath_starts;
+  const auto &ends = latest_result_->swath_ends;
   const size_t n_swaths = std::min(starts.size(), ends.size());
 
   for (size_t i = 0; i < n_swaths; ++i)
@@ -196,9 +277,33 @@ BT::NodeStatus ComputeCoverage::onRunning()
 
   // Store in context.
   ctx->coverage_plan = std::move(plan);
+  ctx->next_swath_index = 0;
+  ctx->current_area = static_cast<int>(area_index_);
+
+  // Check for a saved checkpoint — resume from where we left off if the
+  // plan hash matches (same area, same swath layout).
+  {
+    const uint64_t current_hash = computePlanHash(*ctx->coverage_plan);
+    uint64_t saved_hash = 0;
+    size_t saved_index = 0;
+    if (loadCheckpoint(saved_hash, saved_index) && saved_hash == current_hash &&
+        saved_index < ctx->coverage_plan->swaths.size())
+    {
+      ctx->next_swath_index = saved_index;
+      RCLCPP_INFO(ctx->node->get_logger(),
+                  "ComputeCoverage: resuming from checkpoint — swath %zu/%zu",
+                  saved_index + 1,
+                  ctx->coverage_plan->swaths.size());
+    }
+    else
+    {
+      // New plan — save initial checkpoint.
+      saveCheckpoint(current_hash, 0);
+    }
+  }
 
   // Output first swath start pose.
-  const auto& first = ctx->coverage_plan->swaths.front();
+  const auto &first = ctx->coverage_plan->swaths.front();
   const double dx = first.end.x - first.start.x;
   const double dy = first.end.y - first.start.y;
   const double yaw = std::atan2(dy, dx);
@@ -233,8 +338,8 @@ void ComputeCoverage::onHalted()
 // ExecuteSwathBySwath (unchanged — works with BTContext::CoveragePlan)
 // ===========================================================================
 
-nav_msgs::msg::Path ExecuteSwathBySwath::swathToPath(const BTContext::Swath& swath,
-                                                     const rclcpp::Node::SharedPtr& node) const
+nav_msgs::msg::Path ExecuteSwathBySwath::swathToPath(const BTContext::Swath &swath,
+                                                     const rclcpp::Node::SharedPtr &node) const
 {
   const double dx = swath.end.x - swath.start.x;
   const double dy = swath.end.y - swath.start.y;
@@ -266,7 +371,7 @@ nav_msgs::msg::Path ExecuteSwathBySwath::swathToPath(const BTContext::Swath& swa
   return path;
 }
 
-void ExecuteSwathBySwath::sendTransitGoal(const BTContext::Swath& swath)
+void ExecuteSwathBySwath::sendTransitGoal(const BTContext::Swath &swath)
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
 
@@ -297,7 +402,7 @@ void ExecuteSwathBySwath::sendTransitGoal(const BTContext::Swath& swath)
               swath.start.y);
 }
 
-void ExecuteSwathBySwath::sendSwathGoal(const BTContext::Swath& swath)
+void ExecuteSwathBySwath::sendSwathGoal(const BTContext::Swath &swath)
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
 
@@ -317,119 +422,6 @@ void ExecuteSwathBySwath::sendSwathGoal(const BTContext::Swath& swath)
               len);
 }
 
-nav_msgs::msg::Path ExecuteSwathBySwath::remainingSwathPath(
-    const BTContext::Swath& swath,
-    double from_x,
-    double from_y,
-    const rclcpp::Node::SharedPtr& node) const
-{
-  // Project (from_x, from_y) onto the swath line to find the resume point.
-  const double dx = swath.end.x - swath.start.x;
-  const double dy = swath.end.y - swath.start.y;
-  const double seg_len_sq = dx * dx + dy * dy;
-  double t = 0.0;
-  if (seg_len_sq > 1e-12)
-  {
-    t = ((from_x - swath.start.x) * dx + (from_y - swath.start.y) * dy) / seg_len_sq;
-    t = std::max(0.0, std::min(1.0, t));
-  }
-
-  const double yaw = std::atan2(dy, dx);
-  tf2::Quaternion q;
-  q.setRPY(0.0, 0.0, yaw);
-  const auto quat = tf2::toMsg(q);
-
-  nav_msgs::msg::Path path;
-  path.header.stamp = node->now();
-  path.header.frame_id = "map";
-
-  const double remaining_len = std::hypot(dx, dy) * (1.0 - t);
-  const double spacing = 0.10;
-  const int num_points = std::max(2, static_cast<int>(std::ceil(remaining_len / spacing)) + 1);
-
-  for (int i = 0; i < num_points; ++i)
-  {
-    const double frac =
-        t + (1.0 - t) * static_cast<double>(i) / static_cast<double>(num_points - 1);
-    geometry_msgs::msg::PoseStamped pose;
-    pose.header = path.header;
-    pose.pose.position.x = swath.start.x + frac * dx;
-    pose.pose.position.y = swath.start.y + frac * dy;
-    pose.pose.orientation = quat;
-    path.poses.push_back(pose);
-  }
-
-  return path;
-}
-
-void ExecuteSwathBySwath::sendRerouteGoal(const BTContext::Swath& swath, double rx, double ry)
-{
-  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
-
-  // Find a waypoint past the obstacle: project current position onto swath,
-  // then advance by 1.5m (enough to clear a typical obstacle + inflation).
-  const double dx = swath.end.x - swath.start.x;
-  const double dy = swath.end.y - swath.start.y;
-  const double seg_len = std::hypot(dx, dy);
-  double t = 0.0;
-  if (seg_len > 1e-6)
-  {
-    t = ((rx - swath.start.x) * dx + (ry - swath.start.y) * dy) / (seg_len * seg_len);
-    t = std::max(0.0, std::min(1.0, t));
-  }
-
-  // Advance 1.5m past current position along the swath
-  const double advance = 1.5;
-  const double t_advance = t + advance / std::max(seg_len, 0.01);
-  const double t_target = std::min(t_advance, 1.0);
-
-  Nav2Navigate::Goal goal;
-  goal.pose.header.stamp = ctx->node->now();
-  goal.pose.header.frame_id = "map";
-  goal.pose.pose.position.x = swath.start.x + t_target * dx;
-  goal.pose.pose.position.y = swath.start.y + t_target * dy;
-
-  tf2::Quaternion q;
-  q.setRPY(0.0, 0.0, std::atan2(dy, dx));
-  goal.pose.pose.orientation = tf2::toMsg(q);
-
-  nav_handle_.reset();
-  nav_future_ = nav_client_->async_send_goal(goal);
-  blocked_swath_fraction_ = t_target;
-
-  RCLCPP_INFO(ctx->node->get_logger(),
-              "ExecuteSwathBySwath: rerouting around obstacle on swath %zu/%zu "
-              "(from %.2f,%.2f to %.2f,%.2f via planner)",
-              swath_index_ + 1,
-              total_swaths_,
-              rx,
-              ry,
-              goal.pose.pose.position.x,
-              goal.pose.pose.position.y);
-}
-
-void ExecuteSwathBySwath::sendRemainingSwathGoal(const BTContext::Swath& swath,
-                                                 double from_x,
-                                                 double from_y)
-{
-  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
-
-  Nav2FollowPath::Goal goal;
-  goal.path = remainingSwathPath(swath, from_x, from_y, ctx->node);
-  goal.controller_id = "FollowCoveragePath";
-  goal.goal_checker_id = "coverage_goal_checker";
-
-  follow_handle_.reset();
-  follow_future_ = follow_client_->async_send_goal(goal);
-
-  RCLCPP_INFO(ctx->node->get_logger(),
-              "ExecuteSwathBySwath: resuming swath %zu/%zu from (%.2f, %.2f)",
-              swath_index_ + 1,
-              total_swaths_,
-              from_x,
-              from_y);
-}
-
 void ExecuteSwathBySwath::setBladeEnabled(bool enabled)
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
@@ -437,29 +429,42 @@ void ExecuteSwathBySwath::setBladeEnabled(bool enabled)
   if (!blade_client_)
   {
     blade_client_ = ctx->node->create_client<mowgli_interfaces::srv::MowerControl>(
-        "/mowgli/hardware/mower_control");
-  }
-
-  if (!blade_client_->service_is_ready())
-  {
-    RCLCPP_WARN(ctx->node->get_logger(),
-                "ExecuteSwathBySwath: blade service unavailable (sim mode)");
-    return;
+        "/hardware_bridge/mower_control");
   }
 
   auto req = std::make_shared<mowgli_interfaces::srv::MowerControl::Request>();
   req->mow_enabled = enabled ? 1u : 0u;
   req->mow_direction = 0u;
-  blade_client_->async_send_request(req);
+
+  // Fire-and-forget: firmware is the safety authority for the blade.
+  auto future = blade_client_->async_send_request(req);
+  (void)future;
 }
 
 bool ExecuteSwathBySwath::advanceToNextSwath()
 {
   swath_index_++;
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+  ctx->next_swath_index = swath_index_;
+
+  // Sync coverage progress to context for PublishHighLevelStatus
+  {
+    std::lock_guard<std::mutex> lock(ctx->context_mutex);
+    ctx->total_swaths = static_cast<int>(total_swaths_);
+    ctx->completed_swaths = static_cast<int>(completed_swaths_);
+    ctx->skipped_swaths = static_cast<int>(skipped_swaths_);
+  }
+
+  // Persist progress so we can resume after a restart.
+  if (ctx->coverage_plan)
+  {
+    saveCheckpoint(computePlanHash(*ctx->coverage_plan), swath_index_);
+  }
+
   return swath_index_ < total_swaths_;
 }
 
-bool ExecuteSwathBySwath::checkStuck(const std::shared_ptr<BTContext>& ctx)
+bool ExecuteSwathBySwath::checkStuck(const std::shared_ptr<BTContext> &ctx)
 {
   double rx = 0.0, ry = 0.0;
   try
@@ -468,7 +473,7 @@ bool ExecuteSwathBySwath::checkStuck(const std::shared_ptr<BTContext>& ctx)
     rx = transform.transform.translation.x;
     ry = transform.transform.translation.y;
   }
-  catch (const tf2::TransformException&)
+  catch (const tf2::TransformException &)
   {
     return false;
   }
@@ -501,9 +506,21 @@ BT::NodeStatus ExecuteSwathBySwath::onStart()
   }
 
   total_swaths_ = ctx->coverage_plan->swaths.size();
-  swath_index_ = 0;
+  swath_index_ = ctx->next_swath_index;
   completed_swaths_ = 0;
   skipped_swaths_ = 0;
+
+  // Read configurable stuck detection thresholds from input ports
+  getInput<double>("stuck_timeout_sec", stuck_timeout_sec_);
+  getInput<double>("stuck_min_progress", stuck_min_progress_);
+
+  // Publish initial progress to context
+  {
+    std::lock_guard<std::mutex> lock(ctx->context_mutex);
+    ctx->total_swaths = static_cast<int>(total_swaths_);
+    ctx->completed_swaths = static_cast<int>(completed_swaths_);
+    ctx->skipped_swaths = static_cast<int>(skipped_swaths_);
+  }
 
   if (swath_index_ >= total_swaths_)
   {
@@ -535,13 +552,11 @@ BT::NodeStatus ExecuteSwathBySwath::onStart()
 
   setBladeEnabled(false);
   phase_ = Phase::TRANSIT_TO_SWATH;
-  reroute_attempts_ = 0;
-  blocked_swath_fraction_ = 0.0;
   last_progress_time_ = std::chrono::steady_clock::now();
   last_progress_x_ = 0.0;
   last_progress_y_ = 0.0;
 
-  const auto& swath = ctx->coverage_plan->swaths[swath_index_];
+  const auto &swath = ctx->coverage_plan->swaths[swath_index_];
   sendTransitGoal(swath);
 
   return BT::NodeStatus::RUNNING;
@@ -563,7 +578,7 @@ BT::NodeStatus ExecuteSwathBySwath::onRunning()
     return BT::NodeStatus::RUNNING;
   }
 
-  const auto& swath = ctx->coverage_plan->swaths[swath_index_];
+  const auto &swath = ctx->coverage_plan->swaths[swath_index_];
 
   if (phase_ == Phase::TRANSIT_TO_SWATH)
   {
@@ -680,45 +695,12 @@ BT::NodeStatus ExecuteSwathBySwath::onRunning()
     if (checkStuck(ctx))
     {
       RCLCPP_WARN(ctx->node->get_logger(),
-                  "ExecuteSwathBySwath: stuck during swath %zu (obstacle?)",
+                  "ExecuteSwathBySwath: stuck during swath %zu",
                   swath_index_ + 1);
       follow_client_->async_cancel_goal(follow_handle_);
       follow_handle_.reset();
       setBladeEnabled(false);
-
-      // Try rerouting around the obstacle using NavigateToPose (planner-aware).
-      if (reroute_attempts_ < max_reroute_attempts_)
-      {
-        reroute_attempts_++;
-        double rx = last_progress_x_;
-        double ry = last_progress_y_;
-        try
-        {
-          auto tf = ctx->tf_buffer->lookupTransform("map", "base_link", tf2::TimePointZero);
-          rx = tf.transform.translation.x;
-          ry = tf.transform.translation.y;
-        }
-        catch (const tf2::TransformException&)
-        {
-        }
-
-        RCLCPP_INFO(ctx->node->get_logger(),
-                    "ExecuteSwathBySwath: rerouting attempt %zu/%zu around obstacle on swath %zu",
-                    reroute_attempts_,
-                    max_reroute_attempts_,
-                    swath_index_ + 1);
-        phase_ = Phase::REROUTING_AROUND_OBSTACLE;
-        last_progress_time_ = now;
-        sendRerouteGoal(ctx->coverage_plan->swaths[swath_index_], rx, ry);
-        return BT::NodeStatus::RUNNING;
-      }
-
-      // Rerouting exhausted — skip this swath.
-      RCLCPP_WARN(ctx->node->get_logger(),
-                  "ExecuteSwathBySwath: reroute attempts exhausted, skipping swath %zu",
-                  swath_index_ + 1);
       skipped_swaths_++;
-      reroute_attempts_ = 0;
       if (!advanceToNextSwath())
       {
         phase_ = Phase::DONE;
@@ -739,7 +721,6 @@ BT::NodeStatus ExecuteSwathBySwath::onRunning()
       follow_handle_.reset();
       setBladeEnabled(false);
       completed_swaths_++;
-      reroute_attempts_ = 0;
 
       if (!advanceToNextSwath())
       {
@@ -760,141 +741,11 @@ BT::NodeStatus ExecuteSwathBySwath::onRunning()
         status == action_msgs::msg::GoalStatus::STATUS_CANCELED)
     {
       RCLCPP_WARN(ctx->node->get_logger(),
-                  "ExecuteSwathBySwath: swath %zu follow aborted/canceled",
+                  "ExecuteSwathBySwath: swath %zu follow failed",
                   swath_index_ + 1);
       follow_handle_.reset();
       setBladeEnabled(false);
-
-      // Attempt reroute before skipping.
-      if (reroute_attempts_ < max_reroute_attempts_)
-      {
-        reroute_attempts_++;
-        double rx = last_progress_x_;
-        double ry = last_progress_y_;
-        try
-        {
-          auto tf = ctx->tf_buffer->lookupTransform("map", "base_link", tf2::TimePointZero);
-          rx = tf.transform.translation.x;
-          ry = tf.transform.translation.y;
-        }
-        catch (const tf2::TransformException&)
-        {
-        }
-
-        phase_ = Phase::REROUTING_AROUND_OBSTACLE;
-        last_progress_time_ = now;
-        sendRerouteGoal(ctx->coverage_plan->swaths[swath_index_], rx, ry);
-        return BT::NodeStatus::RUNNING;
-      }
-
       skipped_swaths_++;
-      reroute_attempts_ = 0;
-      if (!advanceToNextSwath())
-      {
-        phase_ = Phase::DONE;
-        return (completed_swaths_ > 0) ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
-      }
-      phase_ = Phase::TRANSIT_TO_SWATH;
-      transit_cooldown_until_ = now + std::chrono::seconds(3);
-      sendTransitGoal(ctx->coverage_plan->swaths[swath_index_]);
-      return BT::NodeStatus::RUNNING;
-    }
-
-    return BT::NodeStatus::RUNNING;
-  }
-
-  // ── REROUTING_AROUND_OBSTACLE: NavigateToPose around obstacle, then resume swath ──
-  if (phase_ == Phase::REROUTING_AROUND_OBSTACLE)
-  {
-    if (!nav_handle_)
-    {
-      if (nav_future_.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
-      {
-        return BT::NodeStatus::RUNNING;
-      }
-      nav_handle_ = nav_future_.get();
-      if (!nav_handle_)
-      {
-        RCLCPP_WARN(ctx->node->get_logger(),
-                    "ExecuteSwathBySwath: reroute goal rejected for swath %zu",
-                    swath_index_ + 1);
-        // Fall back to skipping.
-        skipped_swaths_++;
-        reroute_attempts_ = 0;
-        if (!advanceToNextSwath())
-        {
-          phase_ = Phase::DONE;
-          return (completed_swaths_ > 0) ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
-        }
-        phase_ = Phase::TRANSIT_TO_SWATH;
-        transit_cooldown_until_ = now + std::chrono::seconds(3);
-        sendTransitGoal(ctx->coverage_plan->swaths[swath_index_]);
-        return BT::NodeStatus::RUNNING;
-      }
-      last_progress_time_ = now;
-    }
-
-    auto status = nav_handle_->get_status();
-
-    if (checkStuck(ctx))
-    {
-      RCLCPP_WARN(ctx->node->get_logger(),
-                  "ExecuteSwathBySwath: stuck during reroute on swath %zu",
-                  swath_index_ + 1);
-      nav_client_->async_cancel_goal(nav_handle_);
-      nav_handle_.reset();
-      skipped_swaths_++;
-      reroute_attempts_ = 0;
-      if (!advanceToNextSwath())
-      {
-        phase_ = Phase::DONE;
-        return (completed_swaths_ > 0) ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
-      }
-      phase_ = Phase::TRANSIT_TO_SWATH;
-      transit_cooldown_until_ = now + std::chrono::seconds(3);
-      sendTransitGoal(ctx->coverage_plan->swaths[swath_index_]);
-      return BT::NodeStatus::RUNNING;
-    }
-
-    if (status == action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)
-    {
-      RCLCPP_INFO(ctx->node->get_logger(),
-                  "ExecuteSwathBySwath: rerouted past obstacle on swath %zu, resuming mowing",
-                  swath_index_ + 1);
-      nav_handle_.reset();
-
-      // Resume mowing from current position to swath end.
-      double rx = 0.0, ry = 0.0;
-      try
-      {
-        auto tf = ctx->tf_buffer->lookupTransform("map", "base_link", tf2::TimePointZero);
-        rx = tf.transform.translation.x;
-        ry = tf.transform.translation.y;
-      }
-      catch (const tf2::TransformException&)
-      {
-        // Use the target point from the reroute goal.
-        const auto& sw = ctx->coverage_plan->swaths[swath_index_];
-        rx = sw.start.x + blocked_swath_fraction_ * (sw.end.x - sw.start.x);
-        ry = sw.start.y + blocked_swath_fraction_ * (sw.end.y - sw.start.y);
-      }
-
-      setBladeEnabled(true);
-      phase_ = Phase::MOWING_SWATH;
-      last_progress_time_ = now;
-      sendRemainingSwathGoal(ctx->coverage_plan->swaths[swath_index_], rx, ry);
-      return BT::NodeStatus::RUNNING;
-    }
-
-    if (status == action_msgs::msg::GoalStatus::STATUS_ABORTED ||
-        status == action_msgs::msg::GoalStatus::STATUS_CANCELED)
-    {
-      RCLCPP_WARN(ctx->node->get_logger(),
-                  "ExecuteSwathBySwath: reroute navigation failed for swath %zu",
-                  swath_index_ + 1);
-      nav_handle_.reset();
-      skipped_swaths_++;
-      reroute_attempts_ = 0;
       if (!advanceToNextSwath())
       {
         phase_ = Phase::DONE;
@@ -929,8 +780,6 @@ void ExecuteSwathBySwath::onHalted()
   nav_handle_.reset();
   follow_handle_.reset();
   phase_ = Phase::DONE;
-  reroute_attempts_ = 0;
-  blocked_swath_fraction_ = 0.0;
 
   RCLCPP_INFO(ctx->node->get_logger(),
               "ExecuteSwathBySwath: halted (%zu completed, %zu skipped of %zu)",
@@ -943,7 +792,7 @@ void ExecuteSwathBySwath::onHalted()
 // ExecuteFullCoveragePath — sends full F2C path to Nav2 FollowPath
 // ===========================================================================
 
-size_t ExecuteFullCoveragePath::findClosestPoseIndex(const nav_msgs::msg::Path& path,
+size_t ExecuteFullCoveragePath::findClosestPoseIndex(const nav_msgs::msg::Path &path,
                                                      double rx,
                                                      double ry) const
 {
@@ -970,7 +819,7 @@ void ExecuteFullCoveragePath::setBladeEnabled(bool enabled)
   if (!blade_client_)
   {
     blade_client_ = ctx->node->create_client<mowgli_interfaces::srv::MowerControl>(
-        "/mowgli/hardware/mower_control");
+        "/hardware_bridge/mower_control");
   }
 
   if (!blade_client_->service_is_ready())
@@ -986,7 +835,7 @@ void ExecuteFullCoveragePath::setBladeEnabled(bool enabled)
   blade_client_->async_send_request(req);
 }
 
-bool ExecuteFullCoveragePath::checkStuck(const std::shared_ptr<BTContext>& ctx)
+bool ExecuteFullCoveragePath::checkStuck(const std::shared_ptr<BTContext> &ctx)
 {
   double rx = 0.0, ry = 0.0;
   try
@@ -995,7 +844,7 @@ bool ExecuteFullCoveragePath::checkStuck(const std::shared_ptr<BTContext>& ctx)
     rx = transform.transform.translation.x;
     ry = transform.transform.translation.y;
   }
-  catch (const tf2::TransformException&)
+  catch (const tf2::TransformException &)
   {
     return false;
   }
@@ -1049,12 +898,13 @@ BT::NodeStatus ExecuteFullCoveragePath::onStart()
   last_progress_time_ = std::chrono::steady_clock::now();
   last_progress_x_ = 0.0;
   last_progress_y_ = 0.0;
+  inline_retries_ = 0;
 
-  const auto& full_path = ctx->coverage_plan->full_path;
+  const auto &full_path = ctx->coverage_plan->full_path;
 
   // Check robot distance to the closest point on the path.
-  // If close enough (< 2m), send FollowPath directly from that point.
-  // Otherwise, NavigateToPose to the path start first.
+  // If close enough, send FollowPath directly from that point.
+  // Otherwise, prepend current position so the controller smoothly drives there.
   double rx = 0.0, ry = 0.0;
   bool have_pose = false;
   try
@@ -1064,7 +914,7 @@ BT::NodeStatus ExecuteFullCoveragePath::onStart()
     ry = tf.transform.translation.y;
     have_pose = true;
   }
-  catch (const tf2::TransformException&)
+  catch (const tf2::TransformException &)
   {
   }
 
@@ -1078,12 +928,6 @@ BT::NodeStatus ExecuteFullCoveragePath::onStart()
     closest_dist = std::hypot(dx, dy);
   }
 
-  // Always send the path directly to FollowPath, starting from the closest
-  // point.  Avoid NavigateToPose transit because a prior NavigateToPose call
-  // followed by a FollowPath call crashes controller_server in Nav2 Jazzy
-  // (SIGSEGV on second goal).  If the robot is far from the path, prepend
-  // the robot's current position so the controller smoothly drives to the
-  // path start.
   if (have_pose)
   {
     RCLCPP_INFO(ctx->node->get_logger(),
@@ -1107,13 +951,12 @@ BT::NodeStatus ExecuteFullCoveragePath::onStart()
       robot_pose.header.stamp = ctx->node->now();
       robot_pose.pose.position.x = rx;
       robot_pose.pose.position.y = ry;
-      // Use orientation from the first coverage pose
       robot_pose.pose.orientation = full_path.poses[0].pose.orientation;
       sub_path.poses.push_back(robot_pose);
     }
 
     sub_path.poses.insert(sub_path.poses.end(),
-                          full_path.poses.begin() + static_cast<long>(closest_index),
+                          full_path.poses.begin() + static_cast<int64_t>(closest_index),
                           full_path.poses.end());
 
     if (sub_path.poses.empty())
@@ -1135,11 +978,11 @@ BT::NodeStatus ExecuteFullCoveragePath::onStart()
         double d = 0.0;
         for (size_t i = 1; i < send_path.poses.size(); ++i)
         {
-          const double dx =
+          const double ddx =
               send_path.poses[i].pose.position.x - send_path.poses[i - 1].pose.position.x;
-          const double dy =
+          const double ddy =
               send_path.poses[i].pose.position.y - send_path.poses[i - 1].pose.position.y;
-          d += std::hypot(dx, dy);
+          d += std::hypot(ddx, ddy);
         }
         return d;
       }();
@@ -1152,17 +995,17 @@ BT::NodeStatus ExecuteFullCoveragePath::onStart()
       double accum_dist = 0.0;
       for (size_t i = 1; i < send_path.poses.size(); ++i)
       {
-        const double dx =
+        const double ddx =
             send_path.poses[i].pose.position.x - send_path.poses[i - 1].pose.position.x;
-        const double dy =
+        const double ddy =
             send_path.poses[i].pose.position.y - send_path.poses[i - 1].pose.position.y;
-        accum_dist += std::hypot(dx, dy);
+        accum_dist += std::hypot(ddx, ddy);
 
         // Check heading change (detect turns between swaths)
         bool is_turn = false;
         if (i + 1 < send_path.poses.size())
         {
-          const double dx1 = dx, dy1 = dy;
+          const double dx1 = ddx, dy1 = ddy;
           const double dx2 =
               send_path.poses[i + 1].pose.position.x - send_path.poses[i].pose.position.x;
           const double dy2 =
@@ -1183,8 +1026,8 @@ BT::NodeStatus ExecuteFullCoveragePath::onStart()
         }
       }
       // Always include the last pose
-      const auto& last = send_path.poses.back();
-      const auto& kept = thinned.poses.back();
+      const auto &last = send_path.poses.back();
+      const auto &kept = thinned.poses.back();
       if (last.pose.position.x != kept.pose.position.x ||
           last.pose.position.y != kept.pose.position.y)
       {
@@ -1201,10 +1044,6 @@ BT::NodeStatus ExecuteFullCoveragePath::onStart()
 
     Nav2FollowPath::Goal goal;
     goal.path = send_path;
-    // Use "FollowPath" (same as transit) to avoid controller_server segfault
-    // when switching controllers in Nav2 Jazzy.  The FollowPath controller
-    // uses RotationShimController with angular_dist_threshold=3.14 (disabled),
-    // so behavior is identical to bare RPP for straight/curved paths.
     goal.controller_id = "FollowPath";
     goal.goal_checker_id = "coverage_goal_checker";
     follow_handle_.reset();
@@ -1224,7 +1063,6 @@ BT::NodeStatus ExecuteFullCoveragePath::onRunning()
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
 
-  // ── FOLLOWING_PATH: FollowPath along the full F2C coverage path ──
   if (phase_ == Phase::FOLLOWING_PATH)
   {
     if (!follow_handle_)
@@ -1256,8 +1094,19 @@ BT::NodeStatus ExecuteFullCoveragePath::onRunning()
     if (status == action_msgs::msg::GoalStatus::STATUS_ABORTED ||
         status == action_msgs::msg::GoalStatus::STATUS_CANCELED)
     {
-      RCLCPP_WARN(ctx->node->get_logger(), "ExecuteFullCoveragePath: FollowPath aborted/canceled");
+      RCLCPP_WARN(ctx->node->get_logger(),
+                  "ExecuteFullCoveragePath: FollowPath aborted/canceled (retry %d/%d)",
+                  inline_retries_,
+                  max_inline_retries_);
       follow_handle_.reset();
+
+      // Inline recovery: skip ahead on path and resend immediately.
+      // This avoids the slow BT recovery (BackUp + ClearCostmap + 3s wait).
+      if (inline_retries_ < max_inline_retries_ && resendFromCurrentPose(ctx))
+      {
+        inline_retries_++;
+        return BT::NodeStatus::RUNNING;
+      }
       setBladeEnabled(false);
       return BT::NodeStatus::FAILURE;
     }
@@ -1265,9 +1114,17 @@ BT::NodeStatus ExecuteFullCoveragePath::onRunning()
     if (checkStuck(ctx))
     {
       RCLCPP_WARN(ctx->node->get_logger(),
-                  "ExecuteFullCoveragePath: stuck detected, canceling path");
+                  "ExecuteFullCoveragePath: stuck detected (retry %d/%d)",
+                  inline_retries_,
+                  max_inline_retries_);
       follow_client_->async_cancel_goal(follow_handle_);
       follow_handle_.reset();
+
+      if (inline_retries_ < max_inline_retries_ && resendFromCurrentPose(ctx))
+      {
+        inline_retries_++;
+        return BT::NodeStatus::RUNNING;
+      }
       setBladeEnabled(false);
       return BT::NodeStatus::FAILURE;
     }
@@ -1276,6 +1133,77 @@ BT::NodeStatus ExecuteFullCoveragePath::onRunning()
   }
 
   return BT::NodeStatus::RUNNING;
+}
+
+bool ExecuteFullCoveragePath::resendFromCurrentPose(const std::shared_ptr<BTContext> &ctx)
+{
+  if (!ctx->coverage_plan || ctx->coverage_plan->full_path.poses.empty())
+  {
+    return false;
+  }
+
+  double rx = 0.0, ry = 0.0;
+  try
+  {
+    auto tf = ctx->tf_buffer->lookupTransform("map", "base_link", tf2::TimePointZero);
+    rx = tf.transform.translation.x;
+    ry = tf.transform.translation.y;
+  }
+  catch (const tf2::TransformException &)
+  {
+    RCLCPP_WARN(ctx->node->get_logger(), "ExecuteFullCoveragePath: resend failed — no TF");
+    return false;
+  }
+
+  const auto &full_path = ctx->coverage_plan->full_path;
+  size_t closest = findClosestPoseIndex(full_path, rx, ry);
+
+  // Skip ahead past the failure point to avoid hitting the same obstacle
+  size_t resume_index = std::min(closest + skip_poses_on_retry_, full_path.poses.size() - 1);
+
+  if (resume_index >= full_path.poses.size() - 10)
+  {
+    RCLCPP_INFO(ctx->node->get_logger(),
+                "ExecuteFullCoveragePath: near end of path, declaring complete");
+    return false;
+  }
+
+  nav_msgs::msg::Path sub_path;
+  sub_path.header = full_path.header;
+  sub_path.header.stamp = ctx->node->now();
+
+  // Prepend current position for smooth transition
+  geometry_msgs::msg::PoseStamped robot_pose;
+  robot_pose.header = sub_path.header;
+  robot_pose.pose.position.x = rx;
+  robot_pose.pose.position.y = ry;
+  robot_pose.pose.orientation = full_path.poses[resume_index].pose.orientation;
+  sub_path.poses.push_back(robot_pose);
+
+  sub_path.poses.insert(sub_path.poses.end(),
+                        full_path.poses.begin() + static_cast<int64_t>(resume_index),
+                        full_path.poses.end());
+
+  RCLCPP_INFO(ctx->node->get_logger(),
+              "ExecuteFullCoveragePath: inline resend from pose %zu/%zu "
+              "(skipped %zu poses, robot at %.2f,%.2f)",
+              resume_index,
+              full_path.poses.size(),
+              resume_index - closest,
+              rx,
+              ry);
+
+  Nav2FollowPath::Goal goal;
+  goal.path = sub_path;
+  goal.controller_id = "FollowPath";
+  goal.goal_checker_id = "coverage_goal_checker";
+  follow_handle_.reset();
+  follow_future_ = follow_client_->async_send_goal(goal);
+  phase_ = Phase::FOLLOWING_PATH;
+  last_progress_time_ = std::chrono::steady_clock::now();
+  last_progress_x_ = rx;
+  last_progress_y_ = ry;
+  return true;
 }
 
 void ExecuteFullCoveragePath::onHalted()

@@ -1,3 +1,18 @@
+// Copyright 2026 Mowgli Project
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 // SPDX-License-Identifier: GPL-3.0
 /**
  * @file diagnostics_node.cpp
@@ -135,7 +150,7 @@ void DiagnosticsNode::create_subscriptions()
   const auto sensor_qos = rclcpp::SensorDataQoS();
 
   sub_status_ = create_subscription<mowgli_interfaces::msg::Status>(
-      "/status",
+      "/hardware_bridge/status",
       10,
       [this](mowgli_interfaces::msg::Status::ConstSharedPtr msg)
       {
@@ -143,7 +158,7 @@ void DiagnosticsNode::create_subscriptions()
       });
 
   sub_emergency_ = create_subscription<mowgli_interfaces::msg::Emergency>(
-      "/emergency",
+      "/hardware_bridge/emergency",
       10,
       [this](mowgli_interfaces::msg::Emergency::ConstSharedPtr msg)
       {
@@ -151,7 +166,7 @@ void DiagnosticsNode::create_subscriptions()
       });
 
   sub_power_ = create_subscription<mowgli_interfaces::msg::Power>(
-      "/power",
+      "/hardware_bridge/power",
       10,
       [this](mowgli_interfaces::msg::Power::ConstSharedPtr msg)
       {
@@ -184,7 +199,7 @@ void DiagnosticsNode::create_subscriptions()
                                                    });
 
   sub_gps_ = create_subscription<sensor_msgs::msg::NavSatFix>(
-      "/mowgli/gps/fix",
+      "/gps/fix",
       sensor_qos,
       [this](sensor_msgs::msg::NavSatFix::ConstSharedPtr msg)
       {
@@ -194,8 +209,7 @@ void DiagnosticsNode::create_subscriptions()
 
 void DiagnosticsNode::create_publishers()
 {
-  pub_diagnostics_ =
-      create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/mowgli/diagnostics", 10);
+  pub_diagnostics_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
 }
 
 void DiagnosticsNode::create_timer()

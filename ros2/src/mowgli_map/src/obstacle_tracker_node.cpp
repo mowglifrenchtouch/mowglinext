@@ -157,7 +157,8 @@ ObstacleTrackerNode::ObstacleTrackerNode(const rclcpp::NodeOptions& options)
                                      });
 
   // ── Boundary service client ─────────────────────────────────────────────
-  boundary_client_ = create_client<mowgli_interfaces::srv::GetMowingArea>("/mowgli/map/get_area");
+  boundary_client_ =
+      create_client<mowgli_interfaces::srv::GetMowingArea>("/map_server_node/get_mowing_area");
 
   // Retry fetching the boundary every 5 seconds until map_server is ready.
   boundary_fetch_timer_ = create_wall_timer(std::chrono::seconds(5),

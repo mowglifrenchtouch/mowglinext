@@ -1,10 +1,17 @@
 // Copyright 2026 Mowgli Project
 //
-// Licensed under the GNU General Public License, version 3 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 //
-//     https://www.gnu.org/licenses/gpl-3.0.html
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
  * @file coverage_planner_node.cpp
@@ -25,9 +32,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -41,6 +50,7 @@
 #include "nav_msgs/msg/path.hpp"
 #include "ogr_geometry.h"
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
@@ -51,7 +61,7 @@ namespace mowgli_coverage_planner
 // Constructor
 // ---------------------------------------------------------------------------
 
-CoveragePlannerNode::CoveragePlannerNode(const rclcpp::NodeOptions& options)
+CoveragePlannerNode::CoveragePlannerNode(const rclcpp::NodeOptions &options)
     : rclcpp::Node("coverage_planner_node", options)
 {
   tool_width_ = declare_parameter<double>("tool_width", 0.18);
@@ -62,6 +72,10 @@ CoveragePlannerNode::CoveragePlannerNode(const rclcpp::NodeOptions& options)
   min_turning_radius_ = declare_parameter<double>("min_turning_radius", 0.01);
   decompose_cells_ = declare_parameter<bool>("decompose_cells", true);
   map_frame_ = declare_parameter<std::string>("map_frame", "map");
+  mowing_speed_ = declare_parameter<double>("mowing_speed", 0.15);
+  transit_speed_ = declare_parameter<double>("transit_speed", 0.3);
+  route_graph_filepath_ =
+      declare_parameter<std::string>("route_graph_filepath", "/tmp/mowing_route.geojson");
 
   if (tool_width_ <= 0.0)
   {
@@ -99,9 +113,12 @@ CoveragePlannerNode::CoveragePlannerNode(const rclcpp::NodeOptions& options)
       create_publisher<nav_msgs::msg::Path>("~/coverage_path", rclcpp::QoS(1).transient_local());
   outline_pub_ =
       create_publisher<nav_msgs::msg::Path>("~/coverage_outline", rclcpp::QoS(1).transient_local());
+  route_graph_pub_ =
+      create_publisher<std_msgs::msg::String>("~/route_graph", rclcpp::QoS(1).transient_local());
 
-  costmap_min_cluster_size_ = declare_parameter<int>("costmap_min_cluster_size", 3);
+  costmap_min_cluster_size_ = declare_parameter<int>("costmap_min_cluster_size", 10);
   costmap_obstacle_inflation_ = declare_parameter<double>("costmap_obstacle_inflation", 0.10);
+  use_costmap_obstacles_ = declare_parameter<bool>("use_costmap_obstacles", false);
 
   // Subscribe to global costmap for obstacle extraction.
   costmap_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
@@ -117,13 +134,13 @@ CoveragePlannerNode::CoveragePlannerNode(const rclcpp::NodeOptions& options)
   // Persistent obstacles are merged as holes in the F2C cell so
   // coverage paths are planned around them.
   obstacle_sub_ = create_subscription<mowgli_interfaces::msg::ObstacleArray>(
-      "/mowgli/obstacles/tracked",
+      "/obstacle_tracker/obstacles",
       rclcpp::QoS(10),
       [this](mowgli_interfaces::msg::ObstacleArray::ConstSharedPtr msg)
       {
         std::lock_guard<std::mutex> lock(obstacle_mutex_);
         tracked_obstacles_.clear();
-        for (const auto& obs : msg->obstacles)
+        for (const auto &obs : msg->obstacles)
         {
           // Only use persistent obstacles (not transient detections)
           if (obs.status == mowgli_interfaces::msg::TrackedObstacle::PERSISTENT &&
@@ -151,7 +168,7 @@ CoveragePlannerNode::CoveragePlannerNode(const rclcpp::NodeOptions& options)
 // ---------------------------------------------------------------------------
 
 rclcpp_action::GoalResponse CoveragePlannerNode::handle_goal(
-    const rclcpp_action::GoalUUID&, std::shared_ptr<const PlanCoverageAction::Goal>)
+    const rclcpp_action::GoalUUID &, std::shared_ptr<const PlanCoverageAction::Goal>)
 {
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -173,9 +190,9 @@ void CoveragePlannerNode::handle_accepted(const std::shared_ptr<GoalHandlePlanCo
 // ---------------------------------------------------------------------------
 
 static void publish_feedback_impl(
-    const std::shared_ptr<CoveragePlannerNode::GoalHandlePlanCoverage>& goal_handle,
+    const std::shared_ptr<CoveragePlannerNode::GoalHandlePlanCoverage> &goal_handle,
     float progress,
-    const std::string& phase)
+    const std::string &phase)
 {
   auto fb = std::make_shared<CoveragePlannerNode::PlanCoverageAction::Feedback>();
   fb->progress_percent = progress;
@@ -192,13 +209,13 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
   auto result = std::make_shared<PlanCoverageAction::Result>();
   const auto goal = goal_handle->get_goal();
 
-  auto publish_feedback = [&](float pct, const std::string& phase)
+  auto publish_feedback = [&](float pct, const std::string &phase)
   {
     publish_feedback_impl(goal_handle, pct, phase);
   };
 
   // ---- Validate input -------------------------------------------------------
-  const auto& boundary = goal->outer_boundary;
+  const auto &boundary = goal->outer_boundary;
   if (boundary.points.size() < 3)
   {
     result->success = false;
@@ -210,7 +227,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
 
   // Convert to internal polygon type for outline generation.
   Polygon2D outer;
-  for (const auto& pt : boundary.points)
+  for (const auto &pt : boundary.points)
   {
     outer.emplace_back(static_cast<double>(pt.x), static_cast<double>(pt.y));
   }
@@ -244,7 +261,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
 
   // ---- Build Fields2Cover types ---------------------------------------------
   F2CLinearRing ring;
-  for (const auto& pt : outer)
+  for (const auto &pt : outer)
   {
     ring.addPoint(F2CPoint(pt.first, pt.second));
   }
@@ -255,14 +272,14 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
   // Add obstacle polygons as interior rings (holes).
   // Sources: 1) explicit obstacles from action goal, 2) tracked obstacles
   // from obstacle_tracker (persistent LiDAR detections).
-  auto add_obstacle_ring = [&cell, this](const geometry_msgs::msg::Polygon& obs_polygon)
+  auto add_obstacle_ring = [&cell, this](const geometry_msgs::msg::Polygon &obs_polygon)
   {
     if (obs_polygon.points.size() < 3)
     {
       return;
     }
     F2CLinearRing obs_ring;
-    for (const auto& pt : obs_polygon.points)
+    for (const auto &pt : obs_polygon.points)
     {
       obs_ring.addPoint(F2CPoint(static_cast<double>(pt.x), static_cast<double>(pt.y)));
     }
@@ -272,7 +289,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
   };
 
   // 1) Obstacles from action goal (passed by BT from map_server).
-  for (const auto& obs : goal->obstacles)
+  for (const auto &obs : goal->obstacles)
   {
     add_obstacle_ring(obs);
   }
@@ -281,7 +298,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
   size_t tracked_count = 0;
   {
     std::lock_guard<std::mutex> lock(obstacle_mutex_);
-    for (const auto& obs : tracked_obstacles_)
+    for (const auto &obs : tracked_obstacles_)
     {
       add_obstacle_ring(obs);
       ++tracked_count;
@@ -289,10 +306,17 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
   }
 
   // 3) Obstacles extracted from global costmap (lethal cells).
-  auto costmap_obstacles = extract_costmap_obstacles();
-  for (const auto& obs : costmap_obstacles)
+  //    Disabled by default — the collision_monitor handles real-time obstacle
+  //    avoidance during navigation. Costmap obstacles from SLAM map walls
+  //    fill the mowing area and collapse the coverage plan.
+  std::vector<geometry_msgs::msg::Polygon> costmap_obstacles;
+  if (use_costmap_obstacles_)
   {
-    add_obstacle_ring(obs);
+    costmap_obstacles = extract_costmap_obstacles();
+    for (const auto &obs : costmap_obstacles)
+    {
+      add_obstacle_ring(obs);
+    }
   }
 
   RCLCPP_INFO(get_logger(),
@@ -319,7 +343,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
     const double total_headland = static_cast<double>(headland_passes_) * headland_width_;
     inner_cells = headland_gen.generateHeadlands(cells, total_headland);
   }
-  catch (const std::exception& ex)
+  catch (const std::exception &ex)
   {
     result->success = false;
     result->message = std::string("F2C headland generation failed: ") + ex.what();
@@ -361,7 +385,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
       for (int ci = 0; ci < static_cast<int>(work_cells.size()); ++ci)
       {
         // Get the GDAL geometry handle for the inner cell.
-        OGRGeometry* cell_geom = work_cells.getGeometry(ci).get()->clone();
+        OGRGeometry *cell_geom = work_cells.getGeometry(ci).get()->clone();
 
         for (size_t ri = 0; ri < num_obstacle_rings; ++ri)
         {
@@ -377,14 +401,14 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
           obs_poly.addRing(&obs_lr);
 
           // Buffer the obstacle slightly for clearance.
-          OGRGeometry* buffered = obs_poly.Buffer(costmap_obstacle_inflation_);
+          OGRGeometry *buffered = obs_poly.Buffer(costmap_obstacle_inflation_);
           if (!buffered)
           {
             continue;
           }
 
           // Subtract obstacle from cell.
-          OGRGeometry* result = cell_geom->Difference(buffered);
+          OGRGeometry *result = cell_geom->Difference(buffered);
           OGRGeometryFactory::destroyGeometry(buffered);
           if (result)
           {
@@ -395,10 +419,10 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
 
         // Convert OGR result back to F2C cells.
         // Helper to build F2CCell from an OGRPolygon.
-        auto ogr_poly_to_f2c = [](const OGRPolygon* poly) -> F2CCell
+        auto ogr_poly_to_f2c = [](const OGRPolygon *poly) -> F2CCell
         {
           F2CLinearRing outer;
-          const auto* ext = poly->getExteriorRing();
+          const auto *ext = poly->getExteriorRing();
           for (int pi = 0; pi < ext->getNumPoints(); ++pi)
           {
             outer.addPoint(F2CPoint(ext->getX(pi), ext->getY(pi)));
@@ -407,7 +431,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
           // Add interior rings (remaining obstacles)
           for (int iri = 0; iri < poly->getNumInteriorRings(); ++iri)
           {
-            const auto* ir = poly->getInteriorRing(iri);
+            const auto *ir = poly->getInteriorRing(iri);
             F2CLinearRing hole;
             for (int pi = 0; pi < ir->getNumPoints(); ++pi)
             {
@@ -421,15 +445,15 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
         F2CCells result_cells;
         if (cell_geom->getGeometryType() == wkbPolygon)
         {
-          result_cells.addGeometry(ogr_poly_to_f2c(static_cast<const OGRPolygon*>(cell_geom)));
+          result_cells.addGeometry(ogr_poly_to_f2c(static_cast<const OGRPolygon *>(cell_geom)));
         }
         else if (cell_geom->getGeometryType() == wkbMultiPolygon)
         {
-          auto* mp = static_cast<OGRMultiPolygon*>(cell_geom);
+          auto *mp = static_cast<OGRMultiPolygon *>(cell_geom);
           for (int gi = 0; gi < mp->getNumGeometries(); ++gi)
           {
             result_cells.addGeometry(
-                ogr_poly_to_f2c(static_cast<const OGRPolygon*>(mp->getGeometryRef(gi))));
+                ogr_poly_to_f2c(static_cast<const OGRPolygon *>(mp->getGeometryRef(gi))));
           }
         }
         OGRGeometryFactory::destroyGeometry(cell_geom);
@@ -459,7 +483,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
                   num_obstacle_rings,
                   static_cast<int>(work_cells.size()));
     }
-    catch (const std::exception& ex)
+    catch (const std::exception &ex)
     {
       RCLCPP_WARN(get_logger(),
                   "F2C: obstacle subtraction failed (%s), using cells without obstacles",
@@ -509,7 +533,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
       all_swaths.push_back(cell_swaths);
     }
   }
-  catch (const std::exception& ex)
+  catch (const std::exception &ex)
   {
     result->success = false;
     result->message = std::string("F2C swath generation failed: ") + ex.what();
@@ -520,7 +544,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
 
   // Count total swaths.
   size_t total_swaths = 0;
-  for (const auto& cs : all_swaths)
+  for (const auto &cs : all_swaths)
   {
     total_swaths += cs.size();
   }
@@ -556,9 +580,9 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
   // (OR-tools RoutePlannerBase requires the ortools library; use BoustrophedonOrder
   // as the robust default — can be upgraded when ortools is added to the Docker image.)
   F2CSwaths flat_swaths;
-  for (const auto& cs : all_swaths)
+  for (const auto &cs : all_swaths)
   {
-    for (const auto& s : cs)
+    for (const auto &s : cs)
     {
       flat_swaths.push_back(s);
     }
@@ -571,7 +595,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
   {
     route = route_planner.genSortedSwaths(flat_swaths);
   }
-  catch (const std::exception& ex)
+  catch (const std::exception &ex)
   {
     result->success = false;
     result->message = std::string("F2C route planning failed: ") + ex.what();
@@ -619,7 +643,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
   {
     f2c_path = path_planner.planPath(robot, route, turn_planner);
   }
-  catch (const std::exception& ex)
+  catch (const std::exception &ex)
   {
     result->success = false;
     result->message = std::string("F2C path planning failed: ") + ex.what();
@@ -641,7 +665,7 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
 
   for (size_t si = 0; si < f2c_path.getStates().size(); ++si)
   {
-    const auto& state = f2c_path.getStates()[si];
+    const auto &state = f2c_path.getStates()[si];
     const double x = state.point.getX();
     const double y = state.point.getY();
     const double yaw = state.angle;
@@ -710,6 +734,9 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
   path_pub_->publish(swath_path);
   outline_pub_->publish(outline_path);
 
+  // Generate and publish GeoJSON route graph for Nav2 route_server.
+  publish_route_graph(swath_starts, swath_ends, mowing_speed_, transit_speed_);
+
   RCLCPP_INFO(get_logger(),
               "Coverage plan: %zu path states, %zu swaths, %.1f m total, %.2f m2 area",
               swath_path.poses.size(),
@@ -722,11 +749,136 @@ void CoveragePlannerNode::execute(const std::shared_ptr<GoalHandlePlanCoverage> 
 }
 
 // ---------------------------------------------------------------------------
+// publish_route_graph — convert swaths to GeoJSON for Nav2 route_server
+// ---------------------------------------------------------------------------
+
+void CoveragePlannerNode::publish_route_graph(
+    const std::vector<geometry_msgs::msg::Point> &swath_starts,
+    const std::vector<geometry_msgs::msg::Point> &swath_ends,
+    double mowing_speed,
+    double transit_speed)
+{
+  if (swath_starts.empty() || swath_starts.size() != swath_ends.size())
+  {
+    RCLCPP_WARN(get_logger(), "No swaths to convert to route graph");
+    return;
+  }
+
+  // Build node list: for N swaths we have 2N unique endpoints.
+  // Node IDs: swath i start = 2*i, swath i end = 2*i+1.
+  //
+  // Edge types:
+  //   - Swath edge: connects start[i] -> end[i]  (blade_on, mowing_speed)
+  //   - Turn edge:  connects end[i] -> start[i+1] (blade_off, transit_speed)
+
+  std::ostringstream json;
+  json << std::fixed;
+  json.precision(6);
+
+  json << "{\n";
+  json << "  \"type\": \"FeatureCollection\",\n";
+  json << "  \"features\": [\n";
+
+  const size_t n_swaths = swath_starts.size();
+  const size_t n_nodes = 2 * n_swaths;
+  const size_t n_edges = n_swaths + (n_swaths > 0 ? n_swaths - 1 : 0);
+  bool first = true;
+
+  // --- Point nodes ---
+  for (size_t i = 0; i < n_swaths; ++i)
+  {
+    // Start node
+    if (!first)
+    {
+      json << ",\n";
+    }
+    first = false;
+    json << "    {\"type\": \"Feature\", \"geometry\": {\"type\": \"Point\", "
+         << "\"coordinates\": [" << swath_starts[i].x << ", " << swath_starts[i].y
+         << "]}, \"properties\": {\"id\": " << (2 * i) << "}}";
+
+    // End node
+    json << ",\n";
+    json << "    {\"type\": \"Feature\", \"geometry\": {\"type\": \"Point\", "
+         << "\"coordinates\": [" << swath_ends[i].x << ", " << swath_ends[i].y
+         << "]}, \"properties\": {\"id\": " << (2 * i + 1) << "}}";
+  }
+
+  // --- Swath edges (blade_on) ---
+  size_t edge_id = 0;
+  for (size_t i = 0; i < n_swaths; ++i)
+  {
+    const size_t start_id = 2 * i;
+    const size_t end_id = 2 * i + 1;
+    const double dx = swath_ends[i].x - swath_starts[i].x;
+    const double dy = swath_ends[i].y - swath_starts[i].y;
+    const double cost = std::hypot(dx, dy);
+
+    json << ",\n";
+    json << "    {\"type\": \"Feature\", \"geometry\": {\"type\": \"MultiLineString\", "
+         << "\"coordinates\": [[[" << swath_starts[i].x << ", " << swath_starts[i].y << "], ["
+         << swath_ends[i].x << ", " << swath_ends[i].y << "]]]}, \"properties\": {"
+         << "\"id\": " << edge_id++ << ", \"startid\": " << start_id << ", \"endid\": " << end_id
+         << ", \"cost\": " << cost << ", \"speed_limit\": " << mowing_speed
+         << ", \"operation\": \"blade_on\"" << "}}";
+  }
+
+  // --- Turn edges (blade_off) ---
+  for (size_t i = 0; i + 1 < n_swaths; ++i)
+  {
+    const size_t start_id = 2 * i + 1;  // end of swath i
+    const size_t end_id = 2 * (i + 1);  // start of swath i+1
+    const double dx = swath_starts[i + 1].x - swath_ends[i].x;
+    const double dy = swath_starts[i + 1].y - swath_ends[i].y;
+    const double cost = std::hypot(dx, dy);
+
+    json << ",\n";
+    json << "    {\"type\": \"Feature\", \"geometry\": {\"type\": \"MultiLineString\", "
+         << "\"coordinates\": [[[" << swath_ends[i].x << ", " << swath_ends[i].y << "], ["
+         << swath_starts[i + 1].x << ", " << swath_starts[i + 1].y << "]]]}, \"properties\": {"
+         << "\"id\": " << edge_id++ << ", \"startid\": " << start_id << ", \"endid\": " << end_id
+         << ", \"cost\": " << cost << ", \"speed_limit\": " << transit_speed
+         << ", \"operation\": \"blade_off\"" << "}}";
+  }
+
+  json << "\n  ]\n";
+  json << "}\n";
+
+  const std::string geojson = json.str();
+
+  // Write to file.
+  {
+    std::ofstream ofs(route_graph_filepath_);
+    if (ofs.is_open())
+    {
+      ofs << geojson;
+      ofs.close();
+      RCLCPP_INFO(get_logger(),
+                  "Route graph: %zu nodes, %zu edges (%zu swaths + %zu turns) -> %s",
+                  n_nodes,
+                  n_edges,
+                  n_swaths,
+                  n_swaths > 0 ? n_swaths - 1 : size_t(0),
+                  route_graph_filepath_.c_str());
+    }
+    else
+    {
+      RCLCPP_WARN(get_logger(), "Failed to write route graph to %s", route_graph_filepath_.c_str());
+    }
+  }
+
+  // Publish on topic.
+  auto msg = std_msgs::msg::String();
+  msg.data = geojson;
+  route_graph_pub_->publish(msg);
+}
+
+// ---------------------------------------------------------------------------
 // generate_outline_path
 // ---------------------------------------------------------------------------
 
-nav_msgs::msg::Path CoveragePlannerNode::generate_outline_path(const Polygon2D& outer,
-                                                               const std::string& frame) const
+nav_msgs::msg::Path CoveragePlannerNode::generate_outline_path(const Polygon2D &outer,
+                                                               const std::string &frame) const
 {
   nav_msgs::msg::Path path;
   path.header.frame_id = frame;
@@ -745,15 +897,15 @@ nav_msgs::msg::Path CoveragePlannerNode::generate_outline_path(const Polygon2D& 
 
     for (std::size_t i = 0; i < ring.size(); ++i)
     {
-      const Point2D& curr = ring[i];
-      const Point2D& next = ring[(i + 1) % ring.size()];
+      const Point2D &curr = ring[i];
+      const Point2D &next = ring[(i + 1) % ring.size()];
       const double yaw = std::atan2(next.second - curr.second, next.first - curr.first);
       path.poses.push_back(make_pose(curr.first, curr.second, yaw, frame));
     }
     if (!ring.empty())
     {
-      const Point2D& last = ring.back();
-      const Point2D& first = ring.front();
+      const Point2D &last = ring.back();
+      const Point2D &first = ring.front();
       const double yaw = std::atan2(first.second - last.second, first.first - last.first);
       path.poses.push_back(make_pose(last.first, last.second, yaw, frame));
     }
@@ -766,13 +918,13 @@ nav_msgs::msg::Path CoveragePlannerNode::generate_outline_path(const Polygon2D& 
 // compute_path_length
 // ---------------------------------------------------------------------------
 
-double CoveragePlannerNode::compute_path_length(const nav_msgs::msg::Path& path)
+double CoveragePlannerNode::compute_path_length(const nav_msgs::msg::Path &path)
 {
   double total = 0.0;
   for (std::size_t i = 1; i < path.poses.size(); ++i)
   {
-    const auto& a = path.poses[i - 1].pose.position;
-    const auto& b = path.poses[i].pose.position;
+    const auto &a = path.poses[i - 1].pose.position;
+    const auto &b = path.poses[i].pose.position;
     total += std::hypot(b.x - a.x, b.y - a.y);
   }
   return total;
@@ -785,7 +937,7 @@ double CoveragePlannerNode::compute_path_length(const nav_msgs::msg::Path& path)
 geometry_msgs::msg::PoseStamped CoveragePlannerNode::make_pose(double x,
                                                                double y,
                                                                double yaw,
-                                                               const std::string& frame)
+                                                               const std::string &frame)
 {
   geometry_msgs::msg::PoseStamped pose;
   pose.header.frame_id = frame;
@@ -820,7 +972,7 @@ std::vector<geometry_msgs::msg::Polygon> CoveragePlannerNode::extract_costmap_ob
     return obstacles;
   }
 
-  const auto& info = costmap->info;
+  const auto &info = costmap->info;
   const int width = static_cast<int>(info.width);
   const int height = static_cast<int>(info.height);
   const double res = info.resolution;
@@ -896,7 +1048,7 @@ std::vector<geometry_msgs::msg::Polygon> CoveragePlannerNode::extract_costmap_ob
 
       // Compute axis-aligned bounding box of the cluster and inflate.
       double min_x = 1e9, max_x = -1e9, min_y = 1e9, max_y = -1e9;
-      for (const auto& [cx, cy] : cluster)
+      for (const auto &[cx, cy] : cluster)
       {
         double wx = ox + (cx + 0.5) * res;
         double wy = oy + (cy + 0.5) * res;

@@ -1,3 +1,18 @@
+// Copyright 2026 Mowgli Project
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 #include "mowgli_behavior/action_nodes.hpp"
 #include "mowgli_behavior/condition_nodes.hpp"
 #include "mowgli_behavior/coverage_nodes.hpp"
@@ -20,6 +35,7 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<ReplanNeeded>("ReplanNeeded");
   factory.registerNodeType<IsBoundaryViolation>("IsBoundaryViolation");
   factory.registerNodeType<IsNewRain>("IsNewRain");
+  factory.registerNodeType<IsChargingProgressing>("IsChargingProgressing");
 
   // Action nodes
   factory.registerNodeType<SetMowerEnabled>("SetMowerEnabled");
@@ -39,8 +55,6 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<WasRainingAtStart>("WasRainingAtStart");
   factory.registerNodeType<RecordUndockStart>("RecordUndockStart");
   factory.registerNodeType<CalibrateHeadingFromUndock>("CalibrateHeadingFromUndock");
-
-  // Docking nodes (opennav_docking)
   factory.registerNodeType<DockRobot>("DockRobot");
   factory.registerNodeType<UndockRobot>("UndockRobot");
 

@@ -1,3 +1,19 @@
+# Copyright 2026 Mowgli Project
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 """
 simulation.launch.py
 
@@ -132,12 +148,28 @@ def generate_launch_description() -> LaunchDescription:
             #
             # On containers without /dev/dri we also need a virtual X
             # display so the Mesa EGL path has something to bind to.
-            if not os.environ.get("DISPLAY") and shutil.which("Xvfb"):
-                subprocess.Popen(
-                    ["Xvfb", ":99", "-screen", "0", "1024x768x24", "-ac"],
+            # Always ensure a working virtual display for ogre2.
+            # A stale DISPLAY variable (e.g. ":2" with no X server) will
+            # cause the Sensors plugin to block forever, freezing physics.
+            if shutil.which("Xvfb"):
+                # Check if Xvfb :99 is already running
+                xvfb_running = subprocess.run(
+                    ["pgrep", "-f", "Xvfb :99"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                )
+                ).returncode == 0
+                if not xvfb_running:
+                    # Clean stale lock
+                    lock = "/tmp/.X99-lock"
+                    if os.path.exists(lock):
+                        os.remove(lock)
+                    subprocess.Popen(
+                        ["Xvfb", ":99", "-screen", "0", "1024x768x24", "-ac"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    import time
+                    time.sleep(0.5)
                 os.environ["DISPLAY"] = ":99"
 
             server_only = " -s --headless-rendering "
@@ -167,6 +199,10 @@ def generate_launch_description() -> LaunchDescription:
         [FindExecutable(name="xacro"), " ", urdf_xacro]
     )
 
+    # robot_state_publisher uses use_sim_time=False to prevent TF time-jump
+    # errors.  Its /tf_static are timeless URDF joint transforms.  Using wall
+    # clock avoids the "Detected jump back in time" cascade when Gazebo's
+    # /clock first arrives and every TF listener clears its buffer.
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -174,7 +210,6 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[
             {"robot_description": ParameterValue(robot_description_content, value_type=str)},
-            {"use_sim_time": True},
         ],
     )
 
@@ -225,6 +260,10 @@ def generate_launch_description() -> LaunchDescription:
     #     The URDF provides base_link→lidar_link. This identity bridge
     #     lets SLAM/Nav2 resolve the Gazebo scan frame back to base_link.
     # ------------------------------------------------------------------
+    # Static TF bridges use use_sim_time=False to avoid TF buffer time-jump
+    # errors during sim clock initialization.  These are identity transforms
+    # that don't depend on time — using wall clock is correct and avoids the
+    # "Detected jump back in time" cascade that breaks odom→base_link TF.
     gz_lidar_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -236,7 +275,6 @@ def generate_launch_description() -> LaunchDescription:
             "--frame-id", "lidar_link",
             "--child-frame-id", "mowgli_mower/laser_link/lidar_sensor",
         ],
-        parameters=[{"use_sim_time": True}],
     )
 
     gz_imu_tf = Node(
@@ -250,7 +288,6 @@ def generate_launch_description() -> LaunchDescription:
             "--frame-id", "imu_link",
             "--child-frame-id", "mowgli_mower/base_link/imu_sensor",
         ],
-        parameters=[{"use_sim_time": True}],
     )
 
     # ------------------------------------------------------------------

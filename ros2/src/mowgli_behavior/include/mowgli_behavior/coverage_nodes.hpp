@@ -1,3 +1,18 @@
+// Copyright 2026 Mowgli Project
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 #pragma once
 
 #include <chrono>
@@ -58,6 +73,7 @@ private:
   GoalHandle::SharedPtr goal_handle_;
   std::shared_ptr<const CoverageAction::Result> latest_result_;
   bool result_received_{false};
+  uint32_t area_index_{0};
 };
 
 // ---------------------------------------------------------------------------
@@ -87,7 +103,12 @@ public:
 
   static BT::PortsList providedPorts()
   {
-    return {};
+    return {BT::InputPort<double>("stuck_timeout_sec",
+                                  10.0,
+                                  "Seconds without progress before stuck"),
+            BT::InputPort<double>("stuck_min_progress",
+                                  0.05,
+                                  "Minimum distance (m) to count as progress")};
   }
 
   BT::NodeStatus onStart() override;
@@ -99,20 +120,13 @@ private:
   {
     TRANSIT_TO_SWATH,
     MOWING_SWATH,
-    REROUTING_AROUND_OBSTACLE,
     DONE
   };
 
   nav_msgs::msg::Path swathToPath(const BTContext::Swath& swath,
                                   const rclcpp::Node::SharedPtr& node) const;
-  nav_msgs::msg::Path remainingSwathPath(const BTContext::Swath& swath,
-                                         double from_x,
-                                         double from_y,
-                                         const rclcpp::Node::SharedPtr& node) const;
   void sendTransitGoal(const BTContext::Swath& swath);
   void sendSwathGoal(const BTContext::Swath& swath);
-  void sendRerouteGoal(const BTContext::Swath& swath, double rx, double ry);
-  void sendRemainingSwathGoal(const BTContext::Swath& swath, double from_x, double from_y);
   void setBladeEnabled(bool enabled);
   bool advanceToNextSwath();
   bool checkStuck(const std::shared_ptr<BTContext>& ctx);
@@ -140,15 +154,9 @@ private:
   /// True when the current transit uses FollowPath instead of NavigateToPose.
   bool use_follow_for_transit_{false};
 
-  // Obstacle rerouting state
-  size_t reroute_attempts_{0};
-  static constexpr size_t max_reroute_attempts_{2};
-  /// Fraction along the swath where the robot was blocked (0.0 = start, 1.0 = end).
-  double blocked_swath_fraction_{0.0};
-
-  // Stuck detection
-  static constexpr double stuck_timeout_sec_{10.0};
-  static constexpr double stuck_min_progress_{0.05};
+  // Stuck detection (configurable via input ports)
+  double stuck_timeout_sec_{10.0};
+  double stuck_min_progress_{0.05};
   std::chrono::steady_clock::time_point last_progress_time_{};
   double last_progress_x_{0.0};
   double last_progress_y_{0.0};
@@ -219,6 +227,13 @@ private:
   std::chrono::steady_clock::time_point last_progress_time_{};
   double last_progress_x_{0.0};
   double last_progress_y_{0.0};
+
+  // Inline recovery: on FollowPath abort, skip ahead and resend path
+  // instead of returning FAILURE to the BT (which triggers slow recovery).
+  bool resendFromCurrentPose(const std::shared_ptr<BTContext>& ctx);
+  int inline_retries_{0};
+  static constexpr int max_inline_retries_{3};
+  static constexpr size_t skip_poses_on_retry_{50};  // skip ~2.5m ahead
 };
 
 }  // namespace mowgli_behavior

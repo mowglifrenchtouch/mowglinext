@@ -28,6 +28,7 @@
   <depend>std_srvs</depend>
   <depend>mowgli_interfaces</depend>
   <depend>slam_toolbox</depend>
+  <depend>rcl_interfaces</depend>
   <depend>robot_localization</depend>
 
 

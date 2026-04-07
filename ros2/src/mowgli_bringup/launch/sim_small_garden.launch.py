@@ -1,3 +1,19 @@
+# Copyright 2026 Mowgli Project
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 """
 sim_small_garden.launch.py
 
@@ -163,14 +179,6 @@ def generate_launch_description() -> LaunchDescription:
             map_params,
             {"use_sim_time": True},
         ],
-        remappings=[
-            ("~/get_mowing_area", "/mowgli/map/get_area"),
-            ("~/add_area", "/mowgli/map/add_area"),
-            ("~/clear_map", "/mowgli/map/clear_map"),
-            ("~/set_docking_point", "/mowgli/map/set_docking_point"),
-            ("~/save_areas", "/mowgli/map/save_areas"),
-            ("~/load_areas", "/mowgli/map/load_areas"),
-        ],
     )
 
     # ------------------------------------------------------------------
@@ -184,11 +192,6 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             coverage_params,
             {"use_sim_time": True},
-        ],
-        remappings=[
-            ("~/coverage_path", "/mowgli/coverage/path"),
-            ("~/coverage_outline", "/mowgli/coverage/outline"),
-            ("~/plan_coverage", "/mowgli/coverage/plan"),
         ],
     )
 

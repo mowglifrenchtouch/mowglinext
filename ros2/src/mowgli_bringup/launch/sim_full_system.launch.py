@@ -1,3 +1,19 @@
+# Copyright 2026 Mowgli Project
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 """
 sim_full_system.launch.py
 
@@ -22,6 +38,7 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
+    TimerAction,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -208,14 +225,6 @@ def generate_launch_description() -> LaunchDescription:
             map_params,
             {"use_sim_time": True},
         ],
-        remappings=[
-            ("~/get_mowing_area", "/mowgli/map/get_area"),
-            ("~/add_area", "/mowgli/map/add_area"),
-            ("~/clear_map", "/mowgli/map/clear_map"),
-            ("~/set_docking_point", "/mowgli/map/set_docking_point"),
-            ("~/save_areas", "/mowgli/map/save_areas"),
-            ("~/load_areas", "/mowgli/map/load_areas"),
-        ],
     )
 
     # ------------------------------------------------------------------
@@ -229,11 +238,6 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             coverage_params,
             {"use_sim_time": True},
-        ],
-        remappings=[
-            ("~/coverage_path", "/mowgli/coverage/path"),
-            ("~/coverage_outline", "/mowgli/coverage/outline"),
-            ("~/plan_coverage", "/mowgli/coverage/plan"),
         ],
     )
 
@@ -341,6 +345,17 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
+    # 10. Fake hardware bridge — stub services/topics for simulation
+    # ------------------------------------------------------------------
+    fake_hardware_bridge_node = Node(
+        package="mowgli_simulation",
+        executable="fake_hardware_bridge_node",
+        name="fake_hardware_bridge",
+        output="screen",
+        parameters=[{"use_sim_time": True}],
+    )
+
+    # ------------------------------------------------------------------
     # LaunchDescription
     # ------------------------------------------------------------------
     return LaunchDescription(
@@ -361,6 +376,7 @@ def generate_launch_description() -> LaunchDescription:
             navigation_launch,
             static_map_odom_tf,
             # Individual nodes
+            fake_hardware_bridge_node,
             behavior_tree_node,
             map_server_node,
             coverage_planner_node,
