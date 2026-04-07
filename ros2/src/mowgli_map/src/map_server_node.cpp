@@ -184,8 +184,7 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
   last_replan_time_ = now();
 
   // ── Replan / boundary publishers ────────────────────────────────────────
-  replan_needed_pub_ =
-      create_publisher<std_msgs::msg::Bool>("~/replan_needed", rclcpp::QoS(1));
+  replan_needed_pub_ = create_publisher<std_msgs::msg::Bool>("~/replan_needed", rclcpp::QoS(1));
   boundary_violation_pub_ =
       create_publisher<std_msgs::msg::Bool>("~/boundary_violation", rclcpp::QoS(1));
 
@@ -1350,7 +1349,8 @@ void MapServerNode::diff_and_update_obstacles(
   last_replan_time_ = now();
   RCLCPP_INFO(get_logger(),
               "Replan triggered: %zu new persistent obstacles",
-              current_persistent_ids.size() - (planned_obstacle_ids_.size() - current_persistent_ids.size()));
+              current_persistent_ids.size() -
+                  (planned_obstacle_ids_.size() - current_persistent_ids.size()));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

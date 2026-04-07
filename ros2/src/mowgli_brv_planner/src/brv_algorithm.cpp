@@ -104,8 +104,8 @@ CoverageResult plan_coverage(const Polygon2D& boundary,
   if (!std::isnan(params.robot_x) && !std::isnan(params.robot_y))
   {
     // Find the grid cell nearest to the robot
-    auto nearest = grid.find_nearest_unvisited(
-        grid.rows() / 2, grid.cols() / 2);  // rough center as seed
+    auto nearest =
+        grid.find_nearest_unvisited(grid.rows() / 2, grid.cols() / 2);  // rough center as seed
     // Better: convert robot pos to grid coords and search from there
     // For now, just use find_nearest_unvisited from a rough grid position
     // by trying all unvisited region starts and picking the closest

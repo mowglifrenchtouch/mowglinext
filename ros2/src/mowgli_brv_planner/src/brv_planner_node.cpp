@@ -184,12 +184,16 @@ private:
       auto tf = tf_buffer_->lookupTransform(map_frame_, "base_link", tf2::TimePointZero);
       params.robot_x = tf.transform.translation.x;
       params.robot_y = tf.transform.translation.y;
-      RCLCPP_INFO(get_logger(), "Robot at (%.2f, %.2f) — sweep starts from nearest cell",
-                  params.robot_x, params.robot_y);
+      RCLCPP_INFO(get_logger(),
+                  "Robot at (%.2f, %.2f) — sweep starts from nearest cell",
+                  params.robot_x,
+                  params.robot_y);
     }
     catch (const tf2::TransformException& ex)
     {
-      RCLCPP_WARN(get_logger(), "Could not get robot position: %s — starting from corner", ex.what());
+      RCLCPP_WARN(get_logger(),
+                  "Could not get robot position: %s — starting from corner",
+                  ex.what());
     }
 
     // Progress callback
