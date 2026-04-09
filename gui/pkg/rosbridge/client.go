@@ -122,15 +122,19 @@ func (c *Client) Connected() bool {
 	return c.connected.Load()
 }
 
-// Connect dials the rosbridge WebSocket and starts the read pump and the
-// reconnect loop. It returns an error only when the very first dial attempt
-// fails; subsequent connection losses are handled transparently by the
-// reconnect loop. ctx governs the lifetime of the reconnect loop – when ctx
-// is cancelled the loop exits and no further reconnect attempts are made.
+// Connect starts the reconnect loop which will keep trying to reach
+// rosbridge until ctx is cancelled. If the initial dial succeeds the read
+// pump is started immediately; otherwise the reconnect loop handles
+// subsequent attempts with exponential back-off. Connect never returns an
+// error – callers can watch Connected() for state changes.
 func (c *Client) Connect(ctx context.Context) error {
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, c.url, nil)
 	if err != nil {
-		return fmt.Errorf("rosbridge: initial dial %s: %w", c.url, err)
+		logrus.WithError(err).WithField("url", c.url).
+			Warn("rosbridge: initial dial failed, will keep retrying")
+		// Start the reconnect loop so it retries in the background.
+		go c.reconnectLoop(ctx)
+		return nil
 	}
 
 	c.connMu.Lock()
@@ -189,12 +193,10 @@ func (c *Client) Close() error {
 // use 0 or omit for no throttling. This tells rosbridge to send messages for
 // this topic no faster than the given interval, reducing CPU on the server.
 //
-// Subscribe returns an error if the client is not connected.
+// If the client is not yet connected the callback is registered locally and
+// the wire subscribe will be sent automatically when a connection is
+// established (via resubscribeAll).
 func (c *Client) Subscribe(topic, msgType, id string, cb func(json.RawMessage), opts ...int) error {
-	if !c.connected.Load() {
-		return fmt.Errorf("rosbridge: Subscribe %s: not connected", topic)
-	}
-
 	throttleMs := 0
 	if len(opts) > 0 {
 		throttleMs = opts[0]
@@ -226,7 +228,8 @@ func (c *Client) Subscribe(topic, msgType, id string, cb func(json.RawMessage), 
 	}
 
 	// Only send one subscribe message to rosbridge per topic.
-	if firstSubscriber {
+	// If not connected, skip – resubscribeAll will send it on connect.
+	if firstSubscriber && c.connected.Load() {
 		return c.sendSubscribe(topic, msgType, throttleMs)
 	}
 	return nil
