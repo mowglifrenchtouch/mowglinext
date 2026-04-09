@@ -18,6 +18,7 @@
 #include "mowgli_behavior/coverage_nodes.hpp"
 #include "mowgli_behavior/docking_nodes.hpp"
 #include "mowgli_behavior/navigation_nodes.hpp"
+#include "mowgli_behavior/recording_nodes.hpp"
 #include "mowgli_behavior/status_nodes.hpp"
 #include "mowgli_behavior/utility_nodes.hpp"
 
@@ -60,11 +61,15 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<DockRobot>("DockRobot");
   factory.registerNodeType<UndockRobot>("UndockRobot");
   factory.registerNodeType<RecordResumeUndockFailure>("RecordResumeUndockFailure");
+  factory.registerNodeType<ResetEmergency>("ResetEmergency");
 
   // Cell-based coverage nodes (strip-by-strip dynamic coverage)
   factory.registerNodeType<GetNextStrip>("GetNextStrip");
   factory.registerNodeType<FollowStrip>("FollowStrip");
   factory.registerNodeType<TransitToStrip>("TransitToStrip");
+
+  // Area recording node
+  factory.registerNodeType<RecordArea>("RecordArea");
 }
 
 }  // namespace mowgli_behavior

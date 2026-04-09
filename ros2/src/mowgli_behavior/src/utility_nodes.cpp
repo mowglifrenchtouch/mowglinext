@@ -221,4 +221,38 @@ BT::NodeStatus SaveObstacles::tick()
   return BT::NodeStatus::SUCCESS;
 }
 
+// ---------------------------------------------------------------------------
+// ResetEmergency
+// ---------------------------------------------------------------------------
+
+BT::NodeStatus ResetEmergency::tick()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  if (!client_)
+  {
+    client_ = ctx->node->create_client<mowgli_interfaces::srv::EmergencyStop>(
+        "/hardware_bridge/emergency_stop");
+  }
+
+  if (!waitForService(client_, ctx->node))
+  {
+    RCLCPP_WARN(ctx->node->get_logger(),
+                "ResetEmergency: emergency_stop service unavailable, continuing");
+    return BT::NodeStatus::SUCCESS;
+  }
+
+  auto request = std::make_shared<mowgli_interfaces::srv::EmergencyStop::Request>();
+  request->emergency = 0u;  // Release emergency
+
+  // Fire-and-forget: the firmware is the safety authority and will only
+  // clear the latch if no physical trigger (lift/stop) is still asserted.
+  auto future = client_->async_send_request(request);
+  (void)future;
+
+  RCLCPP_INFO(ctx->node->get_logger(), "ResetEmergency: emergency release requested");
+
+  return BT::NodeStatus::SUCCESS;
+}
+
 }  // namespace mowgli_behavior

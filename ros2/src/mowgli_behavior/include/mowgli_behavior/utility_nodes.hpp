@@ -22,6 +22,7 @@
 #include "behaviortree_cpp/behavior_tree.h"
 #include "behaviortree_cpp/bt_factory.h"
 #include "mowgli_behavior/bt_context.hpp"
+#include "mowgli_interfaces/srv/emergency_stop.hpp"
 #include "mowgli_interfaces/srv/mower_control.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "slam_toolbox/srv/serialize_pose_graph.hpp"
@@ -153,6 +154,36 @@ public:
 
 private:
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client_;
+};
+
+// ---------------------------------------------------------------------------
+// ResetEmergency
+// ---------------------------------------------------------------------------
+
+/// Calls the /hardware_bridge/emergency_stop service with emergency=0 to
+/// release a latched emergency state in the firmware.  Used to auto-clear
+/// emergencies when the robot is placed back on the dock.
+///
+/// Returns SUCCESS when the release request is sent (fire-and-forget to the
+/// firmware, which is the safety authority and may refuse the release if a
+/// physical trigger is still asserted).
+class ResetEmergency : public BT::SyncActionNode
+{
+public:
+  ResetEmergency(const std::string& name, const BT::NodeConfig& config)
+      : BT::SyncActionNode(name, config)
+  {
+  }
+
+  static BT::PortsList providedPorts()
+  {
+    return {};
+  }
+
+  BT::NodeStatus tick() override;
+
+private:
+  rclcpp::Client<mowgli_interfaces::srv::EmergencyStop>::SharedPtr client_;
 };
 
 }  // namespace mowgli_behavior

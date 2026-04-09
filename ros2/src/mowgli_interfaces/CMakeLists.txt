@@ -41,6 +41,7 @@ set(srv_files
   "srv/TriggerReplan.srv"
   "srv/GetNextStrip.srv"
   "srv/GetCoverageStatus.srv"
+  "srv/AreaRecording.srv"
 )
 
 # Declare action files
