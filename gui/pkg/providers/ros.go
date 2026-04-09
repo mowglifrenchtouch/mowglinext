@@ -15,33 +15,43 @@ import (
 // topicDef maps a logical subscribe key to a ROS2 topic name and message type.
 // The frontend and internal routes always use logical keys; the ROS2 topic name
 // is only used when sending the rosbridge subscribe op.
+// ThrottleMs sets the minimum interval (ms) between messages that rosbridge
+// will forward for this subscription. High-frequency or large topics should
+// use a non-zero value to avoid saturating the CPU with JSON serialization.
 type topicDef struct {
-	ROS2Topic string
-	MsgType   string
+	ROS2Topic  string
+	MsgType    string
+	ThrottleMs int // 0 = no throttle
 }
 
 // topicMap maps logical keys (used by SubscriberRoute and internal code) to
 // their corresponding ROS2 topics and message types.
 // Virtual topics (map) have an empty MsgType and are never sent to
 // rosbridge; they are populated by internal logic instead.
+//
+// Throttle rates are chosen to balance GUI responsiveness against CPU:
+//   - Status/control topics: 200-500 ms (low bandwidth, GUI polls visually)
+//   - Sensor topics (IMU, odom): 200-500 ms (GUI only needs display rate)
+//   - Heavy topics (LaserScan, OccupancyGrid): 1000-2000 ms
+//   - Event topics (path, plan, emergency): 0 (infrequent, need prompt delivery)
 var topicMap = map[string]topicDef{
-	"status":        {"/hardware_bridge/status", "mowgli_interfaces/msg/Status"},
-	"highLevelStatus": {"/behavior_tree_node/high_level_status", "mowgli_interfaces/msg/HighLevelStatus"},
-	"gps":           {"/gps/absolute_pose", "mowgli_interfaces/msg/AbsolutePose"},
-	"pose":          {"/odometry/filtered_map", "nav_msgs/msg/Odometry"},
-	"imu":           {"/imu/data", "sensor_msgs/msg/Imu"},
-	"ticks":         {"/wheel_odom", "nav_msgs/msg/Odometry"},
-	"map":           {"", ""},                                                      // virtual – populated via map_server services
-	"path":          {"/FollowCoveragePath/global_plan", "nav_msgs/msg/Path"},       // active strip path
-	"plan":          {"/plan", "nav_msgs/msg/Path"},                                // Nav2 global plan
-	"coverageCells": {"/map_server_node/coverage_cells", "nav_msgs/msg/OccupancyGrid"},
-	"power":         {"/hardware_bridge/power", "mowgli_interfaces/msg/Power"},
-	"emergency":     {"/hardware_bridge/emergency", "mowgli_interfaces/msg/Emergency"},
+	"status":          {"/hardware_bridge/status", "mowgli_interfaces/msg/Status", 200},
+	"highLevelStatus": {"/behavior_tree_node/high_level_status", "mowgli_interfaces/msg/HighLevelStatus", 500},
+	"gps":             {"/gps/absolute_pose", "mowgli_interfaces/msg/AbsolutePose", 500},
+	"pose":            {"/odometry/filtered_map", "nav_msgs/msg/Odometry", 200},
+	"imu":             {"/imu/data", "sensor_msgs/msg/Imu", 500},
+	"ticks":           {"/wheel_odom", "nav_msgs/msg/Odometry", 500},
+	"map":             {"", "", 0},                                                                       // virtual – populated via map_server services
+	"path":            {"/FollowCoveragePath/global_plan", "nav_msgs/msg/Path", 0},                       // infrequent event
+	"plan":            {"/plan", "nav_msgs/msg/Path", 0},                                                 // infrequent event
+	"coverageCells":   {"/map_server_node/coverage_cells", "nav_msgs/msg/OccupancyGrid", 2000},           // large message
+	"power":           {"/hardware_bridge/power", "mowgli_interfaces/msg/Power", 1000},
+	"emergency":       {"/hardware_bridge/emergency", "mowgli_interfaces/msg/Emergency", 0},              // safety-critical, no throttle
 	// NOTE: DockingSensor.msg does not exist in mowgli_interfaces yet; omitted to avoid rosbridge errors.
-	"lidar":         {"/scan", "sensor_msgs/msg/LaserScan"},
-	"diagnostics":   {"/diagnostics", "diagnostic_msgs/msg/DiagnosticArray"},
-	"obstacles":     {"/obstacle_tracker/obstacles", "mowgli_interfaces/msg/ObstacleArray"},
-	"robotDescription": {"/robot_description", "std_msgs/msg/String"},
+	"lidar":            {"/scan", "sensor_msgs/msg/LaserScan", 1000},                                     // large message
+	"diagnostics":      {"/diagnostics", "diagnostic_msgs/msg/DiagnosticArray", 2000},
+	"obstacles":        {"/obstacle_tracker/obstacles", "mowgli_interfaces/msg/ObstacleArray", 1000},
+	"robotDescription": {"/robot_description", "std_msgs/msg/String", 0},                                // published once
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +184,8 @@ func (r *RosProvider) initRosbridgeSubscriptions() {
 		if def.MsgType == "" {
 			continue
 		}
-		key := logicalKey // capture for closure
+		key := logicalKey     // capture for closure
+		throttle := def.ThrottleMs // capture
 
 		if adapt, ok := adapters[key]; ok {
 			fn := adapt // capture
@@ -193,11 +204,11 @@ func (r *RosProvider) initRosbridgeSubscriptions() {
 					return
 				}
 				r.fanOut(key, converted)
-			})
+			}, throttle)
 			if err != nil {
 				logrus.Errorf("RosProvider: subscribe %s (%s): %v", def.ROS2Topic, key, err)
 			} else {
-				logrus.Infof("RosProvider: subscribed to %s as '%s'", def.ROS2Topic, key)
+				logrus.Infof("RosProvider: subscribed to %s as '%s' (throttle %dms)", def.ROS2Topic, key, throttle)
 			}
 		} else {
 			err := r.client.Subscribe(def.ROS2Topic, def.MsgType, "gui-"+key, func(msg json.RawMessage) {
@@ -208,11 +219,11 @@ func (r *RosProvider) initRosbridgeSubscriptions() {
 					return
 				}
 				r.fanOut(key, converted)
-			})
+			}, throttle)
 			if err != nil {
 				logrus.Errorf("RosProvider: subscribe %s (%s): %v", def.ROS2Topic, key, err)
 			} else {
-				logrus.Infof("RosProvider: subscribed to %s as '%s'", def.ROS2Topic, key)
+				logrus.Infof("RosProvider: subscribed to %s as '%s' (throttle %dms)", def.ROS2Topic, key, throttle)
 			}
 		}
 	}

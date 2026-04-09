@@ -64,8 +64,9 @@ type Client struct {
 	// subscribers maps topic -> ordered list of (id, callback) pairs.
 	// subMu is a RWMutex: the readPump dispatch path acquires a read lock,
 	// while Subscribe/Unsubscribe acquire the write lock.
-	subscribers map[string][]subscriberEntry
-	topicTypes  map[string]string // topic -> msgType for resubscribe
+	subscribers    map[string][]subscriberEntry
+	topicTypes     map[string]string // topic -> msgType for resubscribe
+	throttleRates  map[string]int    // topic -> throttle_rate ms for resubscribe
 	subMu       sync.RWMutex
 
 	// pendingSvc maps a unique call ID to the channel that CallService is
@@ -101,6 +102,7 @@ func NewClient(url string) *Client {
 		url:            url,
 		subscribers:    make(map[string][]subscriberEntry),
 		topicTypes:     make(map[string]string),
+		throttleRates:  make(map[string]int),
 		pendingSvc:     make(map[string]chan serviceResponse),
 		advertised:     make(map[string]bool),
 		done:           make(chan struct{}),
@@ -183,13 +185,19 @@ func (c *Client) Close() error {
 // have multiple independent subscribers (e.g. different API handlers). If this
 // is the first callback for topic, a subscribe message is sent to rosbridge.
 // msgType is the ROS2 message type string (e.g. "sensor_msgs/NavSatFix").
-// throttleRateMs controls the minimum publish interval in milliseconds; use 0
-// for no throttling.
+// opts accepts an optional throttle rate in milliseconds as the first element;
+// use 0 or omit for no throttling. This tells rosbridge to send messages for
+// this topic no faster than the given interval, reducing CPU on the server.
 //
 // Subscribe returns an error if the client is not connected.
-func (c *Client) Subscribe(topic, msgType, id string, cb func(json.RawMessage)) error {
+func (c *Client) Subscribe(topic, msgType, id string, cb func(json.RawMessage), opts ...int) error {
 	if !c.connected.Load() {
 		return fmt.Errorf("rosbridge: Subscribe %s: not connected", topic)
+	}
+
+	throttleMs := 0
+	if len(opts) > 0 {
+		throttleMs = opts[0]
 	}
 
 	c.subMu.Lock()
@@ -209,14 +217,17 @@ func (c *Client) Subscribe(topic, msgType, id string, cb func(json.RawMessage)) 
 
 	c.subscribers[topic] = append(entries, subscriberEntry{id: id, callback: cb})
 
-	// Remember the message type so resubscribeAll can use it after reconnect.
+	// Remember the message type and throttle rate for resubscribeAll after reconnect.
 	if msgType != "" {
 		c.topicTypes[topic] = msgType
+	}
+	if throttleMs > 0 {
+		c.throttleRates[topic] = throttleMs
 	}
 
 	// Only send one subscribe message to rosbridge per topic.
 	if firstSubscriber {
-		return c.sendSubscribe(topic, msgType)
+		return c.sendSubscribe(topic, msgType, throttleMs)
 	}
 	return nil
 }
@@ -224,14 +235,16 @@ func (c *Client) Subscribe(topic, msgType, id string, cb func(json.RawMessage)) 
 // sendSubscribe sends the rosbridge subscribe op. It must be called with subMu
 // at least read-locked (to prevent topic removal racing), and the write lock
 // held when called from Subscribe. connMu is acquired internally.
-func (c *Client) sendSubscribe(topic, msgType string) error {
+// throttleMs sets the minimum interval (ms) between messages for this topic;
+// 0 means no throttling.
+func (c *Client) sendSubscribe(topic, msgType string, throttleMs int) error {
 	msg := map[string]interface{}{
 		"op":            "subscribe",
 		"id":            c.nextID(),
 		"topic":         topic,
 		"type":          msgType,
 		"compression":   "none",
-		"throttle_rate": 0,
+		"throttle_rate": throttleMs,
 	}
 	return c.writeJSON(msg)
 }
@@ -605,14 +618,15 @@ func (c *Client) resubscribeAll() {
 		if len(entries) == 0 {
 			continue
 		}
-		msgType := c.topicTypes[topic] // may be "" if never stored
+		msgType := c.topicTypes[topic]     // may be "" if never stored
+		throttle := c.throttleRates[topic] // 0 if not set
 		msg := map[string]interface{}{
 			"op":            "subscribe",
 			"id":            c.nextID(),
 			"topic":         topic,
 			"type":          msgType,
 			"compression":   "none",
-			"throttle_rate": 0,
+			"throttle_rate": throttle,
 		}
 		if err := c.writeJSON(msg); err != nil {
 			logrus.WithError(err).WithField("topic", topic).

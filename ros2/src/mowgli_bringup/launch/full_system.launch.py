@@ -330,7 +330,7 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[
             {
-                "port": 8765,
+                "port": foxglove_port,
                 "address": "0.0.0.0",
                 "send_buffer_limit": 10000000,
                 "num_threads": 0,
@@ -344,6 +344,36 @@ def generate_launch_description() -> LaunchDescription:
     #     (e.g. /rosapi/topics_and_raw_types) that the GUI needs to
     #     discover available topics.
     # ------------------------------------------------------------------
+    # Whitelist only the topics and services that the GUI actually uses.
+    # This prevents rosbridge from serialising every high-frequency topic
+    # on the bus (SLAM, costmaps, TF, etc.) which is the primary cause of
+    # excessive CPU usage on ARM boards.
+    rosbridge_topics_glob = [
+        "/hardware_bridge/status",
+        "/hardware_bridge/power",
+        "/hardware_bridge/emergency",
+        "/behavior_tree_node/high_level_status",
+        "/gps/absolute_pose",
+        "/odometry/filtered_map",
+        "/imu/data",
+        "/wheel_odom",
+        "/FollowCoveragePath/global_plan",
+        "/plan",
+        "/map_server_node/coverage_cells",
+        "/scan",
+        "/diagnostics",
+        "/obstacle_tracker/obstacles",
+        "/robot_description",
+        "/cmd_vel",
+    ]
+
+    rosbridge_services_glob = [
+        "/map_server_node/*",
+        "/behavior_tree_node/*",
+        "/hardware_bridge/*",
+        "/rosapi/*",
+    ]
+
     rosbridge_node = Node(
         condition=IfCondition(enable_rosbridge),
         package="rosbridge_server",
@@ -356,6 +386,10 @@ def generate_launch_description() -> LaunchDescription:
                 "address": "0.0.0.0",
                 "unregister_timeout": 10.0,
                 "max_message_size": 10000000,
+                "fragment_size": 65536,
+                "topics_glob": rosbridge_topics_glob,
+                "services_glob": rosbridge_services_glob,
+                "params_glob": ["/use_sim_time"],
             },
         ],
     )
@@ -367,7 +401,12 @@ def generate_launch_description() -> LaunchDescription:
         name="rosapi",
         output="screen",
         parameters=[
-            {"use_sim_time": use_sim_time},
+            {
+                "use_sim_time": use_sim_time,
+                "topics_glob": rosbridge_topics_glob,
+                "services_glob": rosbridge_services_glob,
+                "params_glob": ["/use_sim_time"],
+            },
         ],
     )
 
