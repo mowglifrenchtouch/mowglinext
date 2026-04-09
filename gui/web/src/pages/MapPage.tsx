@@ -184,7 +184,7 @@ export const MapPage: React.FC<{compact?: boolean}> = ({compact = false}) => {
 
 
         }
-        if (path) {
+        if (path?.Markers) {
             Object.values<Marker>(path.Markers).filter((f) => {
                 return f.Type == 4 && f.Action == 0
             }).forEach((marker, index) => {
