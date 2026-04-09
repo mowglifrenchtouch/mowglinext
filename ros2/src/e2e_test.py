@@ -735,14 +735,19 @@ class E2ETestNode(Node):
         self.get_logger().error(f"Failed to send EmergencyStop (emergency={emergency})")
         return False
 
-    def wait_for_bt_state(self, target_state: str, timeout_sec: float = 15.0) -> bool:
-        """Spin until BT reaches the target state or timeout expires."""
+    def wait_for_bt_state(self, target_state, timeout_sec: float = 15.0) -> bool:
+        """Spin until BT reaches a target state or timeout expires.
+
+        target_state can be a single string or a list of strings (any match).
+        """
+        if isinstance(target_state, str):
+            target_state = [target_state]
         deadline = time.time() + timeout_sec
         while time.time() < deadline and rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.1)
-            if self.current_bt_state == target_state:
+            if self.current_bt_state in target_state:
                 return True
-        return self.current_bt_state == target_state
+        return self.current_bt_state in target_state
 
     def _progress_bar(self, pct: float, width: int = 30) -> str:
         filled = int(pct / 100 * width)
@@ -1459,7 +1464,8 @@ def main():
     )
     obstacle_thread.start()
 
-    # Spin until mowing cycle completes or timeout (20 min for full cycle)
+    # Spin until mowing cycle completes or timeout (20 min for full cycle).
+    # Feature tests run after timeout regardless.
     timeout = 1200.0
     start = time.time()
 
@@ -1479,11 +1485,21 @@ def main():
                 node.get_logger().warn(f"Mowing cycle timeout after {timeout}s")
                 break
 
-        # ── New Feature Tests (run after robot has docked) ──────────────
+        # ── New Feature Tests (run after mowing cycle or timeout) ────────
+        # These test BT command handling, not mowing — they work regardless
+        # of whether coverage completed.  If mowing timed out, send HOME
+        # first to get the robot to a known idle/docked state.
 
-        if node.mowing_cycle_complete and rclpy.ok():
+        if rclpy.ok():
+            if not node.mowing_cycle_complete:
+                node.get_logger().info(
+                    "=== Mowing timed out. Sending HOME before feature tests... ==="
+                )
+                node.send_command(2, "COMMAND_HOME")
+                node.wait_for_bt_state("IDLE_DOCKED", timeout_sec=120.0)
+
             node.get_logger().info(
-                "=== Mowing cycle complete. Running post-dock feature tests... ==="
+                "=== Running post-dock feature tests... ==="
             )
 
             # ── 1. Manual Mowing Mode (command 7) ──
@@ -1493,10 +1509,12 @@ def main():
             if node.send_command(7, "COMMAND_MANUAL_MOW"):
                 if node.wait_for_bt_state("MANUAL_MOWING", timeout_sec=15.0):
                     node.get_logger().info("BT entered MANUAL_MOWING state")
-                    # Send HOME to exit manual mode
+                    # Send HOME to exit manual mode — robot may need to
+                    # navigate back to dock, so allow up to 120s
                     if node.send_command(2, "COMMAND_HOME"):
-                        if node.wait_for_bt_state("IDLE", timeout_sec=15.0) or \
-                           node.wait_for_bt_state("IDLE_DOCKED", timeout_sec=5.0):
+                        if node.wait_for_bt_state(
+                            ["IDLE", "IDLE_DOCKED"], timeout_sec=120.0
+                        ):
                             node._complete_phase(
                                 TestPhase.MANUAL_MOWING, True,
                                 "Entered MANUAL_MOWING and returned to IDLE via HOME"
@@ -1540,8 +1558,9 @@ def main():
                         rclpy.spin_once(node, timeout_sec=0.1)
                     # Cancel recording
                     if node.send_command(6, "COMMAND_RECORD_CANCEL"):
-                        if node.wait_for_bt_state("IDLE", timeout_sec=15.0) or \
-                           node.wait_for_bt_state("IDLE_DOCKED", timeout_sec=5.0):
+                        if node.wait_for_bt_state(
+                            ["IDLE", "IDLE_DOCKED"], timeout_sec=30.0
+                        ):
                             node._complete_phase(
                                 TestPhase.AREA_RECORDING, True,
                                 "Entered RECORDING and returned to IDLE via CANCEL"
