@@ -285,7 +285,7 @@ func (c *Client) Advertise(topic, msgType string) error {
 
 // Publish sends a message on topic. The message is JSON-encoded and sent as a
 // client publish message. An optional schemaName (e.g. "geometry_msgs/msg/Twist")
-// helps the bridge resolve the message type.
+// tells the bridge how to convert JSON to CDR for ROS2 publishing.
 func (c *Client) Publish(topic string, msg interface{}, schemaName ...string) error {
 	if !c.connected.Load() {
 		return fmt.Errorf("foxglove: Publish %s: not connected", topic)
