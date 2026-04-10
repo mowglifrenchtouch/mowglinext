@@ -7,53 +7,42 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cedbossneo/mowglinext/pkg/foxglove"
 	"github.com/cedbossneo/mowglinext/pkg/msgs/mowgli"
-	"github.com/cedbossneo/mowglinext/pkg/rosbridge"
 	types2 "github.com/cedbossneo/mowglinext/pkg/types"
 	"github.com/sirupsen/logrus"
 )
 
 // topicDef maps a logical subscribe key to a ROS2 topic name and message type.
 // The frontend and internal routes always use logical keys; the ROS2 topic name
-// is only used when sending the rosbridge subscribe op.
-// ThrottleMs sets the minimum interval (ms) between messages that rosbridge
-// will forward for this subscription. High-frequency or large topics should
-// use a non-zero value to avoid saturating the CPU with JSON serialization.
+// is only used when sending the foxglove subscribe op.
 type topicDef struct {
 	ROS2Topic  string
 	MsgType    string
-	ThrottleMs int // 0 = no throttle
 }
 
 // topicMap maps logical keys (used by SubscriberRoute and internal code) to
 // their corresponding ROS2 topics and message types.
 // Virtual topics (map) have an empty MsgType and are never sent to
-// rosbridge; they are populated by internal logic instead.
-//
-// Throttle rates are chosen to balance GUI responsiveness against CPU:
-//   - Status/control topics: 200-500 ms (low bandwidth, GUI polls visually)
-//   - Sensor topics (IMU, odom): 200-500 ms (GUI only needs display rate)
-//   - Heavy topics (LaserScan, OccupancyGrid): 1000-2000 ms
-//   - Event topics (path, plan, emergency): 0 (infrequent, need prompt delivery)
+// foxglove_bridge; they are populated by internal logic instead.
 var topicMap = map[string]topicDef{
-	"status":          {"/hardware_bridge/status", "mowgli_interfaces/msg/Status", 200},
-	"highLevelStatus": {"/behavior_tree_node/high_level_status", "mowgli_interfaces/msg/HighLevelStatus", 500},
-	"gps":             {"/gps/absolute_pose", "mowgli_interfaces/msg/AbsolutePose", 500},
-	"pose":            {"/odometry/filtered_map", "nav_msgs/msg/Odometry", 200},
-	"imu":             {"/imu/data", "sensor_msgs/msg/Imu", 500},
-	"ticks":           {"/wheel_odom", "nav_msgs/msg/Odometry", 500},
-	"map":             {"", "", 0},                                                                       // virtual – populated via map_server services
-	"path":            {"/FollowCoveragePath/global_plan", "nav_msgs/msg/Path", 0},                       // infrequent event
-	"plan":            {"/plan", "nav_msgs/msg/Path", 0},                                                 // infrequent event
-	"coverageCells":   {"/map_server_node/coverage_cells", "nav_msgs/msg/OccupancyGrid", 2000},           // large message
-	"power":           {"/hardware_bridge/power", "mowgli_interfaces/msg/Power", 1000},
-	"emergency":       {"/hardware_bridge/emergency", "mowgli_interfaces/msg/Emergency", 0},              // safety-critical, no throttle
-	// NOTE: DockingSensor.msg does not exist in mowgli_interfaces yet; omitted to avoid rosbridge errors.
-	"lidar":            {"/scan", "sensor_msgs/msg/LaserScan", 1000},                                     // large message
-	"diagnostics":      {"/diagnostics", "diagnostic_msgs/msg/DiagnosticArray", 2000},
-	"obstacles":        {"/obstacle_tracker/obstacles", "mowgli_interfaces/msg/ObstacleArray", 1000},
-	"robotDescription":     {"/robot_description", "std_msgs/msg/String", 0},                                // published once
-	"recordingTrajectory": {"/behavior_tree_node/recording_trajectory", "nav_msgs/msg/Path", 500},        // area recording preview
+	"status":              {"/hardware_bridge/status", "mowgli_interfaces/msg/Status"},
+	"highLevelStatus":     {"/behavior_tree_node/high_level_status", "mowgli_interfaces/msg/HighLevelStatus"},
+	"gps":                 {"/gps/absolute_pose", "mowgli_interfaces/msg/AbsolutePose"},
+	"pose":                {"/odometry/filtered_map", "nav_msgs/msg/Odometry"},
+	"imu":                 {"/imu/data", "sensor_msgs/msg/Imu"},
+	"ticks":               {"/wheel_odom", "nav_msgs/msg/Odometry"},
+	"map":                 {"", ""},                                                            // virtual – populated via map_server services
+	"path":                {"/FollowCoveragePath/global_plan", "nav_msgs/msg/Path"},            // infrequent event
+	"plan":                {"/plan", "nav_msgs/msg/Path"},                                      // infrequent event
+	"coverageCells":       {"/map_server_node/coverage_cells", "nav_msgs/msg/OccupancyGrid"},   // large message
+	"power":               {"/hardware_bridge/power", "mowgli_interfaces/msg/Power"},
+	"emergency":           {"/hardware_bridge/emergency", "mowgli_interfaces/msg/Emergency"},   // safety-critical
+	"lidar":               {"/scan", "sensor_msgs/msg/LaserScan"},                              // large message
+	"diagnostics":         {"/diagnostics", "diagnostic_msgs/msg/DiagnosticArray"},
+	"obstacles":           {"/obstacle_tracker/obstacles", "mowgli_interfaces/msg/ObstacleArray"},
+	"robotDescription":    {"/robot_description", "std_msgs/msg/String"},                       // published once
+	"recordingTrajectory": {"/behavior_tree_node/recording_trajectory", "nav_msgs/msg/Path"},   // area recording preview
 }
 
 // ---------------------------------------------------------------------------
@@ -62,7 +51,7 @@ var topicMap = map[string]topicDef{
 
 // RosSubscriber delivers messages from a ROS2 topic to one registered callback.
 // It runs a background goroutine that drains a single-slot mailbox so that a
-// slow consumer cannot stall the rosbridge read pump or other subscribers.
+// slow consumer cannot stall the foxglove read pump or other subscribers.
 type RosSubscriber struct {
 	Topic string
 	Id    string
@@ -122,14 +111,14 @@ func (r *RosSubscriber) run() {
 }
 
 // ---------------------------------------------------------------------------
-// RosProvider – IRosProvider implementation backed by rosbridge WebSocket
+// RosProvider – IRosProvider implementation backed by foxglove WebSocket
 // ---------------------------------------------------------------------------
 
-// RosProvider implements types2.IRosProvider using a rosbridge v2 WebSocket
+// RosProvider implements types2.IRosProvider using a foxglove WebSocket
 // client. All topic access uses logical keys defined in topicMap; the actual
 // ROS2 topic names are an internal concern.
 type RosProvider struct {
-	client *rosbridge.Client
+	client *foxglove.Client
 
 	mtx         sync.Mutex
 	subscribers map[string]map[string]*RosSubscriber // logicalKey -> id -> subscriber
@@ -144,19 +133,19 @@ type RosProvider struct {
 	dbProvider types2.IDBProvider
 }
 
-// NewRosProvider constructs a RosProvider, reads the rosbridge URL from the
-// database (falling back to ws://localhost:9090), and connects asynchronously.
+// NewRosProvider constructs a RosProvider, reads the foxglove URL from the
+// database (falling back to ws://localhost:8765), and connects asynchronously.
 // The returned value is ready to use immediately; Subscribe calls made before
 // the connection is established will be fulfilled once the connection comes up
-// via the rosbridge client's reconnect loop.
+// via the foxglove client's reconnect loop.
 func NewRosProvider(dbProvider types2.IDBProvider) types2.IRosProvider {
-	rosbridgeURL := "ws://localhost:9090"
-	if url, err := dbProvider.Get("system.ros.rosbridgeUrl"); err == nil && len(url) > 0 {
-		rosbridgeURL = string(url)
+	foxgloveURL := "ws://localhost:8765"
+	if url, err := dbProvider.Get("system.ros.foxgloveUrl"); err == nil && len(url) > 0 {
+		foxgloveURL = string(url)
 	}
 
 	r := &RosProvider{
-		client:      rosbridge.NewClient(rosbridgeURL),
+		client:      foxglove.NewClient(foxgloveURL),
 		subscribers: make(map[string]map[string]*RosSubscriber),
 		lastMessage: make(map[string][]byte),
 		dbProvider:  dbProvider,
@@ -164,24 +153,21 @@ func NewRosProvider(dbProvider types2.IDBProvider) types2.IRosProvider {
 
 	go func() {
 		if err := r.client.Connect(context.Background()); err != nil {
-			logrus.Errorf("RosProvider: rosbridge initial connect failed: %v", err)
-			// The rosbridge client's reconnect loop will keep retrying; we
-			// still proceed so that subscriptions are registered and will be
-			// re-sent on reconnect.
+			logrus.Errorf("RosProvider: foxglove initial connect failed: %v", err)
 		}
-		r.initRosbridgeSubscriptions()
-			r.initDockPoseSubscription()
-			r.initMapPolling()
+		r.initFoxgloveSubscriptions()
+		r.initDockPoseSubscription()
+		r.initMapPolling()
 	}()
 
 	return r
 }
 
-// initRosbridgeSubscriptions sends subscribe ops to rosbridge for every
+// initFoxgloveSubscriptions sends subscribe ops to foxglove_bridge for every
 // real (non-virtual) topic in topicMap. Shape-changing topics are passed
 // through dedicated adapter functions (defined in transform.go); all other
-// topics are forwarded as-is (rosbridge snake_case JSON).
-func (r *RosProvider) initRosbridgeSubscriptions() {
+// topics are forwarded as-is (snake_case JSON from CDR deserialization).
+func (r *RosProvider) initFoxgloveSubscriptions() {
 	adapters := map[string]func([]byte) ([]byte, error){
 		"pose":  adaptPose,
 		"ticks": adaptTicks,
@@ -191,8 +177,7 @@ func (r *RosProvider) initRosbridgeSubscriptions() {
 		if def.MsgType == "" {
 			continue
 		}
-		key := logicalKey     // capture for closure
-		throttle := def.ThrottleMs // capture
+		key := logicalKey // capture for closure
 
 		if adapt, ok := adapters[key]; ok {
 			fn := adapt // capture
@@ -203,20 +188,20 @@ func (r *RosProvider) initRosbridgeSubscriptions() {
 					return
 				}
 				r.fanOut(key, adapted)
-			}, throttle)
+			})
 			if err != nil {
 				logrus.Errorf("RosProvider: subscribe %s (%s): %v", def.ROS2Topic, key, err)
 			} else {
-				logrus.Infof("RosProvider: subscribed to %s as '%s' (throttle %dms)", def.ROS2Topic, key, throttle)
+				logrus.Infof("RosProvider: subscribed to %s as '%s'", def.ROS2Topic, key)
 			}
 		} else {
 			err := r.client.Subscribe(def.ROS2Topic, def.MsgType, "gui-"+key, func(msg json.RawMessage) {
 				r.fanOut(key, []byte(msg))
-			}, throttle)
+			})
 			if err != nil {
 				logrus.Errorf("RosProvider: subscribe %s (%s): %v", def.ROS2Topic, key, err)
 			} else {
-				logrus.Infof("RosProvider: subscribed to %s as '%s' (throttle %dms)", def.ROS2Topic, key, throttle)
+				logrus.Infof("RosProvider: subscribed to %s as '%s'", def.ROS2Topic, key)
 			}
 		}
 	}
@@ -267,7 +252,6 @@ func (r *RosProvider) initDockPoseSubscription() {
 			logrus.Infof("RosProvider: docking pose updated (%.3f, %.3f) heading=%.3f",
 				ps.Pose.Position.X, ps.Pose.Position.Y, heading)
 		},
-		0,
 	)
 	if err != nil {
 		logrus.Errorf("RosProvider: subscribe docking_pose: %v", err)
@@ -280,7 +264,7 @@ func (r *RosProvider) initDockPoseSubscription() {
 // and publishes the result to the virtual "map" topic for the GUI.
 func (r *RosProvider) initMapPolling() {
 	go func() {
-		// Wait for rosbridge to be ready
+		// Wait for foxglove_bridge to be ready
 		time.Sleep(5 * time.Second)
 
 		ticker := time.NewTicker(5 * time.Second)
@@ -361,9 +345,10 @@ func (r *RosProvider) pollMap() {
 // IRosProvider implementation
 // ---------------------------------------------------------------------------
 
-// CallService calls a ROS2 service via rosbridge and unmarshals the response
-// into res (ignored when res is nil). An optional serviceType (e.g.
-// "mowgli_interfaces/srv/GetMowingArea") helps rosbridge discover the service.
+// CallService calls a ROS2 service via foxglove_bridge and unmarshals the
+// response into res (ignored when res is nil). An optional serviceType
+// (e.g. "mowgli_interfaces/srv/GetMowingArea") can be passed for service
+// type resolution.
 func (r *RosProvider) CallService(ctx context.Context, service string, req any, res any, serviceType ...string) error {
 	result, err := r.client.CallService(ctx, service, req, serviceType...)
 	if err != nil {
@@ -415,13 +400,7 @@ func (r *RosProvider) UnSubscribe(topic string, id string) {
 	delete(subs, id)
 }
 
-// Publish sends msg to the named ROS2 topic via rosbridge. msgType is
-// forwarded to rosbridge's advertise op (handled internally by the client).
+// Publish sends msg to the named ROS2 topic via foxglove_bridge.
 func (r *RosProvider) Publish(topic string, msgType string, msg interface{}) error {
-	if err := r.client.Advertise(topic, msgType); err != nil {
-		// Log but do not abort – the client may not be connected yet; the
-		// message will be dropped silently by the client's Publish path.
-		logrus.Warnf("RosProvider: advertise %s: %v", topic, err)
-	}
 	return r.client.Publish(topic, msg)
 }

@@ -30,7 +30,7 @@ Brings up all subsystems:
   8. Localization monitor      — mowgli_localization
   9. Diagnostics               — mowgli_monitoring
   10. MQTT bridge (optional)   — mowgli_monitoring
-  11. foxglove_bridge (optional)  — for GUI
+  11. foxglove_bridge — WebSocket bridge for GUI and Foxglove Studio
 """
 
 import os
@@ -96,18 +96,6 @@ def generate_launch_description() -> LaunchDescription:
         description="Launch foxglove_bridge for the GUI when true.",
     )
 
-    enable_rosbridge_arg = DeclareLaunchArgument(
-        "enable_rosbridge",
-        default_value="true",
-        description="Launch rosbridge_server for the openmower-gui when true.",
-    )
-
-    rosbridge_port_arg = DeclareLaunchArgument(
-        "rosbridge_port",
-        default_value="9090",
-        description="Port number for the rosbridge WebSocket server.",
-    )
-
     foxglove_port_arg = DeclareLaunchArgument(
         "foxglove_port",
         default_value="8765",
@@ -130,8 +118,6 @@ def generate_launch_description() -> LaunchDescription:
     enable_mqtt = LaunchConfiguration("enable_mqtt")
     enable_foxglove = LaunchConfiguration("enable_foxglove")
     foxglove_port = LaunchConfiguration("foxglove_port")
-    enable_rosbridge = LaunchConfiguration("enable_rosbridge")
-    rosbridge_port = LaunchConfiguration("rosbridge_port")
     use_lidar = LaunchConfiguration("use_lidar")
 
     # ------------------------------------------------------------------
@@ -320,8 +306,39 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
-    # 11. Foxglove Bridge (optional) — binary WebSocket bridge for GUI
+    # 11. Foxglove Bridge — WebSocket bridge for GUI and Foxglove Studio
     # ------------------------------------------------------------------
+    # Whitelist only the topics and services that the GUI actually uses.
+    # This prevents the bridge from serialising every high-frequency topic
+    # on the bus (SLAM, costmaps, TF, etc.) which saves CPU on ARM boards.
+    foxglove_topic_whitelist = [
+        "/hardware_bridge/status",
+        "/hardware_bridge/power",
+        "/hardware_bridge/emergency",
+        "/behavior_tree_node/high_level_status",
+        "/gps/absolute_pose",
+        "/odometry/filtered_map",
+        "/imu/data",
+        "/wheel_odom",
+        "/FollowCoveragePath/global_plan",
+        "/plan",
+        "/map_server_node/coverage_cells",
+        "/map_server_node/docking_pose",
+        "/scan",
+        "/diagnostics",
+        "/obstacle_tracker/obstacles",
+        "/robot_description",
+        "/cmd_vel",
+        "/cmd_vel_teleop",
+        "/behavior_tree_node/recording_trajectory",
+    ]
+
+    foxglove_service_whitelist = [
+        "/map_server_node/.*",
+        "/behavior_tree_node/.*",
+        "/hardware_bridge/.*",
+    ]
+
     foxglove_bridge_node = Node(
         condition=IfCondition(enable_foxglove),
         package="foxglove_bridge",
@@ -334,82 +351,16 @@ def generate_launch_description() -> LaunchDescription:
                 "address": "0.0.0.0",
                 "send_buffer_limit": 10000000,
                 "num_threads": 0,
-            },
-        ],
-    )
-
-    # ------------------------------------------------------------------
-    # 12. rosbridge_server + rosapi (optional) — WebSocket bridge for
-    #     openmower-gui.  rosapi provides the service endpoints
-    #     (e.g. /rosapi/topics_and_raw_types) that the GUI needs to
-    #     discover available topics.
-    # ------------------------------------------------------------------
-    # Whitelist only the topics and services that the GUI actually uses.
-    # This prevents rosbridge from serialising every high-frequency topic
-    # on the bus (SLAM, costmaps, TF, etc.) which is the primary cause of
-    # excessive CPU usage on ARM boards.
-    # rosbridge glob parameters are single strings (not arrays).
-    # Use comma-separated values for multiple patterns.
-    rosbridge_topics_glob = (
-        "/hardware_bridge/status,"
-        "/hardware_bridge/power,"
-        "/hardware_bridge/emergency,"
-        "/behavior_tree_node/high_level_status,"
-        "/gps/absolute_pose,"
-        "/odometry/filtered_map,"
-        "/imu/data,"
-        "/wheel_odom,"
-        "/FollowCoveragePath/global_plan,"
-        "/plan,"
-        "/map_server_node/coverage_cells,"
-        "/scan,"
-        "/diagnostics,"
-        "/obstacle_tracker/obstacles,"
-        "/robot_description,"
-        "/cmd_vel,"
-        "/cmd_vel_teleop,"
-        "/behavior_tree_node/recording_trajectory"
-    )
-
-    rosbridge_services_glob = (
-        "/map_server_node/*,"
-        "/behavior_tree_node/*,"
-        "/hardware_bridge/*,"
-        "/rosapi/*"
-    )
-
-    rosbridge_node = Node(
-        condition=IfCondition(enable_rosbridge),
-        package="rosbridge_server",
-        executable="rosbridge_websocket",
-        name="rosbridge_websocket",
-        output="screen",
-        parameters=[
-            {
-                "port": 9090,
-                "address": "0.0.0.0",
-                "unregister_timeout": 10.0,
-                "max_message_size": 10000000,
-                "fragment_size": 65536,
-                "topics_glob": rosbridge_topics_glob,
-                "services_glob": rosbridge_services_glob,
-                "params_glob": "/use_sim_time",
-            },
-        ],
-    )
-
-    rosapi_node = Node(
-        condition=IfCondition(enable_rosbridge),
-        package="rosapi",
-        executable="rosapi_node",
-        name="rosapi",
-        output="screen",
-        parameters=[
-            {
-                "use_sim_time": use_sim_time,
-                "topics_glob": rosbridge_topics_glob,
-                "services_glob": rosbridge_services_glob,
-                "params_glob": "/use_sim_time",
+                "topic_whitelist": foxglove_topic_whitelist,
+                "service_whitelist": foxglove_service_whitelist,
+                "capabilities": [
+                    "clientPublish",
+                    "services",
+                    "connectionGraph",
+                ],
+                "client_topic_whitelist": [
+                    "/cmd_vel_teleop",
+                ],
             },
         ],
     )
@@ -451,8 +402,6 @@ def generate_launch_description() -> LaunchDescription:
             enable_mqtt_arg,
             enable_foxglove_arg,
             foxglove_port_arg,
-            enable_rosbridge_arg,
-            rosbridge_port_arg,
             use_lidar_arg,
             # Subsystem includes
             mowgli_launch,
@@ -469,7 +418,5 @@ def generate_launch_description() -> LaunchDescription:
             diagnostics_node,
             mqtt_bridge_node,
             foxglove_bridge_node,
-            rosbridge_node,
-            rosapi_node,
         ]
     )

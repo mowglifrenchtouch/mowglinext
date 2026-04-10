@@ -3,10 +3,11 @@ package types
 import "context"
 
 // IRosProvider is the abstraction layer for all ROS2 communication.
-// The implementation uses a rosbridge WebSocket client; callers should never
-// depend on goroslib or any ROS1 transport.
+// The implementation uses a foxglove WebSocket client connecting to
+// foxglove_bridge; callers should never depend on goroslib or any ROS1
+// transport.
 type IRosProvider interface {
-	// CallService calls a ROS2 service via rosbridge.
+	// CallService calls a ROS2 service via foxglove_bridge.
 	// service is the full service name (e.g. "/behavior_tree_node/high_level_control").
 	// req is marshalled as the JSON args payload.
 	// res, if non-nil, receives the unmarshalled service response values.
@@ -24,9 +25,7 @@ type IRosProvider interface {
 	// its goroutine. It is a no-op when the subscriber does not exist.
 	UnSubscribe(topic string, id string)
 
-	// Publish sends msg to the named ROS2 topic via rosbridge.
+	// Publish sends msg to the named ROS2 topic via foxglove_bridge.
 	// msgType is the ROS2 message type string (e.g. "geometry_msgs/msg/Twist").
-	// The topic must have been advertised before publishing; implementations
-	// may handle advertisement internally.
 	Publish(topic string, msgType string, msg interface{}) error
 }

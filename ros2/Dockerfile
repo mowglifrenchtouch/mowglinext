@@ -42,10 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Diagnostics
     ros-jazzy-diagnostic-msgs \
     ros-jazzy-diagnostic-updater \
-    # Foxglove Bridge (binary WebSocket bridge for Foxglove Studio)
+    # Foxglove Bridge (WebSocket bridge for GUI and Foxglove Studio)
     ros-jazzy-foxglove-bridge \
-    # Rosbridge (WebSocket bridge for openmower-gui)
-    ros-jazzy-rosbridge-suite \
     # u-blox and RTCM message definitions (for foxglove_bridge schema resolution)
     ros-jazzy-ublox-msgs \
     ros-jazzy-nmea-msgs \
@@ -201,12 +199,6 @@ COPY src/mowgli_bringup/launch/    /ros2_ws/install/mowgli_bringup/share/mowgli_
 COPY src/mowgli_bringup/config/    /ros2_ws/install/mowgli_bringup/share/mowgli_bringup/config/
 COPY src/mowgli_localization/launch/  /ros2_ws/install/mowgli_localization/share/mowgli_localization/launch/
 COPY src/mowgli_localization/config/  /ros2_ws/install/mowgli_localization/share/mowgli_localization/config/
-
-# Patch rosbridge_library CBOR serialization bug (Jazzy):
-# Fixed-size arrays (float64[36] covariance, uint8[N]) crash the CBOR encoder.
-# See: https://github.com/RobotWebTools/rosbridge_suite/issues/965
-COPY scripts/patch_rosbridge.py /tmp/patch_rosbridge.py
-RUN python3 /tmp/patch_rosbridge.py && rm /tmp/patch_rosbridge.py
 
 # Use Cyclone DDS — FastRTPS shared memory causes stale /dev/shm segments
 # and unreliable service discovery on ARM boards

@@ -18,8 +18,7 @@ services:
   # -------------------------------------------------------------------------
   # Main ROS2 robot service
   # Runs the full mowgli_ros2 stack: hardware bridge, Nav2, behavior trees,
-  # coverage planning, SLAM map server, rosbridge (port 9090), and optionally
-  # foxglove_bridge (port 8765).
+  # coverage planning, SLAM map server, and foxglove_bridge (port 8765).
   # -------------------------------------------------------------------------
   mowgli:
     container_name: mowgli-ros2
@@ -31,7 +30,6 @@ services:
       <<: *ros2-env
     command: >
       ros2 launch mowgli_bringup full_system.launch.py
-      enable_rosbridge:=true
       enable_foxglove:=${ENABLE_FOXGLOVE:-true}
       enable_coverage:=true
       use_lidar:=${LIDAR_ENABLED:-true}

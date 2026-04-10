@@ -120,7 +120,7 @@ func ReplaceMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			return
 		}
 		for _, element := range CallReq.Areas {
-			// Ensure Obstacles is an empty slice, not nil — rosbridge
+			// Ensure Obstacles is an empty slice, not nil — the bridge
 			// rejects null for repeated fields ("msg is not a list type").
 			if element.Area.Obstacles == nil {
 				element.Area.Obstacles = []geometry.Polygon{}
@@ -271,7 +271,7 @@ func PublisherRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			err = provider.Publish("/cmd_vel_teleop", "geometry_msgs/msg/Twist", &msgObj)
 			if err != nil {
 				log.Printf("PublisherRoute: publish error: %v", err)
-				// Don't break — rosbridge may reconnect; keep the browser WebSocket alive
+				// Don't break — foxglove may reconnect; keep the browser WebSocket alive
 				continue
 			}
 		}

@@ -26,7 +26,7 @@ var EnvFallbacks = map[string]string{
 	"system.ros.masterUri":     "ROS_MASTER_URI",
 	"system.ros.nodeName":      "ROS_NODE_NAME",
 	"system.ros.nodeHost":      "ROS_NODE_HOST",
-	"system.ros.rosbridgeUrl":  "ROSBRIDGE_URL",
+	"system.ros.foxgloveUrl":   "FOXGLOVE_URL",
 	"system.homekit.pincode":  "HOMEKIT_PINCODE",
 }
 var Defaults = map[string]string{

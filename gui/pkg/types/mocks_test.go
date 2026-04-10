@@ -33,7 +33,7 @@ func TestMockDBProvider_SetGetDelete(t *testing.T) {
 
 func TestMockDBProvider_KeysWithSuffix(t *testing.T) {
 	db := NewMockDBProvider()
-	db.Set("system.ros.rosbridgeUrl", []byte("test"))
+	db.Set("system.ros.foxgloveUrl", []byte("test"))
 	db.Set("system.ros.nodeHost", []byte("test"))
 	db.Set("other.key", []byte("test"))
 

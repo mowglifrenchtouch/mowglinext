@@ -381,15 +381,15 @@ check_gui() {
     warn "GUI might be starting up — try http://$ip in your browser"
   fi
 
-  local rb_info
-  rb_info=$(docker exec mowgli-ros2 bash -c \
+  local fg_info
+  fg_info=$(docker exec mowgli-ros2 bash -c \
     "source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && ros2 node list 2>/dev/null" \
-    2>/dev/null | grep rosbridge || echo "")
+    2>/dev/null | grep foxglove_bridge || echo "")
 
-  if [[ -n "$rb_info" ]]; then
-    info "Rosbridge WebSocket active (ws://$ip:9090)"
+  if [[ -n "$fg_info" ]]; then
+    info "Foxglove Bridge WebSocket active (ws://$ip:8765)"
   else
-    warn "Rosbridge node not found — GUI may not receive live data"
+    warn "Foxglove Bridge node not found — GUI may not receive live data"
   fi
 
   echo ""

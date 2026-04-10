@@ -9,8 +9,9 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Raw input structs – used only for unmarshalling rosbridge snake_case JSON.
-// These mirror the geometry/sensor/nav types but carry explicit json tags.
+// Raw input structs – used only for unmarshalling snake_case JSON from CDR
+// deserialization. These mirror the geometry/sensor/nav types but carry
+// explicit json tags.
 // ---------------------------------------------------------------------------
 
 type rawStamp struct {
@@ -110,9 +111,8 @@ func navSatStatusToFlags(status int8) uint16 {
 // Adapter functions
 // ---------------------------------------------------------------------------
 
-// adaptGPS converts a sensor_msgs/NavSatFix payload (rosbridge snake_case
-// JSON) into an mowgli.AbsolutePose JSON payload (snake_case, suitable for
-// the frontend).
+// adaptGPS converts a sensor_msgs/NavSatFix payload (snake_case JSON) into
+// an mowgli.AbsolutePose JSON payload (snake_case, suitable for the frontend).
 func adaptGPS(raw []byte) ([]byte, error) {
 	var fix rawNavSatFix
 	if err := json.Unmarshal(raw, &fix); err != nil {
@@ -140,8 +140,8 @@ func adaptGPS(raw []byte) ([]byte, error) {
 	return json.Marshal(pose)
 }
 
-// adaptPose converts a nav_msgs/Odometry payload (rosbridge snake_case JSON)
-// into an mowgli.AbsolutePose JSON payload (snake_case via json tags).
+// adaptPose converts a nav_msgs/Odometry payload (snake_case JSON) into an
+// mowgli.AbsolutePose JSON payload (snake_case via json tags).
 // The heading (yaw) is derived from the orientation quaternion.
 func adaptPose(raw []byte) ([]byte, error) {
 	var odom rawOdometry
@@ -181,8 +181,8 @@ func adaptPose(raw []byte) ([]byte, error) {
 	return json.Marshal(pose)
 }
 
-// adaptTicks converts a nav_msgs/Odometry payload (rosbridge snake_case JSON)
-// into an mowgli.WheelTick JSON payload (snake_case via json tags).
+// adaptTicks converts a nav_msgs/Odometry payload (snake_case JSON) into an
+// mowgli.WheelTick JSON payload (snake_case via json tags).
 // nav_msgs/Odometry does not carry raw tick data, so all tick fields are
 // zero. This is an acceptable transitional state while a dedicated
 // wheel-tick topic is wired up.

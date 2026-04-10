@@ -122,7 +122,7 @@ func (hc *MqttProvider) subscribeToMqtt() {
 
 // subscribeToMqttCall wires an MQTT subscription to a ROS2 service call.
 // When a message arrives on prefix+"/call"+service the payload is unmarshalled
-// into a new instance of REQ and forwarded to the service via rosbridge.
+// into a new instance of REQ and forwarded to the service via foxglove_bridge.
 func subscribeToMqttCall[REQ any, RES any](server *mqtt.Server, rosProvider types2.IRosProvider, prefix, service string, req REQ, res RES) {
 	err := server.Subscribe(prefix+"/call"+service, 1, func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet) {
 		logrus.Info("Received " + service)
