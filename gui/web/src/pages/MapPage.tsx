@@ -515,16 +515,16 @@ export const MapPage: React.FC<{compact?: boolean}> = ({compact = false}) => {
                                 'circle-stroke-color': '#ffffff',
                                 'circle-stroke-width': 1.5,
                             }}/>
-                        {/* Other display points */}
+                        {/* Other display points (Point geometry only — exclude polygon/line vertices) */}
                         <Layer type={"circle"} id={"display-points-halo"}
-                            filter={['all', ['!=', ['get', 'feature_type'], 'dock'], ['!=', ['get', 'feature_type'], 'mower']]}
+                            filter={['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get', 'feature_type'], 'dock'], ['!=', ['get', 'feature_type'], 'mower']]}
                             paint={{
                                 'circle-radius': 8,
                                 'circle-color': '#ffffff',
                                 'circle-opacity': 0.9,
                             }}/>
                         <Layer type={"circle"} id={"display-points"}
-                            filter={['all', ['!=', ['get', 'feature_type'], 'dock'], ['!=', ['get', 'feature_type'], 'mower']]}
+                            filter={['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get', 'feature_type'], 'dock'], ['!=', ['get', 'feature_type'], 'mower']]}
                             paint={{
                                 'circle-radius': 5,
                                 'circle-color': ['get', 'color'],
@@ -669,16 +669,16 @@ export const MapPage: React.FC<{compact?: boolean}> = ({compact = false}) => {
                                 'circle-stroke-color': '#ffffff',
                                 'circle-stroke-width': 1.5,
                             }}/>
-                        {/* Other display points */}
+                        {/* Other display points (Point geometry only — exclude polygon/line vertices) */}
                         <Layer type={"circle"} id={"display-points-halo"}
-                            filter={['all', ['!=', ['get', 'feature_type'], 'dock'], ['!=', ['get', 'feature_type'], 'mower']]}
+                            filter={['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get', 'feature_type'], 'dock'], ['!=', ['get', 'feature_type'], 'mower']]}
                             paint={{
                                 'circle-radius': 8,
                                 'circle-color': '#ffffff',
                                 'circle-opacity': 0.9,
                             }}/>
                         <Layer type={"circle"} id={"display-points"}
-                            filter={['all', ['!=', ['get', 'feature_type'], 'dock'], ['!=', ['get', 'feature_type'], 'mower']]}
+                            filter={['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get', 'feature_type'], 'dock'], ['!=', ['get', 'feature_type'], 'mower']]}
                             paint={{
                                 'circle-radius': 5,
                                 'circle-color': ['get', 'color'],
