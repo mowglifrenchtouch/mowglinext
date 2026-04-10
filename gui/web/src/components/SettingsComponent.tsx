@@ -78,14 +78,14 @@ export const SettingsComponent: React.FC<{
                     throw new Error(res.error.error)
                 }
                 notification.success({
-                    message: "OpenMower restarted",
+                    message: "MowgliNext restarted",
                 })
             } else {
-                throw new Error("OpenMower container not found")
+                throw new Error("MowgliNext container not found")
             }
         } catch (e: any) {
             notification.error({
-                message: "Failed to restart OpenMower",
+                message: "Failed to restart MowgliNext",
                 description: e.message,
             })
         }
@@ -104,14 +104,14 @@ export const SettingsComponent: React.FC<{
                     throw new Error(res.error.error)
                 }
                 notification.success({
-                    message: "OpenMower restarted",
+                    message: "GUI restarted",
                 })
             } else {
-                throw new Error("OpenMower container not found")
+                throw new Error("GUI container not found")
             }
         } catch (e: any) {
             notification.error({
-                message: "Failed to restart OpenMower",
+                message: "Failed to restart GUI",
                 description: e.message,
             })
         }

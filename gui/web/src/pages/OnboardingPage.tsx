@@ -526,7 +526,7 @@ const CompleteStep: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // Mark onboarding as completed and restart the OpenMower container
+        // Mark onboarding as completed and restart the MowgliNext container
         (async () => {
             setRestarting(true);
             try {

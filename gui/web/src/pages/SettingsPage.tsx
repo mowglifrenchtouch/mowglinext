@@ -19,12 +19,12 @@ export const SettingsPage = () => {
             if (container?.id) {
                 const res = await guiApi.containers.containersCreate(container.id, "restart");
                 if (res.error) throw new Error(res.error.error);
-                notification.success({ message: "OpenMower restarted" });
+                notification.success({ message: "MowgliNext restarted" });
             } else {
-                throw new Error("OpenMower container not found");
+                throw new Error("MowgliNext container not found");
             }
         } catch (e: any) {
-            notification.error({ message: "Failed to restart OpenMower", description: e.message });
+            notification.error({ message: "Failed to restart MowgliNext", description: e.message });
         }
     };
 
@@ -70,7 +70,7 @@ export const SettingsPage = () => {
                             Save settings
                         </Button>,
                         <AsyncButton key="restart-om" onAsyncClick={restartOM}>
-                            Restart OpenMower
+                            Restart MowgliNext
                         </AsyncButton>,
                         <AsyncButton key="restart-gui" onAsyncClick={restartGUI}>
                             Restart GUI

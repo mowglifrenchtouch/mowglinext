@@ -47,7 +47,7 @@ export const IOSInstallBanner = ({onDismiss}: IOSInstallBannerProps) => {
         </div>
         <div style={{flex: 1, minWidth: 0}}>
             <div style={{fontWeight: 600, fontSize: 14, color: colors.text, marginBottom: 4}}>
-                Install OpenMower
+                Install MowgliNext
             </div>
             <div style={{fontSize: 12, color: colors.muted, lineHeight: 1.4}}>
                 Tap <ShareIcon/> then <strong style={{color: colors.text}}>Add to Home Screen</strong> for full-screen experience

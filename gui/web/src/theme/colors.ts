@@ -1,6 +1,5 @@
 /**
- * OpenMower brand tokens
- * Source: https://xtech.github.io/design-openmower-branding/openmower-ai-tokens.json
+ * MowgliNext brand tokens
  */
 
 export type ThemeMode = 'light' | 'dark';

@@ -75,15 +75,15 @@ describe('Root layout', () => {
         expect(screen.getByLabelText('Logs')).toBeInTheDocument();
     });
 
-    it('renders OpenMower branding when rail expanded', async () => {
+    it('renders MowgliNext branding when rail expanded', async () => {
         const user = userEvent.setup();
         renderWithRouter('/openmower');
         // Branding text is hidden when rail is collapsed
-        expect(screen.queryByText('OpenMower')).not.toBeInTheDocument();
+        expect(screen.queryByText('Next')).not.toBeInTheDocument();
         // Hover over nav to expand rail and show branding
         const nav = screen.getByLabelText('Dashboard').closest('nav')!;
         await user.hover(nav);
-        expect(screen.getByText('OpenMower')).toBeInTheDocument();
+        expect(screen.getByText('Next')).toBeInTheDocument();
     });
 
     it('shows correct title for map page', () => {

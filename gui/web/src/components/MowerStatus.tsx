@@ -112,7 +112,7 @@ export const MowerStatus = () => {
                 if (cmdRes.error) throw new Error(cmdRes.error.error);
                 notification.success({message: "Mowgli restarted"});
             } else {
-                throw new Error("OpenMower container not found");
+                throw new Error("MowgliNext container not found");
             }
         } catch (e: any) {
             notification.error({message: "Failed to restart Mowgli", description: e.message});
@@ -153,7 +153,7 @@ export const MowerStatus = () => {
             key: "restart-mowgli",
             icon: <ReloadOutlined/>,
             label: "Restart Mowgli",
-            onClick: () => confirmAction("Restart Mowgli", "This will restart the OpenMower container.", restartMowgli),
+            onClick: () => confirmAction("Restart Mowgli", "This will restart the MowgliNext container.", restartMowgli),
         },
         {type: "divider"},
         {

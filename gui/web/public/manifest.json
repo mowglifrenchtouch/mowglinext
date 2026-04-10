@@ -1,9 +1,9 @@
 {
-  "name": "OpenMower GUI",
-  "short_name": "OpenMower",
+  "name": "MowgliNext",
+  "short_name": "MowgliNext",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FFFFFF",
-  "theme_color": "#1B9D52",
-  "description": "OpenMower GUI - Robot Mower Controller"
+  "theme_color": "#22c55e",
+  "description": "MowgliNext - Autonomous Robot Mower"
 }

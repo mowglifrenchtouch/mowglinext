@@ -339,7 +339,7 @@ export const SchemaSettingsComponent: React.FC<{
                     </Button>
                     {props.onRestartOM && (
                         <Button icon={<ReloadOutlined />} onClick={props.onRestartOM}>
-                            Restart OpenMower
+                            Restart MowgliNext
                         </Button>
                     )}
                     {props.onRestartGUI && (

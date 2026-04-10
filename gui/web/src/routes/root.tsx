@@ -76,7 +76,7 @@ export default function Root() {
     }, [route, navigate]);
 
     const currentPath = route.length > 1 ? route[1].pathname : '/openmower';
-    const pageTitle = pageTitles[currentPath] ?? 'OpenMower';
+    const pageTitle = pageTitles[currentPath] ?? 'MowgliNext';
 
     const handleNavigate = useCallback((key: string) => {
         navigate({pathname: key});
@@ -279,12 +279,12 @@ export default function Root() {
                     height: 64,
                     flexShrink: 0,
                 }}>
-                    <img src={mode === 'dark' ? '/logo-square.svg' : '/logo-square-dark.svg'} alt="OpenMower" style={{width: 24, height: 24, flexShrink: 0}} />
+                    <img src={mode === 'dark' ? '/logo-square.svg' : '/logo-square-dark.svg'} alt="MowgliNext" style={{width: 24, height: 24, flexShrink: 0}} />
                     {railExpanded && (
                         <Typography.Text strong style={{
                             fontSize: 18, color: colors.text, whiteSpace: 'nowrap',
                         }}>
-                            OpenMower
+                            Mowgli<span style={{color: '#22c55e'}}>Next</span>
                         </Typography.Text>
                     )}
                 </div>
