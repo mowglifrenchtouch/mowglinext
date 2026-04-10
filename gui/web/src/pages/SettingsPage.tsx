@@ -1,9 +1,7 @@
-import { Col, Row, Tabs } from "antd";
-import { SettingsComponent } from "../components/SettingsComponent.tsx";
+import { Col, Row } from "antd";
 import { SchemaSettingsComponent } from "../components/SchemaSettingsComponent.tsx";
-import AsyncButton from "../components/AsyncButton.tsx";
 import { useApi } from "../hooks/useApi.ts";
-import { App, Button } from "antd";
+import { App } from "antd";
 
 export const SettingsPage = () => {
     const guiApi = useApi();
@@ -47,44 +45,13 @@ export const SettingsPage = () => {
         }
     };
 
-    const items = [
-        {
-            key: "mower",
-            label: "Mower Configuration",
-            children: (
+    return (
+        <Row>
+            <Col span={24}>
                 <SchemaSettingsComponent
                     onRestartOM={restartMowgliNext}
                     onRestartGUI={restartGui}
                 />
-            ),
-        },
-        {
-            key: "system",
-            label: "System Settings",
-            children: (
-                <SettingsComponent
-                    actions={(form, save, restartOM, restartGUI) => [
-                        <Button key="save" type="primary" loading={form.loading} onClick={() => {
-                            form.submit(save).catch(() => {});
-                        }}>
-                            Save settings
-                        </Button>,
-                        <AsyncButton key="restart-om" onAsyncClick={restartOM}>
-                            Restart MowgliNext
-                        </AsyncButton>,
-                        <AsyncButton key="restart-gui" onAsyncClick={restartGUI}>
-                            Restart GUI
-                        </AsyncButton>,
-                    ]}
-                />
-            ),
-        },
-    ];
-
-    return (
-        <Row>
-            <Col span={24}>
-                <Tabs items={items} defaultActiveKey="mower" />
             </Col>
         </Row>
     );

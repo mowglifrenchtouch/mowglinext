@@ -308,38 +308,8 @@ def generate_launch_description() -> LaunchDescription:
     # ------------------------------------------------------------------
     # 11. Foxglove Bridge — WebSocket bridge for GUI and Foxglove Studio
     # ------------------------------------------------------------------
-    # Whitelist only the topics and services that the GUI actually uses.
-    # This prevents the bridge from serialising every high-frequency topic
-    # on the bus (SLAM, costmaps, TF, etc.) which saves CPU on ARM boards.
-    foxglove_topic_whitelist = [
-        "/hardware_bridge/status",
-        "/hardware_bridge/power",
-        "/hardware_bridge/emergency",
-        "/behavior_tree_node/high_level_status",
-        "/gps/absolute_pose",
-        "/odometry/filtered_map",
-        "/imu/data",
-        "/wheel_odom",
-        "/FollowCoveragePath/global_plan",
-        "/plan",
-        "/map_server_node/coverage_cells",
-        "/map_server_node/docking_pose",
-        "/scan",
-        "/diagnostics",
-        "/obstacle_tracker/obstacles",
-        "/robot_description",
-        "/cmd_vel",
-        "/cmd_vel_teleop",
-        "/behavior_tree_node/recording_trajectory",
-    ]
-
-    foxglove_service_whitelist = [
-        "/map_server_node/.*",
-        "/behavior_tree_node/.*",
-        "/hardware_bridge/.*",
-        "/navsat_to_absolute_pose/.*",
-    ]
-
+    # No topic/service whitelists — all topics are available for Foxglove
+    # Studio debugging. The GUI backend throttles subscriptions on its side.
     foxglove_bridge_node = Node(
         condition=IfCondition(enable_foxglove),
         package="foxglove_bridge",
@@ -352,15 +322,10 @@ def generate_launch_description() -> LaunchDescription:
                 "address": "0.0.0.0",
                 "send_buffer_limit": 10000000,
                 "num_threads": 0,
-                "topic_whitelist": foxglove_topic_whitelist,
-                "service_whitelist": foxglove_service_whitelist,
                 "capabilities": [
                     "clientPublish",
                     "services",
                     "connectionGraph",
-                ],
-                "client_topic_whitelist": [
-                    "/cmd_vel_teleop",
                 ],
             },
         ],

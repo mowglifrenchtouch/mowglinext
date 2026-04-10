@@ -24,6 +24,12 @@
           "default": 0.325,
           "description": "Centre-to-centre distance between drive wheels in metres."
         },
+        "wheel_width": {
+          "type": "number",
+          "title": "Wheel Width",
+          "default": 0.04,
+          "description": "Drive wheel width in metres."
+        },
         "wheel_x_offset": {
           "type": "number",
           "title": "Wheel X Offset",
@@ -54,6 +60,24 @@
           "default": 0.19,
           "description": "Chassis height in metres."
         },
+        "chassis_mass_kg": {
+          "type": "number",
+          "title": "Chassis Mass",
+          "default": 8.76,
+          "description": "Robot mass in kilograms."
+        },
+        "caster_radius": {
+          "type": "number",
+          "title": "Caster Radius",
+          "default": 0.03,
+          "description": "Front caster wheel radius in metres."
+        },
+        "caster_track": {
+          "type": "number",
+          "title": "Caster Track",
+          "default": 0.36,
+          "description": "Centre-to-centre distance between front casters in metres."
+        },
         "ticks_per_revolution": {
           "type": "integer",
           "title": "Encoder Ticks per Revolution",
@@ -71,84 +95,6 @@
           "title": "Blade Radius",
           "default": 0.09,
           "description": "Mowing blade radius in metres."
-        }
-      }
-    },
-    "sensor_settings": {
-      "title": "Sensors",
-      "type": "object",
-      "properties": {
-        "lidar_enabled": {
-          "type": "boolean",
-          "title": "LiDAR Enabled",
-          "default": true,
-          "description": "Enable the LiDAR sensor."
-        },
-        "lidar_x": {
-          "type": "number",
-          "title": "LiDAR X",
-          "default": 0.38,
-          "description": "LiDAR position X (forward from base_link / wheel axis) in metres."
-        },
-        "lidar_y": {
-          "type": "number",
-          "title": "LiDAR Y",
-          "default": 0.0,
-          "description": "LiDAR position Y (left from base_link) in metres."
-        },
-        "lidar_z": {
-          "type": "number",
-          "title": "LiDAR Z",
-          "default": 0.22,
-          "description": "LiDAR position Z (above base_link) in metres."
-        },
-        "lidar_yaw": {
-          "type": "number",
-          "title": "LiDAR Yaw",
-          "default": 0.0,
-          "description": "LiDAR heading offset in radians (rotation around Z axis)."
-        },
-        "gps_antenna_x": {
-          "type": "number",
-          "title": "GPS Antenna X",
-          "default": 0.3,
-          "description": "GPS antenna position X (forward from base_link / wheel axis) in metres."
-        },
-        "gps_antenna_y": {
-          "type": "number",
-          "title": "GPS Antenna Y",
-          "default": 0.0,
-          "description": "GPS antenna position Y in metres."
-        },
-        "gps_antenna_z": {
-          "type": "number",
-          "title": "GPS Antenna Z",
-          "default": 0.20,
-          "description": "GPS antenna position Z in metres."
-        },
-        "imu_x": {
-          "type": "number",
-          "title": "IMU X",
-          "default": 0.18,
-          "description": "IMU position X (forward from base_link / wheel axis) in metres."
-        },
-        "imu_y": {
-          "type": "number",
-          "title": "IMU Y",
-          "default": 0.0,
-          "description": "IMU position Y in metres."
-        },
-        "imu_z": {
-          "type": "number",
-          "title": "IMU Z",
-          "default": 0.095,
-          "description": "IMU position Z in metres."
-        },
-        "imu_yaw": {
-          "type": "number",
-          "title": "IMU Yaw",
-          "default": 0.0,
-          "description": "IMU heading offset in radians (rotation around Z axis)."
         }
       }
     },
@@ -174,18 +120,6 @@
           "enum": ["UBX", "NMEA"],
           "default": "UBX",
           "description": "Protocol used by your GPS receiver."
-        },
-        "gps_port": {
-          "type": "string",
-          "title": "GPS Port",
-          "default": "/dev/gps",
-          "description": "Serial device for the GPS receiver."
-        },
-        "gps_baudrate": {
-          "type": "integer",
-          "title": "GPS Baud Rate",
-          "default": 921600,
-          "description": "Baud rate for the GPS serial connection."
         },
         "gps_wait_after_undock_sec": {
           "type": "number",
@@ -213,7 +147,7 @@
             "ntrip_host": {
               "type": "string",
               "title": "NTRIP Host",
-              "default": "your-ntrip-caster",
+              "default": "",
               "description": "Hostname or IP of your NTRIP caster."
             },
             "ntrip_port": {
@@ -246,26 +180,9 @@
     },
     "docking_settings": {
       "title": "Docking",
+      "description": "Dock position (X, Y, Yaw) is set from the map editor. Other docking parameters can be adjusted here.",
       "type": "object",
       "properties": {
-        "dock_pose_x": {
-          "type": "number",
-          "title": "Dock Pose X",
-          "default": 0.0,
-          "description": "Docking station X position in the map frame (metres)."
-        },
-        "dock_pose_y": {
-          "type": "number",
-          "title": "Dock Pose Y",
-          "default": 0.0,
-          "description": "Docking station Y position in the map frame (metres)."
-        },
-        "dock_pose_yaw": {
-          "type": "number",
-          "title": "Dock Pose Yaw",
-          "default": 0.0,
-          "description": "Docking station heading in radians."
-        },
         "undock_distance": {
           "type": "number",
           "title": "Undock Distance",
@@ -332,6 +249,12 @@
           "default": 0.05,
           "description": "Inward offset from recorded boundary (metres)."
         },
+        "outline_overlap": {
+          "type": "number",
+          "title": "Outline Overlap",
+          "default": 0.0,
+          "description": "Overlap between outline and fill passes (metres)."
+        },
         "path_spacing": {
           "type": "number",
           "title": "Path Spacing",
@@ -361,13 +284,6 @@
           "title": "Mow Angle Increment",
           "default": 0.0,
           "description": "Rotate mowing pattern by this many degrees each full pass."
-        },
-        "automatic_mode": {
-          "type": "integer",
-          "title": "Automatic Mode",
-          "enum": [0, 1, 2],
-          "default": 0,
-          "description": "0=Manual, 1=Semi-auto (mow once), 2=Full auto."
         }
       }
     },
