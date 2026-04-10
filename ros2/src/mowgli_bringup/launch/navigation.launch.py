@@ -45,7 +45,7 @@ from launch.actions import (
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node, SetParameter
 from nav2_common.launch import RewrittenYaml
 
@@ -96,6 +96,12 @@ def generate_launch_description() -> LaunchDescription:
         description="Full path (without extension) to a saved slam_toolbox .posegraph/.data file.",
     )
 
+    use_lidar_arg = DeclareLaunchArgument(
+        "use_lidar",
+        default_value="true",
+        description="When false, use nav2_params_no_lidar.yaml (no obstacle layer, collision monitor pass-through).",
+    )
+
     # ------------------------------------------------------------------
     # Resolved substitutions
     # ------------------------------------------------------------------
@@ -105,6 +111,7 @@ def generate_launch_description() -> LaunchDescription:
     use_ekf = LaunchConfiguration("use_ekf")
     slam_mode = LaunchConfiguration("slam_mode")
     map_file_name = LaunchConfiguration("map_file_name")
+    use_lidar = LaunchConfiguration("use_lidar")
 
     # ------------------------------------------------------------------
     # Config paths
@@ -112,7 +119,14 @@ def generate_launch_description() -> LaunchDescription:
     slam_toolbox_params_file = os.path.join(bringup_dir, "config", "slam_toolbox.yaml")
     slam_toolbox_dir = get_package_share_directory("slam_toolbox")
     localization_params = os.path.join(bringup_dir, "config", "localization.yaml")
-    nav2_params_file = os.path.join(bringup_dir, "config", "nav2_params.yaml")
+    nav2_params_lidar = os.path.join(bringup_dir, "config", "nav2_params.yaml")
+    nav2_params_no_lidar = os.path.join(bringup_dir, "config", "nav2_params_no_lidar.yaml")
+    # Select nav2 params based on use_lidar flag (resolved at launch time)
+    nav2_params_file = PythonExpression([
+        "'", nav2_params_lidar, "' if '",
+        use_lidar, "'.lower() in ('true', '1') else '",
+        nav2_params_no_lidar, "'",
+    ])
 
     # Compute robot footprint from mowgli_robot.yaml so Nav2 costmaps
     # match the actual chassis shape regardless of mower model.
@@ -442,6 +456,7 @@ def generate_launch_description() -> LaunchDescription:
             use_ekf_arg,
             slam_mode_arg,
             map_file_arg,
+            use_lidar_arg,
             slam_toolbox_launch,
             ekf_odom_node,
             ekf_map_node,

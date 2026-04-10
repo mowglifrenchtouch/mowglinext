@@ -218,8 +218,8 @@ def generate_launch_description() -> LaunchDescription:
             twist_mux_params,
             {"use_sim_time": use_sim_time},
         ],
-        # Remap the mux output to the topic consumed by hardware_bridge
-        remappings=[("cmd_vel_out", "cmd_vel")],
+        # Remap the mux output to the topic consumed by collision_monitor
+        remappings=[("cmd_vel_out", "cmd_vel_mux")],
     )
 
     # ------------------------------------------------------------------
