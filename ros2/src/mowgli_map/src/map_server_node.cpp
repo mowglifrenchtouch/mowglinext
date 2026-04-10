@@ -246,7 +246,32 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
   // Resize map to fit loaded areas (if any).
   resize_map_to_areas();
 
-  // Publish docking pose if loaded (transient_local ensures late subscribers get it).
+  // If no docking pose was loaded from the persisted file, initialise from
+  // the dock_pose_x/y/yaw parameters in mowgli_robot.yaml. This ensures the
+  // GUI and BT always have a dock pose on first boot.
+  if (!docking_pose_set_)
+  {
+    const double dock_x = declare_parameter<double>("dock_pose_x", 0.0);
+    const double dock_y = declare_parameter<double>("dock_pose_y", 0.0);
+    const double dock_yaw = declare_parameter<double>("dock_pose_yaw", 0.0);
+
+    if (dock_x != 0.0 || dock_y != 0.0 || dock_yaw != 0.0)
+    {
+      docking_pose_.position.x = dock_x;
+      docking_pose_.position.y = dock_y;
+      docking_pose_.position.z = 0.0;
+      docking_pose_.orientation.w = std::cos(dock_yaw / 2.0);
+      docking_pose_.orientation.z = std::sin(dock_yaw / 2.0);
+      docking_pose_.orientation.x = 0.0;
+      docking_pose_.orientation.y = 0.0;
+      docking_pose_set_ = true;
+      RCLCPP_INFO(get_logger(),
+                  "Dock pose from parameters: (%.3f, %.3f) yaw=%.3f",
+                  dock_x, dock_y, dock_yaw);
+    }
+  }
+
+  // Publish docking pose if available (transient_local ensures late subscribers get it).
   if (docking_pose_set_)
   {
     geometry_msgs::msg::PoseStamped pose_msg;
