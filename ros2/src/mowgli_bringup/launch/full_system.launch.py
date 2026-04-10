@@ -343,6 +343,19 @@ def generate_launch_description() -> LaunchDescription:
             # Subsystem includes
             mowgli_launch,
             navigation_launch,
+            # TF-Luna
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(bringup_dir, "launch", "tfluna.launch.py")
+                )
+            ),
+
+            # TF-Luna TF
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(bringup_dir, "launch", "tfluna_tf.launch.py")
+                )
+            ),
             # Individual nodes
             behavior_tree_node,
             map_server_node,
