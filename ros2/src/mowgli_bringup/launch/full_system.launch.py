@@ -366,7 +366,9 @@ def generate_launch_description() -> LaunchDescription:
         "/diagnostics,"
         "/obstacle_tracker/obstacles,"
         "/robot_description,"
-        "/cmd_vel"
+        "/cmd_vel,"
+        "/cmd_vel_teleop,"
+        "/behavior_tree_node/recording_trajectory"
     )
 
     rosbridge_services_glob = (

@@ -268,7 +268,7 @@ func PublisherRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 				c.Error(err)
 				break
 			}
-			err = provider.Publish("/cmd_vel", "geometry_msgs/msg/Twist", &msgObj)
+			err = provider.Publish("/cmd_vel_teleop", "geometry_msgs/msg/Twist", &msgObj)
 			if err != nil {
 				c.Error(err)
 				break
