@@ -317,7 +317,7 @@ func (r *RosProvider) pollMap() {
 	for i := uint32(0); i < 100; i++ {
 		req := mowgli.GetMowingAreaReq{Index: i}
 		var res mowgli.GetMowingAreaRes
-		err := r.callServiceTyped(ctx, "/map_server_node/get_mowing_area", "mowgli_interfaces/srv/GetMowingArea", &req, &res)
+		err := r.CallService(ctx, "/map_server_node/get_mowing_area", &req, &res)
 		if err != nil {
 			if i == 0 {
 				logrus.WithError(err).WithField("index", i).Warn("pollMap: get_mowing_area failed — map_server_node may not be ready")
@@ -380,21 +380,6 @@ func (r *RosProvider) pollMap() {
 // ---------------------------------------------------------------------------
 // IRosProvider implementation
 // ---------------------------------------------------------------------------
-
-// callServiceTyped calls a ROS2 service via rosbridge with an explicit service
-// type hint. This helps rosbridge resolve the service without runtime discovery.
-func (r *RosProvider) callServiceTyped(ctx context.Context, service string, srvType string, req any, res any) error {
-	result, err := r.client.CallService(ctx, service, req, srvType)
-	if err != nil {
-		return err
-	}
-	if res != nil {
-		if err := json.Unmarshal(result, res); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // CallService calls a ROS2 service via rosbridge and unmarshals the response
 // into res (ignored when res is nil).
