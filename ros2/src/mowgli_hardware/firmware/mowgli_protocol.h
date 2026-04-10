@@ -253,11 +253,11 @@ extern "C"
    * High-level operating modes sent by the ROS 2 host.
    * These MUST match the constants in mowgli_interfaces/msg/HighLevelStatus.msg.
    */
-#define HL_MODE_NULL             0u   /**< Emergency or transitional */
-#define HL_MODE_IDLE             1u   /**< Idle, docked, charging */
-#define HL_MODE_AUTONOMOUS       2u   /**< Autonomous mowing */
-#define HL_MODE_RECORDING        3u   /**< Area boundary recording */
-#define HL_MODE_MANUAL_MOWING    4u   /**< Manual teleop with blade */
+#define HL_MODE_NULL 0u /**< Emergency or transitional */
+#define HL_MODE_IDLE 1u /**< Idle, docked, charging */
+#define HL_MODE_AUTONOMOUS 2u /**< Autonomous mowing */
+#define HL_MODE_RECORDING 3u /**< Area boundary recording */
+#define HL_MODE_MANUAL_MOWING 4u /**< Manual teleop with blade */
 
   typedef struct
   {

@@ -108,8 +108,7 @@ void GpsPoseConverterNode::create_subscribers()
 // Status callback — dock/undock state tracking
 // ---------------------------------------------------------------------------
 
-void GpsPoseConverterNode::on_status(
-    mowgli_interfaces::msg::Status::ConstSharedPtr msg)
+void GpsPoseConverterNode::on_status(mowgli_interfaces::msg::Status::ConstSharedPtr msg)
 {
   const bool was_docked = is_docked_;
   is_docked_ = msg->is_charging;
@@ -267,7 +266,8 @@ void GpsPoseConverterNode::on_absolute_pose(
   out.pose.covariance[14] = 1e6;  // z  (2D mode)
   out.pose.covariance[21] = 1e6;  // roll
   out.pose.covariance[28] = 1e6;  // pitch
-  out.pose.covariance[35] = yaw_var_scaled;  // yaw — tight when moving, loose when stationary or ramping
+  out.pose.covariance[35] =
+      yaw_var_scaled;  // yaw — tight when moving, loose when stationary or ramping
 
   pose_pub_->publish(out);
 }

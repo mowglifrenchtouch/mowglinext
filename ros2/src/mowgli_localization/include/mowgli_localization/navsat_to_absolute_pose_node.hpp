@@ -57,9 +57,8 @@ private:
   void create_services();
 
   void on_navsat_fix(sensor_msgs::msg::NavSatFix::ConstSharedPtr msg);
-  void on_set_datum(
-      const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-      std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+  void on_set_datum(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+                    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
 
   /**
    * @brief Project WGS84 lat/lon to local ENU (x=east, y=north) relative to datum.

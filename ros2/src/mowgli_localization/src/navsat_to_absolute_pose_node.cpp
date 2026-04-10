@@ -130,8 +130,8 @@ void NavSatToAbsolutePoseNode::on_set_datum(
   if (last_fix_.status.status < sensor_msgs::msg::NavSatStatus::STATUS_GBAS_FIX)
   {
     response->success = false;
-    response->message = "No RTK fixed quality — current status: " +
-                        std::to_string(last_fix_.status.status);
+    response->message =
+        "No RTK fixed quality — current status: " + std::to_string(last_fix_.status.status);
     return;
   }
 
@@ -141,7 +141,8 @@ void NavSatToAbsolutePoseNode::on_set_datum(
 
   RCLCPP_INFO(get_logger(),
               "Datum updated to [%.8f, %.8f] from current GPS position",
-              datum_lat_, datum_lon_);
+              datum_lat_,
+              datum_lon_);
 
   std::ostringstream oss;
   oss << std::fixed << std::setprecision(8) << datum_lat_ << "," << datum_lon_;
