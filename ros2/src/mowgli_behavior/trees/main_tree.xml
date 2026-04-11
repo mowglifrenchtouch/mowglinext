@@ -159,7 +159,11 @@
               <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
               <PublishHighLevelStatus state="2" state_name="UNDOCKING"/>
               <RecordUndockStart/>
-              <UndockRobot dock_type="simple_charging_dock"/>
+              <!-- BackUp instead of UndockRobot: opennav_docking isDocked()
+                   uses geometric distance to dock pose which fails with
+                   SLAM relocalization drift. BackUp reliably reverses
+                   off the dock via Nav2 behavior_server. -->
+              <BackUp backup_dist="1.5" backup_speed="0.15"/>
               <!-- Compute heading from GPS displacement during undock -->
               <CalibrateHeadingFromUndock/>
             </Sequence>
@@ -226,7 +230,11 @@
                   <PublishHighLevelStatus state="2" state_name="RESUMING_AFTER_RAIN"/>
                   <WaitForDuration duration_sec="1.0"/>
                   <Fallback name="RainResumeUndock">
-                    <UndockRobot dock_type="simple_charging_dock"/>
+                    <!-- BackUp instead of UndockRobot: opennav_docking isDocked()
+                   uses geometric distance to dock pose which fails with
+                   SLAM relocalization drift. BackUp reliably reverses
+                   off the dock via Nav2 behavior_server. -->
+              <BackUp backup_dist="1.5" backup_speed="0.15"/>
                     <Sequence>
                       <RecordResumeUndockFailure/>
                       <ClearCommand/>
@@ -270,7 +278,11 @@
                   <PublishHighLevelStatus state="2" state_name="RESUMING_UNDOCKING"/>
                   <WaitForDuration duration_sec="1.0"/>
                   <Fallback name="ResumeUndockOrAbort">
-                    <UndockRobot dock_type="simple_charging_dock"/>
+                    <!-- BackUp instead of UndockRobot: opennav_docking isDocked()
+                   uses geometric distance to dock pose which fails with
+                   SLAM relocalization drift. BackUp reliably reverses
+                   off the dock via Nav2 behavior_server. -->
+              <BackUp backup_dist="1.5" backup_speed="0.15"/>
                     <Sequence>
                       <RecordResumeUndockFailure/>
                       <ClearCommand/>
