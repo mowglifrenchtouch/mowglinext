@@ -222,7 +222,9 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
-                remappings=remappings,
+                # Remap docking_server's cmd_vel to go through twist_mux
+                # instead of competing directly on /cmd_vel with twist_mux output.
+                remappings=remappings + [('cmd_vel', 'cmd_vel_docking')],
             ),
             Node(
                 package='nav2_lifecycle_manager',
@@ -304,7 +306,8 @@ def generate_launch_description():
                         plugin='opennav_docking::DockingServer',
                         name='docking_server',
                         parameters=[configured_params],
-                        remappings=remappings,
+                        remappings=remappings
+                        + [('cmd_vel', 'cmd_vel_docking')],
                     ),
                     ComposableNode(
                         package='nav2_lifecycle_manager',
