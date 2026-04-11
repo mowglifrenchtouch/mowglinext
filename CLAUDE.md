@@ -27,8 +27,8 @@ This robot has spinning blades. The STM32 firmware is the sole blade safety auth
 
 ## Architecture Invariants (DO NOT VIOLATE)
 
-1. **SLAM is sole TF authority** — `ekf_map` has `publish_tf: false`, its output is unused for TF
-2. **base_link at rear wheel axis** — OpenMower convention, do not move
+1. **ekf_map is TF authority for map→odom** — `ekf_map` has `publish_tf: true`, GPS-anchored via `navsat_transform_node` (robot_localization). SLAM Toolbox has `transform_publish_period: 0.0` (no TF broadcast); it provides heading only via `slam_heading_node` subscribing to `/pose`. Magnetic declination 0.026 rad configured for Paris area.
+2. **TF chain follows REP-105** — `map→odom→base_footprint→base_link→sensors`. All Nav2 nodes, EKF, and SLAM use `base_footprint` as the robot frame. `base_link` is at the rear wheel axis (OpenMower convention, do not move).
 3. **Cyclone DDS** — not FastRTPS (stale shm issues on ARM)
 4. **Map frame = GPS frame** — X=east, Y=north, no rotation transform
 5. **Costmap obstacles disabled in coverage mode** — collision_monitor handles real-time avoidance
@@ -36,8 +36,11 @@ This robot has spinning blades. The STM32 firmware is the sole blade safety auth
 7. **Cell-based strip coverage** — `map_server_node` plans strips on demand via `~/get_next_strip` service; no pre-planned full path. BT nodes `GetNextStrip`, `TransitToStrip`, `FollowStrip` execute one strip at a time. Progress tracked in `mow_progress` grid layer (survives restarts). Coverage status via `~/get_coverage_status` service and `/map_server_node/coverage_cells` OccupancyGrid topic.
 8. **FTCController for coverage paths** — RPP for transit only, FTCController (PID on 3 axes) for coverage path following
 9. **Emergency auto-reset on dock** — When emergency is active and robot is on dock (charging detected), BT auto-sends `ResetEmergency` to firmware. Firmware is sole safety authority and only clears latch if physical trigger is no longer asserted.
-10. **CalibrateHeadingFromUndock reads EKF TF** — not GPS displacement. Costmaps are cleared after undock.
+10. **Undock via Nav2 BackUp behavior** — BackUp (1.5m, 0.15 m/s) via `behavior_server`, not `opennav_docking` UndockRobot (isDocked() unreliable with GPS/SLAM drift). Costmaps are cleared after undock.
 11. **Zero-odom only when charging AND idle** — `hardware_bridge_node` does not reset odometry during undock sequence.
+12. **Battery current for dock detection** — Hardware bridge publishes `abs(charging_current)` when charging, `0.0` when not, for `SimpleChargingDock` compatibility.
+13. **Docking server cmd_vel** — Remapped to `/cmd_vel_docking` through twist_mux (priority 15).
+14. **Coverage grid_map convention** — `getSize()(0)` = X cells, `getSize()(1)` = Y cells. Manual OccupancyGrid conversion: `width=size(0)`, `height=size(1)`, with Y-axis flip.
 
 ## High-Level Commands and States
 
@@ -101,14 +104,19 @@ No Co-Authored-By lines. Keep messages concise and focused on "why".
 - **Distro:** Jazzy
 - **DDS:** Cyclone DDS (all containers share `docker/config/cyclonedds.xml`)
 - **Topics:** Mowgli-specific topics under `/mowgli/` namespace
-- **Frames:** `map` (global), `odom` (local), `base_link` (robot), `lidar_link`, `imu_link`
+- **Frames:** `map` (global), `odom` (local), `base_footprint` (robot frame for Nav2/EKF/SLAM), `base_link` (rear axle), `lidar_link`, `imu_link`
+- **TF chain:** `map→odom` (ekf_map), `odom→base_footprint` (ekf_odom), `base_footprint→base_link` (static), `base_link→sensors` (static)
 - **Units:** SI throughout (metres, radians, seconds)
-- **Dual EKF:** `ekf_odom` (50Hz, wheel+IMU) and `ekf_map` (20Hz, odom+GPS)
+- **Dual EKF:** `ekf_odom` (50Hz, wheel+IMU, publishes odom→base_footprint) and `ekf_map` (20Hz, odom+GPS, publishes map→odom via navsat_transform_node)
 - **Navigation:** RPP for transit, FTCController (Follow-the-Carrot with 3-axis PID) for coverage paths (NOT MPPI — it jumps between adjacent swaths)
 - **Coverage:** Cell-based strip planner in `map_server_node`. Strips fetched one at a time by BT (`GetNextStrip` -> `TransitToStrip` -> `FollowStrip`). No full-path pre-planning. Progress persisted in `mow_progress` grid layer.
 - **Area Recording:** `RecordArea` BT node records trajectory at 2 Hz, Douglas-Peucker simplification, saves polygon via `/map_server_node/add_area`. Live preview on `~/recording_trajectory`.
 - **Manual Mowing:** Dedicated BT state (COMMAND_MANUAL_MOW=7). Teleop via `/cmd_vel_teleop`, blade managed by GUI. Collision_monitor/GPS/SLAM remain active.
 - **Emergency Auto-Reset:** BT auto-resets emergency when robot placed on dock (charging detected). Firmware is safety authority.
+- **GPS fusion:** `navsat_transform_node` (robot_localization) replaces custom `gps_pose_converter`. Provides GPS→map transform for `ekf_map`.
+- **SLAM heading:** `slam_heading_node` subscribes to SLAM `/pose` topic for heading — SLAM no longer publishes TF.
+- **Nav2 tuning:** Global costmap 30m x 30m rolling window; keepout_filter disabled in global costmap (blocks transit/docking); collision_monitor PolygonStop min_points=8, PolygonSlow min_points=6; source_timeout 5.0s (ARM TF jitter); progress checker 0.15m required movement, 30s timeout; failure_tolerance 1.0; speeds: mowing 0.3/0.15 m/s, transit 0.2 m/s, max 0.3 m/s.
+- **Joystick:** Foxglove client passes `schemaName` in `clientAdvertise` for JSON-to-CDR conversion. GUI shows joystick during "RECORDING" state (not just "AREA_RECORDING").
 
 See sections below for detailed package descriptions, topics, and architecture.
 
@@ -122,6 +130,10 @@ git checkout -b feat/my-feature    # or fix/, refactor/, test/, chore/, docs/
 git add <files> && git commit -m "feat: description"
 gh pr create --title "feat: my feature" --body "..."
 ```
+
+### Dev Branch Workflow
+
+Docker builds trigger on both `main` and `dev` branches. Images are tagged `:main` and `:dev` respectively. Use `mowgli-dev` / `mowgli-main` commands to switch between environments. Iterate on `dev`, merge to `main` when stable.
 
 ## Quick Commands
 
@@ -198,8 +210,11 @@ When using Claude Code on this project:
 - Do NOT add ROS1 patterns (rosserial, roscore, catkin) — this is ROS2 only
 - Do NOT use FastRTPS — Cyclone DDS is required
 - Do NOT mock the database/firmware in integration tests — use real interfaces
-- Do NOT add `publish_tf: true` to ekf_map — SLAM is the sole TF authority
+- Do NOT add `publish_tf: true` to SLAM Toolbox — ekf_map is the sole map→odom TF authority
+- Do NOT set `transform_publish_period` > 0 in SLAM Toolbox — it must not broadcast TF
 - Do NOT send blade commands without firmware safety checks
 - Do NOT hardcode GPS coordinates, dock poses, or NTRIP credentials
 - Do NOT use MPPI controller for coverage paths — it jumps between swaths
 - Do NOT use RPP for coverage paths — use FTCController for <10mm lateral accuracy on swaths
+- Do NOT use `base_link` as robot_base_frame in Nav2/EKF — use `base_footprint` (REP-105)
+- Do NOT use opennav_docking UndockRobot — use Nav2 BackUp behavior (isDocked() unreliable with GPS/SLAM drift)
