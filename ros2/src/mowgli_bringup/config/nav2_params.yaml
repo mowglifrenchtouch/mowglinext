@@ -43,7 +43,7 @@ controller_server:
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.02  # tight — even small movements count
+      required_movement_radius: 0.15  # must move 15cm to count as progress
       movement_time_allowance: 30.0  # seconds without progress before controller fails
 
     stopped_goal_checker:
@@ -70,7 +70,7 @@ controller_server:
       rotate_to_heading_angular_vel: 3.0
       max_angular_accel: 5.0
       # RPP parameters (passed through to primary controller)
-      desired_linear_vel: 0.3
+      desired_linear_vel: 0.2
       lookahead_dist: 0.4
       min_lookahead_dist: 0.2
       max_lookahead_dist: 0.6
@@ -96,10 +96,10 @@ controller_server:
     # PRE_ROTATE -> FOLLOWING -> WAITING_FOR_GOAL_APPROACH -> POST_ROTATE
     FollowCoveragePath:
       plugin: "mowgli_nav2_plugins/FTCController"
-      speed_fast: 0.5              # carrot speed when far from path (m/s)
+      speed_fast: 0.3              # carrot speed when far from path (m/s)
       speed_fast_threshold: 0.5    # distance threshold for fast/slow (m)
       speed_fast_threshold_angle: 10.0  # angle threshold for fast (deg)
-      speed_slow: 0.25             # carrot speed when close/turning (m/s)
+      speed_slow: 0.15             # carrot speed when close/turning (m/s)
       speed_angular: 60.0          # rotation speed for in-place turns (deg/s)
       acceleration: 0.5            # carrot acceleration (m/s²)
       # PID longitudinal
@@ -115,7 +115,7 @@ controller_server:
       ki_ang: 0.0
       kd_ang: 0.0
       # Limits
-      max_cmd_vel_speed: 0.5
+      max_cmd_vel_speed: 0.3
       max_cmd_vel_ang: 3.0
       max_goal_distance_error: 0.10  # goal reached within 10cm
       max_goal_angle_error: 15.0     # goal angle tolerance (deg)
@@ -136,10 +136,10 @@ planner_server:
     GridBased:
       plugin: "nav2_smac_planner::SmacPlanner2D"
       tolerance: 0.50
-      downsample_costmap: false
-      downsampling_factor: 1
+      downsample_costmap: true
+      downsampling_factor: 2
       allow_unknown: false
-      max_iterations: 1000000
+      max_iterations: 100000
       max_on_approach_iterations: 1000
       max_planning_time: 3.5
       cost_travel_multiplier: 2.0
@@ -219,7 +219,7 @@ velocity_smoother:
     #             twist_mux → cmd_vel → hardware
     input_topic: cmd_vel_nav
     output_topic: cmd_vel_smoothed
-    max_velocity: [0.5, 0.0, 1.0]
+    max_velocity: [0.3, 0.0, 1.0]
     min_velocity: [-0.3, 0.0, -1.0]
     max_accel: [0.3, 0.0, 1.5]
     max_decel: [-0.3, 0.0, -1.5]
@@ -235,8 +235,8 @@ global_costmap:
   global_costmap:
     ros__parameters:
       use_sim_time: false
-      update_frequency: 1.0
-      publish_frequency: 1.0
+      update_frequency: 0.5
+      publish_frequency: 0.5
       global_frame: map
       robot_base_frame: base_link
       # TF tolerance: how stale a transform can be before the costmap rejects it.
@@ -255,8 +255,8 @@ global_costmap:
       # gardens: the costmap always centres on the robot, and obstacles are
       # detected in real time by the obstacle_layer.
       rolling_window: true
-      width: 600
-      height: 600
+      width: 400
+      height: 400
       # keepout_filter re-enabled: the keepout mask now includes a navigation
       # margin (keepout_nav_margin param) so the robot can operate near the
       # boundary edge without triggering "Start occupied".
