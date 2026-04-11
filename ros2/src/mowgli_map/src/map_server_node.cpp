@@ -848,13 +848,14 @@ void MapServerNode::on_add_area(const mowgli_interfaces::srv::AddMowingArea::Req
     gm_polygon.addVertex(grid_map::Position(static_cast<double>(pt.x), static_cast<double>(pt.y)));
   }
 
-  const float no_go_val = static_cast<float>(CellType::NO_GO_ZONE);
-
+  // Classify cells inside the area as LAWN (mowable), not NO_GO_ZONE.
+  // Only exclusion zones and obstacles should be NO_GO_ZONE.
+  const float lawn_val = static_cast<float>(CellType::LAWN);
   {
     std::lock_guard<std::mutex> lock(map_mutex_);
     for (grid_map::PolygonIterator it(map_, gm_polygon); !it.isPastEnd(); ++it)
     {
-      map_.at(std::string(layers::CLASSIFICATION), *it) = no_go_val;
+      map_.at(std::string(layers::CLASSIFICATION), *it) = lawn_val;
     }
   }
 
@@ -1862,6 +1863,7 @@ void MapServerNode::load_areas_from_file(const std::string& path)
 void MapServerNode::apply_area_classifications()
 {
   std::lock_guard<std::mutex> lock(map_mutex_);
+  const float lawn_val = static_cast<float>(CellType::LAWN);
   const float no_go_val = static_cast<float>(CellType::NO_GO_ZONE);
 
   for (const auto& area : areas_)
@@ -1873,9 +1875,10 @@ void MapServerNode::apply_area_classifications()
           grid_map::Position(static_cast<double>(pt.x), static_cast<double>(pt.y)));
     }
 
+    // Mowing areas are LAWN, not NO_GO_ZONE.
     for (grid_map::PolygonIterator it(map_, gm_polygon); !it.isPastEnd(); ++it)
     {
-      map_.at(std::string(layers::CLASSIFICATION), *it) = no_go_val;
+      map_.at(std::string(layers::CLASSIFICATION), *it) = lawn_val;
     }
 
     for (const auto& obstacle : area.obstacles)
