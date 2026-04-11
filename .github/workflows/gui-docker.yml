@@ -2,12 +2,12 @@ name: GUI — Docker
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - 'gui/**'
       - '.github/workflows/gui-docker.yml'
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - 'gui/**'
       - '.github/workflows/gui-docker.yml'
