@@ -1,30 +1,44 @@
 # ---------------------------------------------------------------------------
-# NavSat → AbsolutePose converter (ublox_gps bridge)
-# datum_lat/datum_lon define the local map frame origin.
-# Override in mowgli_robot.yaml for your garden location.
+# navsat_transform_node (robot_localization)
+# Converts GPS NavSatFix → map-frame Odometry using datum + IMU heading.
+# Replaces custom navsat_to_absolute_pose + gps_pose_converter.
+# datum_lat/datum_lon injected from mowgli_robot.yaml at launch time.
 # ---------------------------------------------------------------------------
-navsat_to_absolute_pose:
+navsat_transform:
   ros__parameters:
-    datum_lat: 0.0
-    datum_lon: 0.0
+    frequency: 10.0
+    delay: 3.0
+    # Magnetic declination for Paris area (~1.5° east, NOAA WMM 2025)
+    magnetic_declination_radians: 0.026
+    # yaw_offset: correction if IMU yaw=0 is not east (ENU convention).
+    # If IMU reports yaw=0 facing north, set to pi/2 (1.5707963).
+    # Our IMU uses differential yaw in ekf_odom, so the absolute yaw
+    # reference comes from the EKF state which starts at 0. Set to 0
+    # and let navsat_transform figure out the rotation from GPS movement.
+    yaw_offset: 0.0
+    zero_altitude: true
+    # GPS antenna frame in URDF (base_footprint → gps_link static TF)
+    gps_frame_id: gps_link
+    publish_filtered_gps: true
+    broadcast_cartesian_transform: false
+    use_odometry_yaw: true   # use filtered odometry heading, not raw IMU
+    wait_for_datum: false
+    # Datum injected at launch from mowgli_robot.yaml
+    datum: [0.0, 0.0, 0.0]
 
+# ---------------------------------------------------------------------------
 # Dual EKF configuration for robot_localization.
 #
-# DESIGN PHILOSOPHY:
-#   Wheel ticks are unreliable on soft/wet ground (slipping is certain).
-#   GPS RTK is the primary position source — when fix/float is available,
-#   GPS dominates.  SLAM/LiDAR compensates during GPS outages.
-#   Wheel ticks provide velocity hints only, with high uncertainty.
+# DESIGN:
+#   ekf_odom  – fast local filter (wheel + IMU) → odom → base_footprint TF
+#   ekf_map   – global filter (odom + GPS + SLAM heading) → map → odom TF
 #
-# ekf_odom  – fuses wheel odometry + IMU into odom → base_link TF.
-#             Wheel velocity has HIGH process noise (low trust).
-# ekf_map   – fuses filtered odometry + GPS pose into map → odom TF.
-#             GPS covariance comes from the receiver itself (low for RTK fix).
+# GPS RTK is the primary position source. SLAM heading from LiDAR scan
+# matching provides absolute heading (works stationary, under canopy).
+# Wheel ticks provide velocity hints only (unreliable on soft ground).
 #
-# State vector layout for *_config arrays (15 elements):
-#   x, y, z,  roll, pitch, yaw,
-#   vx, vy, vz,  vroll, vpitch, vyaw,
-#   ax, ay, az
+# State vector: x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
+# ---------------------------------------------------------------------------
 
 ekf_odom:
   ros__parameters:
@@ -33,12 +47,11 @@ ekf_odom:
     two_d_mode: true
     publish_tf: true
     odom_frame: odom
-    base_link_frame: base_link
+    base_link_frame: base_footprint
     world_frame: odom
 
-    # Wheel odometry: fuse linear velocity (vx, vy) and yaw rate.
-    # Wheel ticks slip on wet/soft ground — treat as low-confidence velocity
-    # hint, NOT a position source.  The IMU and GPS provide the real position.
+    # Wheel odometry: velocity only (vx, vy, vyaw).
+    # NOT a position source — wheels slip on wet/soft ground.
     odom0: /wheel_odom
     odom0_config: [false, false, false,
                    false, false, false,
@@ -50,8 +63,8 @@ ekf_odom:
     odom0_differential: false
     odom0_relative: false
 
-    # IMU gyro: fuse yaw CHANGES and yaw rate (smooth, high-frequency).
-    # differential=true avoids gyro drift and prevents fighting with SLAM.
+    # IMU: yaw (differential) and yaw rate.
+    # differential=true prevents gyro drift from fighting GPS heading.
     imu0: /imu/data
     imu0_config: [false, false, false,
                   false, false, true,
@@ -64,10 +77,6 @@ ekf_odom:
     imu0_relative: false
     imu0_remove_gravitational_acceleration: true
 
-    # Process noise tuning — HIGH values for velocity states (vx=6, vy=7)
-    # because wheel ticks drift on real terrain.  Position states (x=0, y=1)
-    # also elevated because without GPS, position accumulates wheel errors.
-    # IMU-related states (yaw=5, vyaw=11) have lower noise — IMU is reliable.
     process_noise_covariance: [0.10, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
                                 0.0,  0.10, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
                                 0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
@@ -89,19 +98,13 @@ ekf_map:
     frequency: 20.0
     sensor_timeout: 0.2
     two_d_mode: true
-    # SLAM publishes map→odom TF (scan matching is the position authority).
-    # ekf_map does NOT publish TF — its state estimate is available on
-    # /odometry/filtered_map but TF comes from SLAM for consistency with
-    # the costmap and LiDAR frame transforms.
-    publish_tf: false
+    publish_tf: true
     odom_frame: odom
-    base_link_frame: base_link
+    base_link_frame: base_footprint
     world_frame: map
 
-    # Filtered odometry from the odom EKF: velocity only (not position).
-    # Position comes from GPS.  Using odom position here would let wheel-tick
-    # drift contaminate the map frame.  We only fuse velocity + yaw rate so
-    # the EKF has inter-GPS dynamics.
+    # Filtered odometry from ekf_odom: velocity + yaw rate.
+    # Provides inter-GPS dynamics. No position — that comes from GPS.
     odom0: /odometry/filtered_odom
     odom0_config: [false, false, false,
                    false, false, false,
@@ -113,50 +116,53 @@ ekf_map:
     odom0_differential: false
     odom0_relative: false
 
-    # GPS pose (PoseWithCovarianceStamped from gps_pose_converter or sim remap).
-    # Position: covariance from receiver quality — RTK fix ~2cm, float ~20cm.
-    # Heading: derived from velocity vector by gps_pose_converter. The yaw
-    #   covariance is speed-dependent: tight when moving (GPS heading reliable),
-    #   very large when stationary (IMU dominates). This aligns the map frame
-    #   with geographic ENU when the robot is moving.
-    pose0: /gps/pose
-    pose0_config: [true,  true,  false,
+    # GPS position from navsat_transform_node (Odometry in map frame).
+    # Fuse x, y position only — heading comes from SLAM + IMU.
+    # Covariance comes from receiver quality (RTK fix ~2cm, float ~20cm).
+    odom1: /odometry/gps
+    odom1_config: [true,  true,  false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom1_queue_size: 10
+    odom1_nodelay: false
+    odom1_differential: false
+    odom1_relative: false
+    odom1_rejection_threshold: 3.0
+
+    # SLAM heading: slam_heading_node subscribes to /slam_toolbox/pose
+    # (SLAM's internal scan-matched pose) and extracts yaw. Provides
+    # absolute heading from LiDAR features — works without magnetometer,
+    # when stationary, and under tree canopy.
+    pose0: /slam/heading
+    pose0_config: [false, false, false,
                    false, false, true,
                    false, false, false,
                    false, false, false,
                    false, false, false]
-    pose0_queue_size: 10
+    pose0_queue_size: 5
     pose0_nodelay: false
     pose0_differential: false
     pose0_relative: false
-    # Reject GPS measurements with Mahalanobis distance > 3.0 from current
-    # estimate. When docked with tight dock_pose_fix, GPS measurements that
-    # disagree (due to float noise) will be rejected.
-    pose0_rejection_threshold: 3.0
 
-    # Dock pose fix removed — ekf_map doesn't publish TF and nothing reads
-    # its output. SLAM is the sole TF authority. Re-add if ekf_map becomes
-    # the map→odom TF publisher.
+    # IMU: yaw rate for inter-GPS heading dynamics.
+    # differential=true so absolute yaw doesn't fight GPS/SLAM heading.
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_queue_size: 10
+    imu0_nodelay: false
+    imu0_differential: true
+    imu0_relative: false
+    imu0_remove_gravitational_acceleration: true
 
-    # SLAM heading: slam_heading_node extracts yaw from SLAM's scan matching
-    # (slam_map→odom TF) and publishes it as PoseWithCovarianceStamped.
-    # Only yaw is fused (position has 1e6 covariance).
-    # Provides absolute heading from LiDAR features — works without
-    # magnetometer, when stationary, and under tree canopy.
-    pose2: /slam/heading
-    pose2_config: [false, false, false,
-                   false, false, true,
-                   false, false, false,
-                   false, false, false,
-                   false, false, false]
-    pose2_queue_size: 5
-    pose2_nodelay: false
-    pose2_differential: false
-    pose2_relative: false
-
-    # Process noise — elevated for position (x=0, y=1) because without GPS
-    # the filter relies on wheel-derived velocity which drifts.  This makes
-    # the filter rapidly snap back to GPS when it returns.
+    # Process noise — elevated for position (x, y) because without GPS
+    # the filter relies on wheel-derived velocity which drifts fast.
+    # This makes the filter snap back to GPS when it returns.
     process_noise_covariance: [0.20, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
                                 0.0,  0.20, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
                                 0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,

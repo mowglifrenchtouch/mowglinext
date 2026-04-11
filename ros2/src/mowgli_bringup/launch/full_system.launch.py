@@ -213,8 +213,16 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
-    # 7a. NavSatFix → AbsolutePose converter (ublox_gps bridge)
+    # 7a. navsat_transform_node (robot_localization)
+    # Converts GPS NavSatFix → map-frame Odometry for ekf_map.
+    # Handles datum, magnetic declination, yaw offset.
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 7a-legacy. NavSatFix → AbsolutePose converter (for GUI + BT)
+    # Kept alongside navsat_transform_node for /gps/absolute_pose topic.
+    # ------------------------------------------------------------------
+    datum_lat = float(robot_params.get("datum_lat", 0.0))
+    datum_lon = float(robot_params.get("datum_lon", 0.0))
     navsat_converter_node = Node(
         package="mowgli_localization",
         executable="navsat_to_absolute_pose_node",
@@ -222,25 +230,27 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[
             localization_params,
-            {
-                "datum_lat": robot_params.get("datum_lat", 0.0),
-                "datum_lon": robot_params.get("datum_lon", 0.0),
-            },
+            {"datum_lat": datum_lat, "datum_lon": datum_lon},
             {"use_sim_time": use_sim_time},
         ],
     )
 
-    # ------------------------------------------------------------------
-    # 7b. GPS pose converter (AbsolutePose → PoseWithCovarianceStamped)
-    # ------------------------------------------------------------------
-    gps_pose_converter_node = Node(
-        package="mowgli_localization",
-        executable="gps_pose_converter_node",
-        name="gps_pose_converter_node",
+    navsat_transform_node = Node(
+        package="robot_localization",
+        executable="navsat_transform_node",
+        name="navsat_transform",
         output="screen",
         parameters=[
             localization_params,
+            {
+                "datum": [datum_lat, datum_lon, 0.0],
+            },
             {"use_sim_time": use_sim_time},
+        ],
+        remappings=[
+            ("odometry/filtered", "odometry/filtered_map"),
+            ("imu", "imu/data"),
+            ("gps/fix", "gps/fix"),
         ],
     )
 
@@ -308,38 +318,8 @@ def generate_launch_description() -> LaunchDescription:
     # ------------------------------------------------------------------
     # 11. Foxglove Bridge — WebSocket bridge for GUI and Foxglove Studio
     # ------------------------------------------------------------------
-    # Whitelist only the topics and services that the GUI actually uses.
-    # This prevents the bridge from serialising every high-frequency topic
-    # on the bus (SLAM, costmaps, TF, etc.) which saves CPU on ARM boards.
-    foxglove_topic_whitelist = [
-        "/hardware_bridge/status",
-        "/hardware_bridge/power",
-        "/hardware_bridge/emergency",
-        "/behavior_tree_node/high_level_status",
-        "/gps/absolute_pose",
-        "/odometry/filtered_map",
-        "/imu/data",
-        "/wheel_odom",
-        "/FollowCoveragePath/global_plan",
-        "/plan",
-        "/map_server_node/coverage_cells",
-        "/map_server_node/docking_pose",
-        "/scan",
-        "/diagnostics",
-        "/obstacle_tracker/obstacles",
-        "/robot_description",
-        "/cmd_vel",
-        "/cmd_vel_teleop",
-        "/behavior_tree_node/recording_trajectory",
-    ]
-
-    foxglove_service_whitelist = [
-        "/map_server_node/.*",
-        "/behavior_tree_node/.*",
-        "/hardware_bridge/.*",
-        "/navsat_to_absolute_pose/.*",
-    ]
-
+    # No topic/service whitelists — all topics are available for Foxglove
+    # Studio debugging. The GUI backend throttles subscriptions on its side.
     foxglove_bridge_node = Node(
         condition=IfCondition(enable_foxglove),
         package="foxglove_bridge",
@@ -352,15 +332,10 @@ def generate_launch_description() -> LaunchDescription:
                 "address": "0.0.0.0",
                 "send_buffer_limit": 10000000,
                 "num_threads": 0,
-                "topic_whitelist": foxglove_topic_whitelist,
-                "service_whitelist": foxglove_service_whitelist,
                 "capabilities": [
                     "clientPublish",
                     "services",
                     "connectionGraph",
-                ],
-                "client_topic_whitelist": [
-                    "/cmd_vel_teleop",
                 ],
             },
         ],
@@ -412,8 +387,8 @@ def generate_launch_description() -> LaunchDescription:
             map_server_node,
             obstacle_tracker_node,
             wheel_odometry_node,
-            navsat_converter_node,
-            gps_pose_converter_node,
+            navsat_transform_node,
+            navsat_converter_node,  # kept for GUI + BT (publishes /gps/absolute_pose)
             slam_heading_node,
             localization_monitor_node,
             diagnostics_node,
