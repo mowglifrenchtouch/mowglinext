@@ -382,7 +382,11 @@ docking_server:
     simple_charging_dock:
       plugin: "opennav_docking::SimpleChargingDock"
       charging_threshold: 0.1
-      docking_threshold: 0.05
+      # Geometric distance (m) from base_link to dock pose for isDocked().
+      # Must be large enough to accommodate SLAM relocalization drift on
+      # startup — lifelong SLAM can place the robot up to ~1m from the
+      # configured dock pose after loading a saved map.
+      docking_threshold: 1.0
       staging_x_offset: -1.0
       use_external_detection_pose: false
       use_battery_status: true
