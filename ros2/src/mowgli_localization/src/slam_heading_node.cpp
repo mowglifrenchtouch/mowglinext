@@ -4,32 +4,13 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /**
  * @file slam_heading_node.cpp
- * @brief Extracts heading from SLAM's pose for EKF fusion.
+ * @brief Extracts heading from SLAM's slam_map→odom TF for EKF fusion.
  *
- * slam_toolbox computes a pose via LiDAR scan matching and publishes
- * it on /slam_toolbox/pose. This node subscribes to that topic,
- * extracts the yaw component, and republishes it as a
- * PoseWithCovarianceStamped on /slam/heading for the EKF to fuse.
- *
- * This avoids a circular dependency: ekf_map publishes map→odom TF
- * (GPS-anchored), so we cannot read map→odom to get SLAM heading.
- * Instead we read SLAM's internal pose directly.
- *
- * This provides an absolute heading reference from LiDAR features
- * (walls, trees, fences) that works:
- *   - Without a magnetometer
- *   - While stationary (unlike GPS velocity heading)
- *   - Under canopy (unlike GPS)
+ * SLAM publishes slam_map→odom TF (separate from ekf_map's map→odom).
+ * This node reads that TF and publishes the yaw as a heading measurement
+ * for ekf_map to fuse, providing absolute heading from LiDAR features.
  */
 
 #include "mowgli_localization/slam_heading_node.hpp"
@@ -42,37 +23,46 @@
 namespace mowgli_localization
 {
 
-SlamHeadingNode::SlamHeadingNode(const rclcpp::NodeOptions &options) : Node("slam_heading", options)
+SlamHeadingNode::SlamHeadingNode(const rclcpp::NodeOptions& options) : Node("slam_heading", options)
 {
+  publish_rate_ = declare_parameter<double>("publish_rate", 5.0);
   yaw_variance_ = declare_parameter<double>("yaw_variance", 0.05);
   stale_timeout_ = declare_parameter<double>("stale_timeout", 5.0);
   stale_yaw_variance_ = declare_parameter<double>("stale_yaw_variance", 1e6);
+  slam_frame_ = declare_parameter<std::string>("slam_frame", "slam_map");
 
-  heading_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/slam/heading",
-                                                                                 rclcpp::QoS(10));
+  tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  // Subscribe to SLAM's internal pose (avoids TF circular dependency).
-  // slam_toolbox publishes to /pose (relative topic name).
-  slam_pose_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-      "/pose",
-      rclcpp::QoS(10),
-      std::bind(&SlamHeadingNode::on_slam_pose, this, std::placeholders::_1));
+  heading_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+      "/slam/heading", rclcpp::QoS(10));
+
+  timer_ = create_wall_timer(std::chrono::duration<double>(1.0 / publish_rate_),
+                             std::bind(&SlamHeadingNode::timer_callback, this));
 
   RCLCPP_INFO(get_logger(),
-              "SlamHeadingNode started (subscribing to /pose, yaw_var=%.3f)",
+              "SlamHeadingNode started (reading %s→odom TF, rate=%.1f Hz, yaw_var=%.3f)",
+              slam_frame_.c_str(),
+              publish_rate_,
               yaw_variance_);
 }
 
-void SlamHeadingNode::on_slam_pose(
-    geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg)
+void SlamHeadingNode::timer_callback()
 {
-  const rclcpp::Time msg_stamp(msg->header.stamp);
-  const double age = (now() - msg_stamp).seconds();
+  geometry_msgs::msg::TransformStamped tf;
+  try
+  {
+    tf = tf_buffer_->lookupTransform(slam_frame_, "odom", tf2::TimePointZero);
+  }
+  catch (const tf2::TransformException&)
+  {
+    return;
+  }
 
-  // Extract yaw from SLAM's pose
-  const double yaw = tf2::getYaw(msg->pose.pose.orientation);
+  const rclcpp::Time tf_stamp(tf.header.stamp);
+  const double age = (now() - tf_stamp).seconds();
+  const double yaw = tf2::getYaw(tf.transform.rotation);
 
-  // Determine yaw variance based on message freshness
   double variance = yaw_variance_;
   if (age > stale_timeout_)
   {
@@ -84,34 +74,26 @@ void SlamHeadingNode::on_slam_pose(
     variance = yaw_variance_ + alpha * (stale_yaw_variance_ - yaw_variance_);
   }
 
-  // Publish heading as PoseWithCovarianceStamped
-  // Position is zeroed with huge covariance — only yaw matters.
-  geometry_msgs::msg::PoseWithCovarianceStamped out;
-  out.header.stamp = now();
-  out.header.frame_id = "map";
+  geometry_msgs::msg::PoseWithCovarianceStamped msg;
+  msg.header.stamp = now();
+  msg.header.frame_id = "map";
 
-  out.pose.pose.position.x = 0.0;
-  out.pose.pose.position.y = 0.0;
-  out.pose.pose.position.z = 0.0;
+  msg.pose.pose.orientation.w = std::cos(yaw / 2.0);
+  msg.pose.pose.orientation.z = std::sin(yaw / 2.0);
 
-  out.pose.pose.orientation.w = std::cos(yaw / 2.0);
-  out.pose.pose.orientation.z = std::sin(yaw / 2.0);
-  out.pose.pose.orientation.x = 0.0;
-  out.pose.pose.orientation.y = 0.0;
+  msg.pose.covariance[0] = 1e6;
+  msg.pose.covariance[7] = 1e6;
+  msg.pose.covariance[14] = 1e6;
+  msg.pose.covariance[21] = 1e6;
+  msg.pose.covariance[28] = 1e6;
+  msg.pose.covariance[35] = variance;
 
-  out.pose.covariance[0] = 1e6;  // x
-  out.pose.covariance[7] = 1e6;  // y
-  out.pose.covariance[14] = 1e6;  // z
-  out.pose.covariance[21] = 1e6;  // roll
-  out.pose.covariance[28] = 1e6;  // pitch
-  out.pose.covariance[35] = variance;  // yaw
-
-  heading_pub_->publish(out);
+  heading_pub_->publish(msg);
 }
 
 }  // namespace mowgli_localization
 
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<mowgli_localization::SlamHeadingNode>());

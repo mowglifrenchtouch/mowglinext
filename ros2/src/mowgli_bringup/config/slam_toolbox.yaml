@@ -19,7 +19,9 @@ slam_toolbox:
 
     # Frame IDs
     odom_frame: odom
-    map_frame: map
+    # Use slam_map (not map) to avoid TF conflict with ekf_map.
+    # slam_heading_node reads slam_map→odom TF for heading extraction.
+    map_frame: slam_map
     base_frame: base_footprint
     scan_topic: /scan
 
