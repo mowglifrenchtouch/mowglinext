@@ -37,9 +37,11 @@ SlamHeadingNode::SlamHeadingNode(const rclcpp::NodeOptions& options) : Node("sla
   // Subscribe to SLAM's /pose topic. Published by slam_toolbox whenever a
   // scan is processed, independent of transform_publish_period (works even
   // when set to 0.0). Only fires when robot moves minimum_travel_distance.
+  // SLAM publishes /pose with transient_local QoS — subscriber must match.
+  auto qos = rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable();
   slam_pose_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/pose",
-      rclcpp::QoS(10),
+      qos,
       std::bind(&SlamHeadingNode::on_slam_pose, this, std::placeholders::_1));
 
   RCLCPP_INFO(get_logger(),
