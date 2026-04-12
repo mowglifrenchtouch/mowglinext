@@ -304,9 +304,26 @@ double GpsPoseConverterNode::compute_xy_variance(
     multiplier = 32.0;
   }
 
-  const double sigma = (msg.position_accuracy > 0.0f)
-                           ? std::max(static_cast<double>(msg.position_accuracy), 0.01)
-                           : 5.0;
+  // Use receiver-reported accuracy, but enforce realistic minimums.
+  // The F9P reports very tight accuracy even without RTK corrections,
+  // but actual non-RTK accuracy is typically 1-3m.
+  double sigma = (msg.position_accuracy > 0.0f)
+                     ? static_cast<double>(msg.position_accuracy)
+                     : 5.0;
+
+  // Enforce minimum sigma based on fix quality
+  if ((msg.flags & Flags::FLAG_GPS_RTK_FIXED) != 0u)
+  {
+    sigma = std::max(sigma, 0.02);  // RTK fixed: min 2cm
+  }
+  else if ((msg.flags & Flags::FLAG_GPS_RTK_FLOAT) != 0u)
+  {
+    sigma = std::max(sigma, 0.10);  // RTK float: min 10cm
+  }
+  else
+  {
+    sigma = std::max(sigma, 1.0);  // Autonomous: min 1m
+  }
 
   return sigma * sigma * multiplier;
 }
