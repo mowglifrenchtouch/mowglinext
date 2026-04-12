@@ -235,22 +235,22 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
-    navsat_transform_node = Node(
-        package="robot_localization",
-        executable="navsat_transform_node",
-        name="navsat_transform",
+    # navsat_transform_node disabled: doesn't work with differential IMU
+    # (outputs 0,0 because it can't determine the GPS→map rotation).
+    # Using gps_pose_converter instead which derives heading from GPS velocity.
+    # TODO: fix navsat_transform with proper absolute heading source.
+
+    # ------------------------------------------------------------------
+    # 7b. GPS pose converter (AbsolutePose → PoseWithCovarianceStamped)
+    # ------------------------------------------------------------------
+    gps_pose_converter_node = Node(
+        package="mowgli_localization",
+        executable="gps_pose_converter_node",
+        name="gps_pose_converter_node",
         output="screen",
         parameters=[
             localization_params,
-            {
-                "datum": [datum_lat, datum_lon, 0.0],
-            },
             {"use_sim_time": use_sim_time},
-        ],
-        remappings=[
-            ("odometry/filtered", "odometry/filtered_map"),
-            ("imu", "imu/data"),
-            ("gps/fix", "gps/fix"),
         ],
     )
 
@@ -387,8 +387,8 @@ def generate_launch_description() -> LaunchDescription:
             map_server_node,
             obstacle_tracker_node,
             wheel_odometry_node,
-            navsat_transform_node,
-            navsat_converter_node,  # kept for GUI + BT (publishes /gps/absolute_pose)
+            navsat_converter_node,  # publishes /gps/absolute_pose for GUI + BT
+            gps_pose_converter_node,  # publishes /gps/pose for ekf_map
             slam_heading_node,
             localization_monitor_node,
             diagnostics_node,
