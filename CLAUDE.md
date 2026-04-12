@@ -27,7 +27,7 @@ This robot has spinning blades. The STM32 firmware is the sole blade safety auth
 
 ## Architecture Invariants (DO NOT VIOLATE)
 
-1. **ekf_map is TF authority for map→odom** — `ekf_map` has `publish_tf: true`, GPS-anchored via `navsat_transform_node` (robot_localization). SLAM Toolbox has `transform_publish_period: 0.0` (no TF broadcast); it provides heading only via `slam_heading_node` subscribing to `/pose`. Magnetic declination 0.026 rad configured for Paris area.
+1. **ekf_map is TF authority for map→odom** — `ekf_map` has `publish_tf: true`, GPS-anchored via `gps_pose_converter` (position + velocity-derived heading). SLAM Toolbox has `transform_publish_period: 0.0` (no TF broadcast); it provides occupancy grid only. Magnetic declination 0.026 rad configured for Paris area.
 2. **TF chain follows REP-105** — `map→odom→base_footprint→base_link→sensors`. All Nav2 nodes, EKF, and SLAM use `base_footprint` as the robot frame. `base_link` is at the rear wheel axis (OpenMower convention, do not move).
 3. **Cyclone DDS** — not FastRTPS (stale shm issues on ARM)
 4. **Map frame = GPS frame** — X=east, Y=north, no rotation transform
@@ -114,7 +114,7 @@ No Co-Authored-By lines. Keep messages concise and focused on "why".
 - **Manual Mowing:** Dedicated BT state (COMMAND_MANUAL_MOW=7). Teleop via `/cmd_vel_teleop`, blade managed by GUI. Collision_monitor/GPS/SLAM remain active.
 - **Emergency Auto-Reset:** BT auto-resets emergency when robot placed on dock (charging detected). Firmware is safety authority.
 - **GPS fusion:** `navsat_transform_node` (robot_localization) replaces custom `gps_pose_converter`. Provides GPS→map transform for `ekf_map`.
-- **SLAM heading:** `slam_heading_node` subscribes to SLAM `/pose` topic for heading — SLAM no longer publishes TF.
+- **SLAM heading:** `slam_heading_node` extracts heading from SLAM TF for diagnostics — not fused into ekf_map (avoids feedback loop). SLAM provides occupancy grid only.
 - **Nav2 tuning:** Global costmap 30m x 30m rolling window; keepout_filter disabled in global costmap (blocks transit/docking); collision_monitor PolygonStop min_points=8, PolygonSlow min_points=6; source_timeout 5.0s (ARM TF jitter); progress checker 0.15m required movement, 30s timeout; failure_tolerance 1.0; speeds: mowing 0.3/0.15 m/s, transit 0.2 m/s, max 0.3 m/s.
 - **Joystick:** Foxglove client passes `schemaName` in `clientAdvertise` for JSON-to-CDR conversion. GUI shows joystick during "RECORDING" state (not just "AREA_RECORDING").
 
