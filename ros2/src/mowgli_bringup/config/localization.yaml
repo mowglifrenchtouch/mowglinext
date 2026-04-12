@@ -100,7 +100,10 @@ ekf_map:
     frequency: 20.0
     sensor_timeout: 0.2
     two_d_mode: true
-    publish_tf: true
+    # SLAM is TF authority for map→odom (scan matching).
+    # ekf_map does NOT publish TF — its output is available on
+    # /odometry/filtered_map for global position tracking (GUI, areas).
+    publish_tf: false
     odom_frame: odom
     base_link_frame: base_footprint
     world_frame: map
@@ -133,15 +136,9 @@ ekf_map:
     pose1_relative: false
     pose1_rejection_threshold: 3.0
 
-    # SLAM pose disabled: reading map→base_footprint TF and feeding it
-    # back to ekf_map creates a feedback loop (SLAM TF + ekf_map TF
-    # oscillate). Need rf2o_laser_odometry or non-TF SLAM heading.
-    # pose0: /slam/pose
-    # pose0_config: [true,  true,  false,
-    #                false, false, true,
-    #                false, false, false,
-    #                false, false, false,
-    #                false, false, false]
+    # SLAM pose not fused — SLAM is TF authority for map→odom.
+    # No feedback loop since ekf_map doesn't publish TF.
+    # GPS provides global position, SLAM provides local accuracy.
 
     # IMU: yaw rate for inter-GPS heading dynamics.
     # differential=true so absolute yaw doesn't fight GPS/SLAM heading.

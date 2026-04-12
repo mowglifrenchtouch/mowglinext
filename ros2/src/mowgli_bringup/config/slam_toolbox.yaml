@@ -34,10 +34,9 @@ slam_toolbox:
     # ekf_map is the TF authority for map→odom (GPS-anchored).
     # SLAM provides heading via /slam/heading but does NOT publish TF.
     # Set to 0 to disable SLAM's map→odom TF broadcast.
-    # Disabled: SLAM TF + ekf_map TF both publish map→odom which
-    # causes heading oscillation (feedback loop via slam_heading_node).
-    # SLAM heading needs rf2o_laser_odometry or a non-TF approach.
-    transform_publish_period: 0.0
+    # SLAM is sole TF authority for map→odom (scan matching).
+    # ekf_map has publish_tf=false — no dual publisher conflict.
+    transform_publish_period: 0.05    # 20 Hz
     map_update_interval: 2.0          # seconds
     resolution: 0.05                  # metres/cell
 
