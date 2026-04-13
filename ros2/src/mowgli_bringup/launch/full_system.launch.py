@@ -39,7 +39,9 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    ExecuteProcess,
     IncludeLaunchDescription,
+    TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -350,5 +352,47 @@ def generate_launch_description() -> LaunchDescription:
             diagnostics_node,
             mqtt_bridge_node,
             foxglove_bridge_node,
+            # Publish dock heading to FusionCore after startup.
+            # FusionCore needs a heading source to validate its orientation;
+            # without it, it waits for 5m of travel. The dock heading from
+            # compass (measured at installation) bootstraps the heading.
+            _initial_heading_action(robot_params),
         ]
+    )
+
+
+def _initial_heading_action(robot_params: dict) -> TimerAction:
+    """Publish dock heading to /gnss/heading for FusionCore initialization."""
+    import math
+
+    dock_yaw_compass = float(robot_params.get("dock_pose_yaw", 0.0))
+    # Convert compass heading to ENU yaw: yaw_enu = pi/2 - compass
+    enu_yaw = math.pi / 2.0 - dock_yaw_compass
+    qw = math.cos(enu_yaw / 2.0)
+    qz = math.sin(enu_yaw / 2.0)
+
+    # FusionCore expects sensor_msgs/Imu on /gnss/heading with orientation
+    # quaternion representing heading in ENU frame.
+    return TimerAction(
+        period=10.0,
+        actions=[
+            ExecuteProcess(
+                cmd=[
+                    "ros2", "topic", "pub", "--once", "/gnss/heading",
+                    "sensor_msgs/msg/Imu",
+                    (
+                        "{"
+                        f"header: {{frame_id: base_footprint}},"
+                        f"orientation: {{x: 0.0, y: 0.0, z: {qz:.6f}, w: {qw:.6f}}},"
+                        "orientation_covariance: ["
+                        "0.01, 0.0, 0.0,"
+                        "0.0, 0.01, 0.0,"
+                        "0.0, 0.0, 0.01"
+                        "]"
+                        "}"
+                    ),
+                ],
+                output="screen",
+            ),
+        ],
     )

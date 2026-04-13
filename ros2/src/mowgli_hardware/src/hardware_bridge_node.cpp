@@ -536,9 +536,15 @@ private:
       }
     }
 
-    // Orientation not computed here; fill with identity and mark as unknown.
+    // Flat-ground constraint: the robot is always on a level surface, so
+    // roll=0 and pitch=0. Yaw is left to FusionCore (GPS+gyro).
+    // Set orientation to identity with tight roll/pitch covariance and
+    // loose yaw covariance so FusionCore constrains roll/pitch to zero
+    // without fighting its own yaw estimate.
     msg.orientation.w = 1.0;
-    msg.orientation_covariance[0] = -1.0;  // Signal: orientation unknown.
+    msg.orientation_covariance[0] = 0.001;  // roll  variance (tight)
+    msg.orientation_covariance[4] = 0.001;  // pitch variance (tight)
+    msg.orientation_covariance[8] = 99.0;   // yaw   variance (don't constrain)
 
     // Gyro covariance: WT901 gyro z-axis severely under-reports yaw rate
     // (~17% of actual). Set high covariance so the EKF trusts wheel odom

@@ -21,10 +21,12 @@ fusioncore_node:
     odom_frame: odom
     publish_rate: 50.0
 
-    # IMU: 6-axis gyro+accel (no magnetometer)
+    # IMU: hardware_bridge publishes identity orientation with tight
+    # roll/pitch covariance (flat-ground constraint) and loose yaw.
+    # has_magnetometer=true tells FusionCore to fuse the orientation.
     imu.gyro_noise: 0.02
     imu.accel_noise: 0.1
-    imu.has_magnetometer: false
+    imu.has_magnetometer: true
 
     # Wheel encoders: noisy on soft/wet ground
     encoder.vel_noise: 0.15
