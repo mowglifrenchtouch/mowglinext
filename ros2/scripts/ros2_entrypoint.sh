@@ -2,7 +2,7 @@
 # =============================================================================
 # ros2_entrypoint.sh
 #
-# Container entrypoint. Sources ROS2 Jazzy and the workspace overlay before
+# Container entrypoint. Sources ROS2 Kilted and the workspace overlay before
 # exec'ing whatever command was passed as CMD (or via `docker run <cmd>`).
 #
 # NOTE: Make this script executable on the host before building:

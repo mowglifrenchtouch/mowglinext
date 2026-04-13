@@ -2,7 +2,7 @@
 
 Comprehensive technical documentation of the Mowgli ROS2 system design, including package organization, data flow, communication protocols, and integration points.
 
-Built on **ROS2 Jazzy** with **Gazebo Harmonic** simulation, this architecture spans 12 focused packages providing complete autonomous lawn mower functionality.
+Built on **ROS2 Kilted** with **Gazebo Harmonic** simulation, this architecture spans 12 focused packages providing complete autonomous lawn mower functionality.
 
 ## System Overview
 
@@ -1921,7 +1921,7 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
    - **Infrastructure:** mowgli_bringup (launch, config), mowgli_description (URDF/xacro), mowgli_map (map storage)
    - **Third-party:** opennav_coverage (Nav2 coverage server)
 
-2. **ROS2 Jazzy + Gazebo Harmonic:** Modern robotics stack with first-class simulation support and lifecycle management.
+2. **ROS2 Kilted + Gazebo Harmonic:** Modern robotics stack with first-class simulation support and lifecycle management.
 
 3. **Decoupled Communication:** ROS2 pub/sub (topics), services, and actions isolate packages. Easy to substitute, test, or extend components independently.
 

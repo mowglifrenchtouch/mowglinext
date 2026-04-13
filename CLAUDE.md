@@ -1,6 +1,6 @@
 # MowgliNext
 
-Open-source autonomous robot mower monorepo. ROS2 Jazzy, Nav2, SLAM Toolbox, BehaviorTree.CPP v4, cell-based strip coverage.
+Open-source autonomous robot mower monorepo. ROS2 Kilted, Nav2, SLAM Toolbox, BehaviorTree.CPP v4, cell-based strip coverage.
 
 **Website:** https://mowgli.garden | **Wiki:** https://github.com/cedbossneo/mowglinext/wiki
 

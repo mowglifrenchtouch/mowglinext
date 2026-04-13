@@ -24,9 +24,9 @@ Thanks for your interest in contributing! MowgliNext is a community-driven proje
 ### ROS2 Stack
 
 ```bash
-# Requires ROS2 Jazzy on Ubuntu 24.04
+# Requires ROS2 Kilted on Ubuntu 24.04
 cd ros2
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/kilted/setup.bash
 rosdep install --from-paths src --ignore-src -y
 colcon build
 colcon test

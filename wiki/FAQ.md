@@ -8,7 +8,7 @@ At minimum: YardForce Classic 500, ARM64 SBC (Pi 4+), u-blox ZED-F9P GPS, LDRobo
 
 ### Is this compatible with OpenMower?
 
-MowgliNext is a complete ROS2 rewrite inspired by OpenMower. It uses the same hardware but a completely different software stack (ROS2 Jazzy vs ROS1 Noetic).
+MowgliNext is a complete ROS2 rewrite inspired by OpenMower. It uses the same hardware but a completely different software stack (ROS2 Kilted vs ROS1 Noetic).
 
 ### Do I need an NTRIP service for RTK?
 
@@ -67,7 +67,7 @@ See [Simulation](Simulation) for full details.
 
 ### Can I develop in the cloud without local setup?
 
-Yes! MowgliNext supports **GitHub Codespaces** with a pre-configured devcontainer. Click **Code → Codespaces** on the repo page to get a full ROS2 Jazzy development environment with Nav2, Gazebo, and all tools — no local installation needed. 8-core machine recommended (16-core for simulation). See [Getting Started](Getting-Started#development-with-github-codespaces--devcontainer).
+Yes! MowgliNext supports **GitHub Codespaces** with a pre-configured devcontainer. Click **Code → Codespaces** on the repo page to get a full ROS2 Kilted development environment with Nav2, Gazebo, and all tools — no local installation needed. 8-core machine recommended (16-core for simulation). See [Getting Started](Getting-Started#development-with-github-codespaces--devcontainer).
 
 ### How do I add support for a different LiDAR?
 

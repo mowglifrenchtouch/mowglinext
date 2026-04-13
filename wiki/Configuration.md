@@ -2,7 +2,7 @@
 
 Complete guide to all configuration files and parameters in the Mowgli ROS2 system.
 
-This documentation is for ROS2 Jazzy with Gazebo Harmonic.
+This documentation is for ROS2 Kilted with Gazebo Harmonic.
 
 ## Overview
 
@@ -390,7 +390,7 @@ bt_navigator:
     default_nav_to_pose_bt_xml: "src/mowgli_bringup/config/navigate_to_pose.xml"
     default_nav_through_poses_bt_xml: ""
 
-    # Jazzy auto-loads plugins; no manual registration needed
+    # Kilted auto-loads plugins; no manual registration needed
 ```
 
 #### controller_server Configuration
@@ -416,7 +416,7 @@ controller_server:
     goal_checker_plugins: ["stopped_goal_checker", "coverage_goal_checker"]
     controller_plugins: ["FollowPath", "FollowCoveragePath"]
 
-    # Enable stamped velocity commands (Jazzy requirement)
+    # Enable stamped velocity commands (Kilted requirement)
     enable_stamped_cmd_vel: false
 
     # Progress checker: has robot moved at least 0.5 m in 10 seconds?

@@ -9,7 +9,7 @@ The simulation provides:
 - **Virtual Mowgli robot** in a realistic Gazebo Harmonic environment
 - **Simulated sensors:** LiDAR (2D laser scan), IMU (accelerometer + gyroscope), wheel odometry
 - **Physics simulation:** Motor torques, friction, collision detection
-- **ROS2 Jazzy integration:** Full integration with the ROS2 navigation stack
+- **ROS2 Kilted integration:** Full integration with the ROS2 navigation stack
 - **Repeatable scenarios:** Consistent environment for testing mowing patterns and navigation
 - **Docker-based workflow:** Containerized simulation eliminates environment conflicts
 
@@ -33,7 +33,7 @@ The simulation provides:
 - **Disk:** ~5 GB for Docker images
 
 ### No Bare-Metal Installation Required
-All dependencies (ROS2 Jazzy, Gazebo Harmonic, tools) are containerized. No installation on your host system needed.
+All dependencies (ROS2 Kilted, Gazebo Harmonic, tools) are containerized. No installation on your host system needed.
 
 ## Quick Start
 
@@ -98,7 +98,7 @@ In the dev container shell:
 ```bash
 # Build a single package (fast rebuild)
 docker compose -f docker-compose.simulation.yaml exec dev-sim bash -c \
-  'source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && colcon build --packages-select mowgli_behavior'
+  'source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && colcon build --packages-select mowgli_behavior'
 
 # Restart simulation services
 docker compose -f docker-compose.simulation.yaml restart dev-sim
@@ -227,7 +227,7 @@ docker compose -f docker-compose.simulation.yaml up simulation-gui
 
 # Terminal 2: Send high-level control command
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 service call /behavior_tree_node/high_level_control \
     mowgli_interfaces/srv/HighLevelControl \
@@ -244,7 +244,7 @@ docker exec mowgli_simulation_gui bash -c "\
 ```bash
 # In another terminal
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 topic echo /behavior_tree_node/status"
 ```
@@ -327,7 +327,7 @@ docker compose -f docker-compose.simulation.yaml up dev-sim
 
 # Terminal 3: Rebuild package inside container
 docker compose -f docker-compose.simulation.yaml exec dev-sim bash -c \
-  'source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && colcon build --packages-select mowgli_behavior'
+  'source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && colcon build --packages-select mowgli_behavior'
 
 # Restart simulation to pick up changes:
 docker compose -f docker-compose.simulation.yaml restart dev-sim
@@ -357,13 +357,13 @@ docker compose -f docker-compose.simulation.yaml logs -f dev-sim
 
 # Check ROS2 nodes running inside container
 docker compose -f docker-compose.simulation.yaml exec dev-sim bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 node list"
 
 # Echo a specific topic
 docker compose -f docker-compose.simulation.yaml exec dev-sim bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 topic echo /scan --no-arr"
 ```
@@ -404,7 +404,7 @@ ros2 service call /behavior_tree_node/high_level_control \
 
 ```bash
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 topic echo /behavior_tree_node/status"
 ```
@@ -487,7 +487,7 @@ docker logs -f mowgli_simulation_gui
 **Check:**
 ```bash
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 node list | grep bridge"
 ```
@@ -502,7 +502,7 @@ docker exec mowgli_simulation_gui bash -c "\
 **Check:**
 ```bash
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 topic list | grep -E 'scan|odom|cmd_vel'"
 ```
@@ -539,11 +539,11 @@ docker logs mowgli_dev_sim
 ```bash
 # Rebuild the specific package
 docker compose exec dev-sim bash -c \
-  'source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && colcon build --packages-select mowgli_behavior'
+  'source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && colcon build --packages-select mowgli_behavior'
 
 # Or full rebuild
 docker compose exec dev-sim bash -c \
-  'source /opt/ros/jazzy/setup.bash && colcon build'
+  'source /opt/ros/kilted/setup.bash && colcon build'
 
 # Restart simulation
 docker compose restart dev-sim
@@ -559,14 +559,14 @@ docker compose up simulation-gui
 
 # Terminal 2 (after 30 seconds for Gazebo to load)
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 service call /behavior_tree_node/high_level_control \
     mowgli_interfaces/srv/HighLevelControl '{command: 1}'"
 
 # Terminal 3: Monitor behavior
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 topic echo /behavior_tree_node/status"
 ```
@@ -581,7 +581,7 @@ docker compose up simulation-gui
 
 # Terminal 2: Record laser scan
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 topic echo /scan --no-arr | head -20"
 ```
@@ -596,7 +596,7 @@ docker compose up simulation-gui
 
 # Terminal 2: Start recording odometry data
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 bag record -o test_odom_0 \
     /fusion/odom \
@@ -606,7 +606,7 @@ docker exec mowgli_simulation_gui bash -c "\
 
 # Terminal 3: Send navigation goal
 docker exec mowgli_simulation_gui bash -c "\
-  source /opt/ros/jazzy/setup.bash && \
+  source /opt/ros/kilted/setup.bash && \
   source /ros2_ws/install/setup.bash && \
   ros2 action send_goal navigate_to_pose nav2_msgs/action/NavigateToPose \
     'pose: {header: {frame_id: \"map\"}, pose: {position: {x: 5.0, y: 5.0}, orientation: {w: 1.0}}}'"
