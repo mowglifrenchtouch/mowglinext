@@ -368,12 +368,10 @@ private:
       pub_status_->publish(msg);
     }
 
-    // ---- Dock pose fix ----
-    // Previously published dock position+heading to ekf_map while charging.
-    // Removed: ekf_map has publish_tf=false and nothing reads its output.
-    // SLAM is the sole TF authority. dock_pose_yaw is only used for SLAM
+    // ---- Dock heading ----
+    // Dock heading is published at 1 Hz on /gnss/heading while charging
+    // (see publish_dock_heading()). dock_pose_yaw is also used for SLAM
     // map_start_pose (on saved maps) and by the BT for heading reference.
-    // If ekf_map is re-enabled as TF publisher in the future, re-add this.
 
     // ---- Emergency message ----
     {

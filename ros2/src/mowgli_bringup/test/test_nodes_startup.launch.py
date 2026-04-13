@@ -22,7 +22,6 @@ and advertise their expected topics.
 
 Nodes under test (no hardware required, use_sim_time=false):
   - wheel_odometry_node       (mowgli_localization)
-  - gps_pose_converter_node   (mowgli_localization)
   - localization_monitor_node (mowgli_localization)
   - map_server_node           (mowgli_map)
   - diagnostics_node          (mowgli_monitoring)
@@ -57,14 +56,6 @@ def generate_test_description():
         package="mowgli_localization",
         executable="wheel_odometry_node",
         name="wheel_odometry",
-        output="screen",
-        parameters=[{"use_sim_time": False}],
-    )
-
-    gps_pose_converter = launch_ros.actions.Node(
-        package="mowgli_localization",
-        executable="gps_pose_converter_node",
-        name="gps_pose_converter",
         output="screen",
         parameters=[{"use_sim_time": False}],
     )
@@ -105,7 +96,6 @@ def generate_test_description():
         launch.LaunchDescription(
             [
                 wheel_odometry,
-                gps_pose_converter,
                 localization_monitor,
                 map_server,
                 diagnostics,
@@ -115,7 +105,7 @@ def generate_test_description():
         ),
         {
             "wheel_odometry": wheel_odometry,
-            "gps_pose_converter": gps_pose_converter,
+
             "localization_monitor": localization_monitor,
             "map_server": map_server,
             "diagnostics": diagnostics,
@@ -148,7 +138,7 @@ class TestNodesStartup(unittest.TestCase):
     def test_all_nodes_alive(
         self,
         wheel_odometry,
-        gps_pose_converter,
+
         localization_monitor,
         map_server,
         diagnostics,
@@ -160,7 +150,7 @@ class TestNodesStartup(unittest.TestCase):
 
         for label, proc in [
             ("wheel_odometry_node", wheel_odometry),
-            ("gps_pose_converter_node", gps_pose_converter),
+
             ("localization_monitor_node", localization_monitor),
             ("map_server_node", map_server),
             ("diagnostics_node", diagnostics),
@@ -246,7 +236,7 @@ class TestNodesShutdown(unittest.TestCase):
         self,
         proc_info,
         wheel_odometry,
-        gps_pose_converter,
+
         localization_monitor,
         map_server,
         diagnostics,
@@ -254,7 +244,7 @@ class TestNodesShutdown(unittest.TestCase):
     ) -> None:
         for label, proc in [
             ("wheel_odometry_node", wheel_odometry),
-            ("gps_pose_converter_node", gps_pose_converter),
+
             ("localization_monitor_node", localization_monitor),
             ("map_server_node", map_server),
             ("diagnostics_node", diagnostics),

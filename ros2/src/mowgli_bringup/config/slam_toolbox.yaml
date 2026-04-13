@@ -19,8 +19,8 @@ slam_toolbox:
 
     # Frame IDs
     odom_frame: odom
-    # Use map frame (same as ekf_map). SLAM needs map→base_footprint
-    # TF lookup to work (provided by ekf_map), which requires map_frame=map.
+    # SLAM Toolbox is TF authority for map→odom. FusionCore provides
+    # odom→base_footprint. Together they give map→base_footprint.
     map_frame: map
     base_frame: base_footprint
     scan_topic: /scan
