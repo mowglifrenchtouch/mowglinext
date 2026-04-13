@@ -41,6 +41,7 @@ jobs:
           fetch-depth: 0
 
       - name: Init FusionCore submodule
+        working-directory: .
         run: git submodule update --init ros2/src/fusioncore
 
       - name: Setup ROS2 ${{ matrix.ros_distro }}
