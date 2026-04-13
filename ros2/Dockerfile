@@ -161,12 +161,19 @@ ARG BUILD_TYPE=Release
 # Now copy the rest of the source tree
 COPY src/ src/
 
+# FusionCore monorepo has a top-level CMakeLists.txt that colcon treats as a
+# single cmake package, shadowing the sub-packages. Symlink sub-packages to
+# workspace root so colcon discovers them individually.
+RUN ln -sf fusioncore/fusioncore_core src/fusioncore_core \
+ && ln -sf fusioncore/fusioncore_ros  src/fusioncore_ros \
+ && ln -sf fusioncore/compass_msgs    src/compass_msgs
+
 # Build all packages (mowgli_interfaces is already built and cached)
 RUN /bin/bash -c "\
     source /opt/ros/kilted/setup.bash && \
     source install/setup.bash && \
     colcon build \
-      --packages-ignore fusioncore_gazebo \
+      --packages-ignore fusioncore fusioncore_gazebo \
       --cmake-args -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTING=OFF \
       --parallel-workers \$(nproc) \
       --event-handlers console_cohesion+ \
