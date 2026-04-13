@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - 'ros2/**'
+      - '.github/workflows/ros2-ci.yml'
   pull_request:
     branches: [main]
     paths:
       - 'ros2/**'
+      - '.github/workflows/ros2-ci.yml'
 
 concurrency:
   group: ros2-ci-${{ github.ref }}
