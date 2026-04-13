@@ -4,6 +4,7 @@ import {
     BulbOutlined,
     ClockCircleOutlined,
     HeatMapOutlined,
+    MedicineBoxOutlined,
     MessageOutlined,
     RobotOutlined,
     RocketOutlined,
@@ -25,6 +26,7 @@ const navItems = [
     {key: '/onboarding', label: 'Onboarding', icon: <RocketOutlined/>},
     {key: '/settings', label: 'Settings', icon: <SettingOutlined/>},
     {key: '/logs', label: 'Logs', icon: <MessageOutlined/>},
+    {key: '/diagnostics', label: 'Diagnostics', icon: <MedicineBoxOutlined/>},
 ];
 
 const bottomNavItems = [
@@ -41,6 +43,7 @@ const pageTitles: Record<string, string> = {
     '/map': 'Map',
     '/schedule': 'Schedule',
     '/logs': 'Logs',
+    '/diagnostics': 'Diagnostics',
 };
 
 export default function Root() {
