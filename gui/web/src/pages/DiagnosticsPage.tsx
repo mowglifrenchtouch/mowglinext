@@ -33,7 +33,7 @@ import {useEmergency} from "../hooks/useEmergency.ts";
 import {usePower} from "../hooks/usePower.ts";
 import {useStatus} from "../hooks/useStatus.ts";
 import {useGPS} from "../hooks/useGPS.ts";
-import {usePose} from "../hooks/usePose.ts";
+import {useFusionOdom} from "../hooks/useFusionOdom.ts";
 import {useImu} from "../hooks/useImu.ts";
 import {useWheelTicks} from "../hooks/useWheelTicks.ts";
 import {useDiagnosticsSnapshot} from "../hooks/useDiagnosticsSnapshot.ts";
@@ -104,7 +104,7 @@ export const DiagnosticsPage = () => {
     const power = usePower();
     const status = useStatus();
     const gps = useGPS();
-    const pose = usePose();
+    const pose = useFusionOdom();
     const imu = useImu();
     const wheelTicks = useWheelTicks();
     const {snapshot, loading, refresh} = useDiagnosticsSnapshot();
