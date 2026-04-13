@@ -86,31 +86,6 @@ export const MowerActions: React.FC<React.PropsWithChildren<{bare?: boolean}>> =
             }]
         },
         {
-            key: "manual_mow",
-            label: "Manual Mowing",
-            actions: [{
-                command: "high_level_control",
-                args: { Command: 7 }
-            }]
-        },
-        {
-            key: "record_finish",
-            label: "Finish Recording",
-            actions: [{
-                command: "high_level_control",
-                args: { Command: 5 }
-            }]
-        },
-        {
-            key: "record_cancel",
-            label: "Cancel Recording",
-            danger: true,
-            actions: [{
-                command: "high_level_control",
-                args: { Command: 6 }
-            }]
-        },
-        {
             key: "emergency_off",
             "label": "Emergency Off",
             "danger": true,
