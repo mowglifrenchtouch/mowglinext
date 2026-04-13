@@ -31,7 +31,7 @@ interface MowingAreaItem extends MenuItemType {
 }
 
 interface MapToolbarProps {
-    manualMode: number | undefined;
+    manualMode: boolean;
     useSatellite: boolean;
     mowingAreas: MowingAreaItem[];
     stateName?: string;
@@ -70,8 +70,8 @@ export const MapToolbar = ({
     onRecordFinish, onRecordCancel,
 }: MapToolbarProps) => {
     const {notification} = App.useApp();
-    const isIdle = stateName === "IDLE";
-    const isRecording = stateName === "AREA_RECORDING";
+    const isIdle = stateName === "IDLE" || stateName === "IDLE_DOCKED";
+    const isRecording = stateName === "RECORDING" || stateName === "AREA_RECORDING";
 
     const safeCall = (fn?: () => Promise<void>) => {
         fn?.().catch((e: Error) => {

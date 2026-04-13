@@ -202,6 +202,10 @@ func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			def, err = subscribe(provider, c, conn, "gps", 100)
 		case "pose":
 			def, err = subscribe(provider, c, conn, "pose", 100)
+		case "fusionRaw":
+			def, err = subscribe(provider, c, conn, "fusionRaw", 200)
+		case "btLog":
+			def, err = subscribe(provider, c, conn, "btLog", -1)
 		case "imu":
 			def, err = subscribe(provider, c, conn, "imu", 100)
 		case "ticks":

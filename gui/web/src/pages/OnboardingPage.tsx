@@ -555,7 +555,7 @@ const CompleteStep: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // Mark onboarding as completed and restart the MowgliNext container
+        // Mark onboarding as completed and restart ROS2 + GUI containers
         (async () => {
             setRestarting(true);
             try {
@@ -563,14 +563,22 @@ const CompleteStep: React.FC = () => {
                 const base = import.meta.env.DEV ? 'http://localhost:4006' : '';
                 await fetch(`${base}/api/settings/status`, { method: 'POST' });
 
+                // Restart ROS2 container first (picks up new mowgli_robot.yaml)
                 const res = await guiApi.containers.containersList();
                 if (res.error) throw new Error(res.error.error);
-                const container = res.data.containers?.find(
-                    (c) => c.labels?.app === "mowglinext" || c.names?.includes("/mowglinext")
+                const ros2 = res.data.containers?.find(
+                    (c) => c.names?.some((n) => n.includes("mowgli-ros2") || n.includes("ros2"))
                 );
-                if (container?.id) {
-                    const restartRes = await guiApi.containers.containersCreate(container.id, "restart");
-                    if (restartRes.error) throw new Error(restartRes.error.error);
+                if (ros2?.id) {
+                    await guiApi.containers.containersCreate(ros2.id, "restart");
+                }
+
+                // Then restart GUI container
+                const gui = res.data.containers?.find(
+                    (c) => c.names?.some((n) => n.includes("mowgli-gui") || n.includes("gui"))
+                );
+                if (gui?.id) {
+                    await guiApi.containers.containersCreate(gui.id, "restart");
                 }
             } catch (e: any) {
                 setError(e.message);

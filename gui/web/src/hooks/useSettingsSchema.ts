@@ -47,6 +47,7 @@ export const useSettingsSchema = () => {
     const [schema, setSchema] = useState<JSONSchema | null>(null);
     const [values, setValues] = useState<Record<string, any>>({});
     const [loading, setLoading] = useState(false);
+    const [restartRequired, setRestartRequired] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -83,7 +84,11 @@ export const useSettingsSchema = () => {
                     throw new Error((res.error as any).error);
                 }
                 setValues(newValues);
-                notification.success({ message: "Settings saved" });
+                setRestartRequired(true);
+                notification.success({
+                    message: "Settings saved",
+                    description: "Restart ROS2 to apply the new configuration.",
+                });
             } catch (e: any) {
                 notification.error({
                     message: "Failed to save settings",
@@ -96,5 +101,5 @@ export const useSettingsSchema = () => {
         [guiApi, notification]
     );
 
-    return { schema, values, saveValues, loading };
+    return { schema, values, saveValues, loading, restartRequired };
 };

@@ -16,7 +16,7 @@ vi.mock('../../../components/AsyncDropDownButton.tsx', () => ({
 
 describe('MapToolbar', () => {
     const defaultProps = {
-        manualMode: undefined as number | undefined,
+        manualMode: false,
         useSatellite: true,
         mowingAreas: [],
         stateName: 'IDLE',

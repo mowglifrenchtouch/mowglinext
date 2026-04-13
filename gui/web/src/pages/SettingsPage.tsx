@@ -7,39 +7,37 @@ export const SettingsPage = () => {
     const guiApi = useApi();
     const { notification } = App.useApp();
 
+    const findContainer = async (match: (c: any) => boolean, label: string) => {
+        const res = await guiApi.containers.containersList();
+        if (res.error) throw new Error(res.error.error);
+        const container = res.data.containers?.find(match);
+        if (!container?.id) throw new Error(`${label} container not found`);
+        return container.id;
+    };
+
     const restartMowgliNext = async () => {
         try {
-            const resContainersList = await guiApi.containers.containersList();
-            if (resContainersList.error) throw new Error(resContainersList.error.error);
-            const container = resContainersList.data.containers?.find(
-                (c) => c.labels?.app === "mowglinext" || c.names?.includes("/mowglinext")
+            const id = await findContainer(
+                (c) => c.names?.some((n: string) => n.includes("ros2")),
+                "ROS2"
             );
-            if (container?.id) {
-                const res = await guiApi.containers.containersCreate(container.id, "restart");
-                if (res.error) throw new Error(res.error.error);
-                notification.success({ message: "MowgliNext restarted" });
-            } else {
-                throw new Error("MowgliNext container not found");
-            }
+            const res = await guiApi.containers.containersCreate(id, "restart");
+            if (res.error) throw new Error(res.error.error);
+            notification.success({ message: "ROS2 container restarted" });
         } catch (e: any) {
-            notification.error({ message: "Failed to restart MowgliNext", description: e.message });
+            notification.error({ message: "Failed to restart ROS2", description: e.message });
         }
     };
 
     const restartGui = async () => {
         try {
-            const resContainersList = await guiApi.containers.containersList();
-            if (resContainersList.error) throw new Error(resContainersList.error.error);
-            const container = resContainersList.data.containers?.find(
-                (c) => c.labels?.app === "gui" || c.names?.includes("/mowglinext")
+            const id = await findContainer(
+                (c) => c.labels?.app === "gui" || c.names?.some((n: string) => n.includes("gui")),
+                "GUI"
             );
-            if (container?.id) {
-                const res = await guiApi.containers.containersCreate(container.id, "restart");
-                if (res.error) throw new Error(res.error.error);
-                notification.success({ message: "GUI restarted" });
-            } else {
-                throw new Error("GUI container not found");
-            }
+            const res = await guiApi.containers.containersCreate(id, "restart");
+            if (res.error) throw new Error(res.error.error);
+            notification.success({ message: "GUI restarted" });
         } catch (e: any) {
             notification.error({ message: "Failed to restart GUI", description: e.message });
         }

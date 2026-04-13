@@ -27,6 +27,7 @@
  *   - LiDAR             (freshness of /scan)
  *   - GPS               (/gps/fix quality + satellite count)
  *   - Odometry          (freshness of /wheel_odom)
+ *   - FusionCore        (/fusion/odom: rate, position, orientation, z-drift, flat check)
  *   - Motors            (ESC temperatures from /status)
  */
 
@@ -82,9 +83,18 @@ struct DiagnosticsState
   rclcpp::Time last_scan_time{0, 0, RCL_ROS_TIME};
   bool scan_ever_received{false};
 
-  // Odometry
+  // Odometry (wheel)
   rclcpp::Time last_odom_time{0, 0, RCL_ROS_TIME};
   bool odom_ever_received{false};
+
+  // FusionCore
+  std::optional<nav_msgs::msg::Odometry> last_fusion_odom{};
+  rclcpp::Time last_fusion_time{0, 0, RCL_ROS_TIME};
+  bool fusion_ever_received{false};
+  uint64_t fusion_msg_count{0};
+  rclcpp::Time fusion_count_window_start{0, 0, RCL_ROS_TIME};
+  uint64_t fusion_count_window{0};
+  double fusion_rate_hz{0.0};
 
   // GPS
   std::optional<sensor_msgs::msg::NavSatFix> last_gps{};
@@ -158,6 +168,7 @@ public:
   diagnostic_msgs::msg::DiagnosticStatus check_lidar(const rclcpp::Time& now) const;
   diagnostic_msgs::msg::DiagnosticStatus check_gps(const rclcpp::Time& now) const;
   diagnostic_msgs::msg::DiagnosticStatus check_odometry(const rclcpp::Time& now) const;
+  diagnostic_msgs::msg::DiagnosticStatus check_fusioncore(const rclcpp::Time& now) const;
   diagnostic_msgs::msg::DiagnosticStatus check_motors() const;
 
   /// Read-only access to the internal state snapshot (for tests).
@@ -182,6 +193,7 @@ private:
   void on_imu(sensor_msgs::msg::Imu::ConstSharedPtr msg);
   void on_scan(sensor_msgs::msg::LaserScan::ConstSharedPtr msg);
   void on_odom(nav_msgs::msg::Odometry::ConstSharedPtr msg);
+  void on_fusion_odom(nav_msgs::msg::Odometry::ConstSharedPtr msg);
   void on_gps(sensor_msgs::msg::NavSatFix::ConstSharedPtr msg);
 
   // ---- Timer callback -------------------------------------------------------
@@ -206,6 +218,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_scan_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_fusion_odom_;
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr sub_gps_;
 
   rclcpp::TimerBase::SharedPtr timer_;

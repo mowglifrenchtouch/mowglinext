@@ -5,19 +5,22 @@ build_static_udev_rules() {
 # Mowgli II - static udev rules
 # =========================================================
 
-# Mowgli STM32 board
+# Mowgli STM32 board — match by product string to avoid confusion
+# with other STM32 CDC devices (0483:5740 is generic STM32 VCP).
 SUBSYSTEM=="tty", ATTRS{product}=="Mowgli", SYMLINK+="mowgli", MODE="0666"
 
 # Holybro Pixhawk5X-BL
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{product}=="0051", SYMLINK+="ardupilot", MODE="0666"
 
 # Known GPS USB devices
+# NOTE: 0483:5740 (STM32 VCP) removed — it conflicts with the Mowgli board
+# which uses the same vendor/product ID. If your GPS uses an STM32-based
+# USB adapter, add a rule matching its specific product string instead.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", SYMLINK+="gps", MODE="0666"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001", SYMLINK+="gps", MODE="0666"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="gps", MODE="0666"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", SYMLINK+="gps", MODE="0666"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="gps", MODE="0666"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", SYMLINK+="gps", MODE="0666"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="2303", SYMLINK+="gps", MODE="0666"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a8", SYMLINK+="gps", MODE="0666"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01aa", SYMLINK+="gps", MODE="0666"

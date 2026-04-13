@@ -85,7 +85,7 @@ Originally inspired by the [OpenMower](https://github.com/ClemensElflein/open_mo
 ## Features
 
 - **Full autonomous mowing** — plan, mow, dock, charge, resume. No manual intervention required.
-- **Cell-based strip coverage** — strips are planned on demand by `map_server_node` and fetched one at a time by the BT via `GetNextStrip`. Nav2 handles transit between strips (`TransitToStrip`), FTCController follows each strip (`FollowStrip`). No pre-planned full path. Progress tracked in `mow_progress` grid layer and survives restarts. Coverage status published on `/map_server_node/coverage_cells` (OccupancyGrid).
+- **Multi-area strip coverage** — areas are mowed sequentially. For each area, strips are planned on demand by `map_server_node` and fetched one at a time by the BT via `GetNextUnmowedArea` (outer loop) and `GetNextStrip` (inner loop). Nav2 handles transit between strips (`TransitToStrip`), FTCController follows each strip (`FollowStrip`). No pre-planned full path. Progress tracked in `mow_progress` grid layer and survives restarts. Coverage status published on `/map_server_node/coverage_cells` (OccupancyGrid).
 - **slam_toolbox lifelong mode** — LiDAR SLAM that accumulates across sessions. Pose graph persisted to disk before docking and reloaded on next session.
 - **RTK GPS localization** — UBX protocol. RTK fixed gives ~2 cm absolute accuracy. FusionCore fuses GPS + IMU + wheel velocity into a single UKF at 50 Hz with adaptive covariances.
 - **FusionCore sensor fusion** — Single UKF fuses GPS, IMU, and wheel odometry at 50 Hz. Publishes `odom→base_footprint` TF and `/fusion/odom` topic. SLAM Toolbox is the sole `map→odom` TF authority via LiDAR scan matching (20 Hz, `transform_publish_period: 0.05`).
@@ -99,7 +99,7 @@ Originally inspired by the [OpenMower](https://github.com/ClemensElflein/open_mo
 - **Docker multi-stage build** — 6 stages from `ros:jazzy-ros-base`. ARM-tested on Rockchip. Dev workflow with bind-mounted source for fast iteration.
 - **Foxglove Studio bridge** — WebSocket on port 8765. Pre-built layout at `foxglove/mowgli_sim.json`.
 - **openmower-gui integration** — rosbridge WebSocket on port 9090.
-- **Diagnostics** — 8 monitored subsystems published as `diagnostic_msgs/DiagnosticArray`. Optional MQTT bridge.
+- **Diagnostics** — `diagnostics_node` monitors 8+ subsystems: hardware bridge, GPS/SLAM localization modes, FusionCore (rate, position accuracy, flat-ground constraint, Z-drift), obstacle tracker, wheel odometry, published as `diagnostic_msgs/DiagnosticArray` at 1 Hz. Optional MQTT bridge.
 
 ---
 
@@ -606,18 +606,21 @@ MowingSequence
         |        (IsChargingProgressing detects stalled charger after 30min),
         |        undock, resume
         |
-        +-- StripLoop (Repeat x500)
-              MowOneStrip:
-                GetNextStrip(area_index=0)  call ~/get_next_strip service
-                TransitToStrip              Nav2 navigate to strip start
-                FollowStrip                 FTCController follows the strip path
-              or StripRecovery:
-                disable blade, stop, back up 0.3m, ClearCostmap, wait 2s
+        +-- AreaLoop (Repeat x100)
+              GetNextUnmowedArea(max_areas=20)  find next area with remaining strips
+              StripLoop (Repeat x500)
+                MowOneStrip:
+                  GetNextStrip(area_index=N)  fetch next strip from current area
+                  TransitToStrip              Nav2 navigate to strip start
+                  FollowStrip                 FTCController follows the strip path
+                or StripRecovery:
+                  disable blade, stop, back up 0.3m, ClearCostmap, wait 2s
+              (GetNextStrip returns FAILURE when area coverage complete → next area)
 
       FailedCoverageDock:
         SaveSlamMap + DockRobot + ClearCommand
 
-  On completion (GetNextStrip returns FAILURE = all strips mowed):
+  On completion (GetNextUnmowedArea returns FAILURE = all areas mowed):
     SetMowerEnabled(false)
     SaveObstacles
     SaveSlamMap
@@ -650,7 +653,8 @@ MowingSequence
 | `StopMoving` | Publishes zero Twist to `/cmd_vel` |
 | `BackUp(backup_dist, backup_speed)` | Nav2 `/backup` action |
 | `NavigateToPose(goal)` | Nav2 `/navigate_to_pose` action; goal as `"x;y;yaw"` string |
-| `GetNextStrip(area_index)` | Calls `~/get_next_strip` on `map_server_node`; returns FAILURE when coverage complete |
+| `GetNextUnmowedArea(max_areas)` | Finds next area with remaining strips; returns FAILURE when all areas complete. Updates `area_index` for `GetNextStrip` |
+| `GetNextStrip(area_index)` | Calls `~/get_next_strip` on `map_server_node` for given area; returns FAILURE when area coverage complete |
 | `TransitToStrip` | Nav2 `NavigateToPose` to the start of the current strip |
 | `FollowStrip` | Follows the current strip path via Nav2 `FollowPath` with FTCController |
 | `DockRobot(dock_id, dock_type)` | `opennav_docking` `/dock_robot` action |
@@ -722,6 +726,21 @@ The GUI uses **`compression: "none"`** — the rosbridge CBOR encoder in Jazzy c
 GUI settings use snake_case YAML keys: `datum_lat`, `datum_lon`, `tool_width`, `battery_full_voltage`, `battery_empty_voltage`, `battery_capacity_mah`.
 
 `/battery_state` (`sensor_msgs/msg/BatteryState`) is published by `hardware_bridge_node` for `opennav_docking` charging detection.
+
+### GUI Pages and Features
+
+| Page | Path | Features |
+|------|------|----------|
+| **Map** | `/#/map` | Live map view, area drawing/editing, coverage progress, obstacle overlays |
+| **Diagnostics** | `/#/diagnostics` | Container status, CPU/memory, localization mode (RTK/SLAM/dead reckoning), BT state from `/behavior_tree_log`, sensor health, ROS diagnostics topics, SLAM tools (save/delete map), cross-validation checks |
+| **Statistics** | `/#/statistics` | Mowing session history, aggregate coverage stats, duration, battery usage, areas completed |
+| **Settings** | `/#/settings` | Robot configuration (dimensions, sensor positions, GPS origin, battery thresholds). Saves trigger Docker container restart with warning banner. Onboarding mode restarts ROS2 container. |
+
+### BT Visualization and Mowing Sessions
+
+- **BT visualization:** Active behavior tree nodes displayed from `/behavior_tree_log` topic (JSON publication from `behavior_tree_node`)
+- **Automatic session recording:** Go backend monitors `HighLevelStatus` state transitions (AUTONOMOUS ↔ IDLE_DOCKED) and records mowing sessions with timestamps, coverage percentage, battery consumed
+- **SLAM map management:** API endpoints to query map info, serialize (save), and delete pose graph via `/slam_toolbox/serialize_map` service
 
 ---
 
