@@ -332,6 +332,15 @@ fusioncore:
 - Yaw noise: 0.05 rad (IMU + wheel differential)
 - GPS outlier: 100 m (stationary initialization)
 
+**Monitoring FusionCore Health:**
+The diagnostics system monitors FusionCore via `/fusion/odom`:
+- **Rate:** Checks for 50 Hz update frequency (warn if < 20 Hz)
+- **Position variance:** Monitors x, y covariance for convergence
+- **Orientation (yaw):** Tracks yaw angle and angular variance
+- **Z-drift detection:** Alerts if vertical variance grows uncontrolled (filter divergence)
+
+Access diagnostics at `http://<mower-ip>:4006/#/diagnostics` → FusionCore section
+
 ---
 
 ## 3. nav2_params.yaml

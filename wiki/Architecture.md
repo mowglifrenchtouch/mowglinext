@@ -611,6 +611,22 @@ localization_monitor:
     max_acceptable_fusion_variance: 0.25   # m² for position
 ```
 
+#### 3d. FusionCore Diagnostics Integration
+
+**Monitoring:**
+The diagnostics_node monitors FusionCore health by subscribing to `/fusion/odom` and checking:
+- **Rate:** Verify 50 Hz update rate (report WARN if < 20 Hz)
+- **Position variance:** Monitor x, y, z components of pose covariance
+- **Orientation (yaw):** Check yaw angle convergence and variance
+- **Flat constraint:** Monitor if z-position error is within expected bounds (grass terrain variation)
+- **Z-drift detection:** Flag if vertical variance grows uncontrolled (indicates filter divergence)
+
+**Diagnostics Output:**
+Aggregated into `/diagnostics` as sub-status with levels:
+- **OK:** Rate nominal, variances converged, no drift
+- **WARN:** Rate degraded or variance increasing
+- **ERROR:** Rate critical or variance diverging (filter failure)
+
 ---
 
 ### 4. mowgli_bringup
@@ -976,17 +992,21 @@ BehaviorTreeNode (main ROS2 node, 10 Hz)
                 ├── Sequence: MowingSequence (COMMAND_START = 1)
                 │   ├── IsCommand(1)
                 │   ├── Undock (with GPS wait, SLAM save, heading calibration)
-                │   ├── Cell-based strip coverage loop:
-                │   │   ├── ReactiveSequence: MowingCommandGuard
-                │   │   │   ├── IsCommand(1) — abort if user cancels
-                │   │   │   ├── RainGuard — dock, wait, resume
-                │   │   │   ├── BatteryGuard — dock, charge to 95%, resume
-                │   │   │   └── Repeat(500): StripLoop
-                │   │   │       ├── GetNextStrip(area=0)
-                │   │   │       ├── TransitToStrip (RPP)
-                │   │   │       └── FollowStrip (FTCController)
-                │   │   └── FailedCoverageDock
-                │   └── Mow complete → disable blade, save, dock → IDLE_DOCKED
+                │   ├── Multi-area coverage loop:
+                │   │   └── Repeat(until no more areas): AreaLoop
+                │   │       ├── GetNextUnmowedArea() — fetch next unmowed area polygon
+                │   │       ├── Cell-based strip coverage loop:
+                │   │       │   ├── ReactiveSequence: MowingCommandGuard
+                │   │       │   │   ├── IsCommand(1) — abort if user cancels
+                │   │       │   │   ├── RainGuard — dock, wait, resume
+                │   │       │   │   ├── BatteryGuard — dock, charge to 95%, resume
+                │   │       │   │   └── Repeat(500): StripLoop
+                │   │       │   │       ├── GetNextStrip(current_area)
+                │   │       │   │       ├── TransitToStrip (RPP)
+                │   │       │   │       └── FollowStrip (FTCController)
+                │   │       │   └── FailedCoverageDock
+                │   │       └── Mark area as complete, continue to next area
+                │   └── All areas complete → disable blade, save, dock → IDLE_DOCKED
                 │
                 ├── Sequence: HomeSequence (COMMAND_HOME = 2)
                 │   ├── IsCommand(2)
@@ -1024,7 +1044,7 @@ The tree implements a priority-based fallback selector with reactive guards:
 2. **Boundary Guard:** If outside mowing area → stop, back up (up to 5 attempts), emergency stop if still outside.
 3. **GPS Mode Selector:** Switch between precise (RTK) and degraded navigation modes.
 4. **Critical Battery Dock:** If battery < 10% → dock immediately (uninterruptible).
-5. **Mowing (COMMAND_START=1):** Cell-based strip coverage with GPS wait, heading calibration from undock, rain/battery reactive guards, strip-by-strip execution via GetNextStrip/TransitToStrip/FollowStrip.
+5. **Mowing (COMMAND_START=1):** Multi-area coverage: iterates through all unmowed areas via GetNextUnmowedArea, then cell-based strip coverage per area with GPS wait, heading calibration from undock, rain/battery reactive guards, strip-by-strip execution via GetNextStrip/TransitToStrip/FollowStrip. Coverage progress tracked per area.
 6. **Home (COMMAND_HOME=2):** Return to dock on user request.
 7. **Area Recording (COMMAND_RECORD_AREA=3):** Drive the boundary, record trajectory at 2 Hz, finish (cmd 5) saves Douglas-Peucker simplified polygon via map_server_node, cancel (cmd 6) discards.
 8. **Manual Mowing (COMMAND_MANUAL_MOW=7):** Teleop via `/cmd_vel_teleop` (twist_mux priority). Blade managed by GUI (fire-and-forget to firmware). Collision_monitor, GPS, SLAM all remain active.
@@ -1161,11 +1181,16 @@ class UndockRobot : public BT::AsyncActionNode
 // Port In: dock_type
 // Returns RUNNING/SUCCESS/FAILURE
 
+// Multi-area coverage node:
+class GetNextUnmowedArea : public BT::AsyncActionNode
+// Fetches next unmowed area from map_server_node ~/get_next_unmowed_area
+// Returns SUCCESS with area polygon and coverage status, FAILURE when all areas complete
+
 // Cell-based coverage nodes:
 class GetNextStrip : public BT::AsyncActionNode
 // Fetches next unvisited strip from map_server_node ~/get_next_strip
 // Port In: area_index
-// Returns SUCCESS with strip path, FAILURE when coverage complete
+// Returns SUCCESS with strip path, FAILURE when current area coverage complete
 
 class TransitToStrip : public BT::AsyncActionNode
 // Navigates to start of current strip using Nav2 (RPP controller)
@@ -1248,6 +1273,9 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory) {
   factory.registerNodeType<UndockRobot>("UndockRobot");
   factory.registerNodeType<RecordResumeUndockFailure>("RecordResumeUndockFailure");
   factory.registerNodeType<ResetEmergency>("ResetEmergency");
+
+  // Multi-area coverage node
+  factory.registerNodeType<GetNextUnmowedArea>("GetNextUnmowedArea");
 
   // Cell-based coverage nodes
   factory.registerNodeType<GetNextStrip>("GetNextStrip");
@@ -1349,6 +1377,31 @@ Phase: headland → mbb → grid → sweep → voronoi → complete
 
 Allows behavior tree to monitor progress and detect hangs.
 
+#### Multi-Area Coverage
+
+**Concept:** Instead of a single coverage path, users can define multiple mowing areas (polygons) that are mowed sequentially in a single autonomous session.
+
+**Workflow:**
+1. User records multiple areas using `COMMAND_RECORD_AREA` (3) — each area is a polygon boundary saved to map_server
+2. User initiates mowing with `COMMAND_START` (1)
+3. Behavior tree calls `GetNextUnmowedArea()` to fetch first area
+4. Coverage planner generates strip path for that area
+5. Robot mows current area strip-by-strip via GetNextStrip/TransitToStrip/FollowStrip
+6. Once area is complete, BT calls `GetNextUnmowedArea()` again to fetch next area
+7. Process repeats until all areas are mowed
+
+**Progress Tracking:**
+- Each area maintains its own coverage grid (`mow_progress` layer) persisted across sessions
+- High-level status includes `current_area` and `areas_remaining` fields
+- GUI shows progress per area and overall session progress
+- If session interrupted, robot resumes from last completed area on restart
+
+**Map Server Integration:**
+- `map_server_node` maintains list of mowing areas and their coverage state
+- Service: `/map_server_node/get_next_unmowed_area` — returns next area and its current coverage grid
+- Service: `/map_server_node/mark_area_complete` — marks area as finished
+- Enables robust recovery from power loss or manual pause
+
 ---
 
 ### 8. mowgli_monitoring
@@ -1426,6 +1479,20 @@ diagnostics_node:
 Publishes `diagnostic_msgs/DiagnosticArray` to `/diagnostics` topic:
 - Used by system monitors, RViz diagnostics viewer, and external dashboards
 - Also ingested by BehaviorTree condition nodes (e.g., IsLocalizationHealthy, IsBatteryLow)
+
+#### Behavior Tree Visualization
+
+**BT State Logging:**
+The behavior_tree_node publishes active node information via `/behavior_tree_log` topic:
+- **Message type:** `BehaviorTreeLog` (custom msg in mowgli_interfaces)
+- **Contents:** Active node name, node type, tick timestamp, execution status
+- **Frequency:** Every 10 Hz tick, only when BT status changes
+- **Use:** GUI displays active BT node in real-time diagnostics page
+
+**GUI Integration:**
+- Diagnostics page shows current BT node path and state
+- Helps identify where robot is stuck or failing (e.g., "FollowCoveragePath" stuck on obstacle)
+- Updates in real-time as BT executes
 
 ---
 
@@ -1800,7 +1867,8 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 | `/path` | nav_msgs/Path | planner_server (Nav2) | 1 Hz | Global path from Nav2 planner |
 | `/cmd_vel` | geometry_msgs/Twist | twist_mux | 10–50 Hz | Final velocity command (to hardware/Gazebo) |
 | `/diagnostics` | diagnostic_msgs/DiagnosticArray | diagnostics_node (mowgli_monitoring) | 1 Hz | System health aggregation |
-| `/high_level_status` | mowgli_interfaces/HighLevelStatus | behavior_tree_node | 10 Hz | Current high-level mode (IDLE=1, AUTONOMOUS=2, RECORDING=3, MANUAL_MOWING=4) with coverage progress |
+| `/behavior_tree_log` | mowgli_interfaces/BehaviorTreeLog | behavior_tree_node | 10 Hz | Active BT node, node type, execution status (for GUI diagnostics visualization) |
+| `/high_level_status` | mowgli_interfaces/HighLevelStatus | behavior_tree_node | 10 Hz | Current high-level mode (IDLE=1, AUTONOMOUS=2, RECORDING=3, MANUAL_MOWING=4) with coverage progress per area |
 
 **Subscribers (Sinks):**
 
@@ -1826,6 +1894,8 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 | `/emergency_stop` | EmergencyStop | hardware_bridge_node | behavior_tree_node, ResetEmergency BT node | Assert/release latched emergency |
 | `/high_level_control` | HighLevelControl | behavior_tree_node | GUI | Mode commands (START=1, HOME=2, RECORD_AREA=3, S2=4, RECORD_FINISH=5, RECORD_CANCEL=6, MANUAL_MOW=7) |
 | `/map_server_node/add_area` | AddMowingArea | map_server_node | RecordArea BT node | Save recorded mowing area polygon |
+| `/map_server_node/get_next_unmowed_area` | GetNextUnmowedArea | map_server_node | behavior_tree_node (GetNextUnmowedArea BT node) | Fetch next unmowed area polygon and coverage grid |
+| `/map_server_node/mark_area_complete` | MarkAreaComplete | map_server_node | behavior_tree_node | Mark area as mowing complete, persist coverage state |
 | `/navigate_to_pose` | nav2_msgs/NavigateToPose | nav2_behavior_tree_navigator | behavior_tree_node | Send goal to Nav2 |
 
 **Actions (Async Request-Response):**
@@ -1870,11 +1940,12 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 8. **Reactive Behavior Trees (BehaviorTree.CPP v4):** 10 Hz non-preemptive tree execution with priority-based fallback selection:
    - Emergency guard: highest priority, interrupts all activity
    - Multi-mode state machine: IDLE → UNDOCKING → MOWING (with recovery) → DOCKING
-   - Composable async action nodes (NavigateToPose, PlanCoveragePath, FollowCoveragePath)
+   - Multi-area coverage: iterates through multiple mowing areas sequentially, each with independent coverage progress tracking
+   - Composable async action nodes (NavigateToPose, GetNextUnmowedArea, PlanCoveragePath, FollowCoveragePath)
 
 9. **Priority-Based Command Routing:** twist_mux mediates three command sources (emergency > teleoperation > navigation) before forwarding to hardware bridge.
 
-10. **Comprehensive Health Monitoring:** Diagnostics aggregator tracks 8 subsystems (hardware bridge, emergency, battery, IMU, LiDAR, GPS, odometry, motors) with multi-level status (OK, WARN, ERROR, STALE) for autonomous decision-making.
+10. **Comprehensive Health Monitoring:** Diagnostics aggregator tracks 8 subsystems (hardware bridge, emergency, battery, IMU, LiDAR, GPS, odometry, motors) and FusionCore UKF health (rate, variance, z-drift) with multi-level status (OK, WARN, ERROR, STALE) for autonomous decision-making. Real-time BT visualization shows active node path and execution state in GUI diagnostics page.
 
 11. **Unified Simulation-to-Hardware Workflow:**
     - Gazebo Harmonic with ros_gz_bridge enables identical ROS2 stack on both sim and real hardware
