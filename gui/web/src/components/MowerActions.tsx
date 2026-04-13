@@ -86,6 +86,31 @@ export const MowerActions: React.FC<React.PropsWithChildren<{bare?: boolean}>> =
             }]
         },
         {
+            key: "manual_mow",
+            label: "Manual Mowing",
+            actions: [{
+                command: "high_level_control",
+                args: { Command: 7 }
+            }]
+        },
+        {
+            key: "record_finish",
+            label: "Finish Recording",
+            actions: [{
+                command: "high_level_control",
+                args: { Command: 5 }
+            }]
+        },
+        {
+            key: "record_cancel",
+            label: "Cancel Recording",
+            danger: true,
+            actions: [{
+                command: "high_level_control",
+                args: { Command: 6 }
+            }]
+        },
+        {
             key: "emergency_off",
             "label": "Emergency Off",
             "danger": true,
@@ -135,10 +160,10 @@ export const MowerActions: React.FC<React.PropsWithChildren<{bare?: boolean}>> =
             {children}
             {children ? <Col><Divider type={"vertical"}/></Col> : null}
             <Col>
-                {highLevelStatus.state_name == "IDLE" ? <AsyncButton icon={<PlayCircleOutlined/>} type="primary" key="btnHLC1"
+                {(highLevelStatus.state_name === "IDLE" || highLevelStatus.state_name === "IDLE_DOCKED") ? <AsyncButton icon={<PlayCircleOutlined/>} type="primary" key="btnHLC1"
                                                                           onAsyncClick={mowerAction("high_level_control", {Command: 1})}
                 >Start</AsyncButton> : null}
-                {highLevelStatus.state_name !== "IDLE" ? <AsyncButton icon={<HomeOutlined/>} type="primary" key="btnHLC2"
+                {highLevelStatus.state_name !== "IDLE" && highLevelStatus.state_name !== "IDLE_DOCKED" ? <AsyncButton icon={<HomeOutlined/>} type="primary" key="btnHLC2"
                                                                            onAsyncClick={mowerAction("high_level_control", {Command: 2})}
                 >Home</AsyncButton> : null}
             </Col>

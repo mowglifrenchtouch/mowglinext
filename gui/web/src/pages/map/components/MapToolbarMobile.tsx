@@ -131,8 +131,8 @@ export const MapToolbarMobile = ({
         padding: "8px 12px",
     };
 
-    const isIdle = stateName === "IDLE";
-    const isRecording = stateName === "AREA_RECORDING";
+    const isIdle = stateName === "IDLE" || stateName === "IDLE_DOCKED";
+    const isRecording = stateName === "RECORDING" || stateName === "AREA_RECORDING";
 
     const safeCall = (fn?: () => Promise<void>) => {
         fn?.().catch((e: Error) => {
