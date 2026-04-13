@@ -128,8 +128,7 @@ private:
     pub_imu_ = create_publisher<sensor_msgs::msg::Imu>("~/imu/data_raw", 10);
     pub_wheel_odom_ = create_publisher<nav_msgs::msg::Odometry>("~/wheel_odom", 10);
     pub_battery_state_ = create_publisher<sensor_msgs::msg::BatteryState>("/battery_state", 10);
-    // dock_pose_fix publisher removed — ekf_map doesn't publish TF and nothing
-    // reads /odometry/filtered_map. Re-add if ekf_map becomes TF publisher.
+    // dock_pose_fix publisher removed — FusionCore handles GPS fusion directly.
   }
 
   void create_subscribers()

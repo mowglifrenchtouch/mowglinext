@@ -17,14 +17,12 @@
 """
 Localization launch file.
 
-Launches the full Mowgli localization stack:
-  1. wheel_odometry_node      – integrates WheelTick counts into nav_msgs/Odometry
-  2. gps_pose_converter_node  – converts AbsolutePose to PoseWithCovarianceStamped
-  3. localization_monitor_node – publishes current localization quality/mode
-  4. ekf_odom                 – robot_localization EKF (odom → base_link)
-  5. ekf_map                  – robot_localization EKF (map  → odom)
+Launches the Mowgli localization stack:
+  1. wheel_odometry_node      - integrates WheelTick counts into nav_msgs/Odometry
+  2. localization_monitor_node - publishes current localization quality/mode
+  3. FusionCore               - single UKF (GPS + IMU + wheels) -> odom -> base_footprint TF
 
-EKF parameters are loaded from mowgli_bringup/config/localization.yaml so that
+FusionCore parameters are loaded from mowgli_bringup/config/localization.yaml so that
 all tuning lives in one place.  The wheel odometry node gets its own small
 config file from mowgli_localization/config/wheel_odometry.yaml.
 """
@@ -33,9 +31,17 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import (
+    DeclareLaunchArgument,
+    EmitEvent,
+    RegisterEventHandler,
+    TimerAction,
+)
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
+from lifecycle_msgs.msg import Transition
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -77,26 +83,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
-    # 2. GPS pose converter node
-    # ------------------------------------------------------------------
-    gps_pose_converter_node = Node(
-        package='mowgli_localization',
-        executable='gps_pose_converter_node',
-        name='gps_pose_converter',
-        output='screen',
-        parameters=[
-            {
-                'use_first_fix_as_datum': True,
-                'datum_lat': 0.0,
-                'datum_lon': 0.0,
-                'min_accuracy_threshold': 0.5,
-                'use_sim_time': use_sim_time,
-            }
-        ],
-    )
-
-    # ------------------------------------------------------------------
-    # 3. Localization monitor node
+    # 2. Localization monitor node
     # ------------------------------------------------------------------
     localization_monitor_node = Node(
         package='mowgli_localization',
@@ -115,38 +102,51 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
-    # 4. robot_localization ekf_odom  (odom → base_link)
+    # 3. FusionCore — single UKF (GPS + IMU + wheels)
+    #    Publishes odom → base_footprint TF + /fusion/odom
     # ------------------------------------------------------------------
-    ekf_odom_node = Node(
-        package='robot_localization',
-        executable='ekf_node',
-        name='ekf_odom',
+    fusioncore_node = LifecycleNode(
+        package='fusioncore_ros',
+        executable='fusioncore_node',
+        name='fusioncore_node',
+        namespace='',
         output='screen',
         parameters=[
             localization_yaml,
             {'use_sim_time': use_sim_time},
         ],
         remappings=[
-            # robot_localization publishes /odometry/filtered by default;
-            # remap to a namespaced topic so odom and map EKFs don't clash.
-            ('odometry/filtered', 'odometry/filtered_odom'),
+            ('/odom/wheels', '/wheel_odom'),
+            ('/gnss/fix', '/gps/fix'),
         ],
     )
 
-    # ------------------------------------------------------------------
-    # 5. robot_localization ekf_map  (map → odom)
-    # ------------------------------------------------------------------
-    ekf_map_node = Node(
-        package='robot_localization',
-        executable='ekf_node',
-        name='ekf_map',
-        output='screen',
-        parameters=[
-            localization_yaml,
-            {'use_sim_time': use_sim_time},
-        ],
-        remappings=[
-            ('odometry/filtered', 'odometry/filtered_map'),
+    # Auto-configure and activate the lifecycle node
+    fusioncore_configure = RegisterEventHandler(
+        OnStateTransition(
+            target_lifecycle_node=fusioncore_node,
+            start_state='configuring',
+            goal_state='inactive',
+            entities=[
+                EmitEvent(
+                    event=ChangeState(
+                        lifecycle_node_matcher=lambda node: node == fusioncore_node,
+                        transition_id=Transition.TRANSITION_ACTIVATE,
+                    )
+                ),
+            ],
+        )
+    )
+
+    fusioncore_start = TimerAction(
+        period=2.0,
+        actions=[
+            EmitEvent(
+                event=ChangeState(
+                    lifecycle_node_matcher=lambda node: node == fusioncore_node,
+                    transition_id=Transition.TRANSITION_CONFIGURE,
+                )
+            ),
         ],
     )
 
@@ -157,9 +157,9 @@ def generate_launch_description() -> LaunchDescription:
         [
             use_sim_time_arg,
             wheel_odometry_node,
-            gps_pose_converter_node,
             localization_monitor_node,
-            ekf_odom_node,
-            ekf_map_node,
+            fusioncore_node,
+            fusioncore_configure,
+            fusioncore_start,
         ]
     )

@@ -27,8 +27,8 @@ This robot has spinning blades. The STM32 firmware is the sole blade safety auth
 
 ## Architecture Invariants (DO NOT VIOLATE)
 
-1. **ekf_map is TF authority for map→odom** — `ekf_map` has `publish_tf: true`, GPS-anchored via `gps_pose_converter` (position + velocity-derived heading). SLAM Toolbox has `transform_publish_period: 0.0` (no TF broadcast); it provides occupancy grid only. Magnetic declination 0.026 rad configured for Paris area.
-2. **TF chain follows REP-105** — `map→odom→base_footprint→base_link→sensors`. All Nav2 nodes, EKF, and SLAM use `base_footprint` as the robot frame. `base_link` is at the rear wheel axis (OpenMower convention, do not move).
+1. **SLAM Toolbox is TF authority for map→odom** — `transform_publish_period: 0.05` (20 Hz). FusionCore owns `odom→base_footprint` (GPS+IMU+wheels fused in single UKF). No feedback loop: SLAM does not feed into FusionCore.
+2. **TF chain follows REP-105** — `map→odom→base_footprint→base_link→sensors`. All Nav2 nodes, FusionCore, and SLAM use `base_footprint` as the robot frame. `base_link` is at the rear wheel axis (OpenMower convention, do not move).
 3. **Cyclone DDS** — not FastRTPS (stale shm issues on ARM)
 4. **Map frame = GPS frame** — X=east, Y=north, no rotation transform
 5. **Costmap obstacles disabled in coverage mode** — collision_monitor handles real-time avoidance
@@ -101,20 +101,20 @@ No Co-Authored-By lines. Keep messages concise and focused on "why".
 
 ## ROS2 Specifics
 
-- **Distro:** Jazzy
+- **Distro:** Kilted
 - **DDS:** Cyclone DDS (all containers share `docker/config/cyclonedds.xml`)
 - **Topics:** Mowgli-specific topics under `/mowgli/` namespace
-- **Frames:** `map` (global), `odom` (local), `base_footprint` (robot frame for Nav2/EKF/SLAM), `base_link` (rear axle), `lidar_link`, `imu_link`
-- **TF chain:** `map→odom` (ekf_map), `odom→base_footprint` (ekf_odom), `base_footprint→base_link` (static), `base_link→sensors` (static)
+- **Frames:** `map` (global), `odom` (local), `base_footprint` (robot frame for Nav2/FusionCore/SLAM), `base_link` (rear axle), `lidar_link`, `imu_link`
+- **TF chain:** `map→odom` (SLAM Toolbox), `odom→base_footprint` (FusionCore), `base_footprint→base_link` (static), `base_link→sensors` (static)
 - **Units:** SI throughout (metres, radians, seconds)
-- **Dual EKF:** `ekf_odom` (50Hz, wheel+IMU, publishes odom→base_footprint) and `ekf_map` (20Hz, odom+GPS, publishes map→odom via navsat_transform_node)
+- **Sensor fusion:** FusionCore (single UKF, 50Hz, GPS+IMU+wheels → odom→base_footprint TF + `/fusion/odom`). Source-built from `ros2/src/fusioncore/`. Lifecycle node auto-configured at launch.
 - **Navigation:** RPP for transit, FTCController (Follow-the-Carrot with 3-axis PID) for coverage paths (NOT MPPI — it jumps between adjacent swaths)
 - **Coverage:** Cell-based strip planner in `map_server_node`. Strips fetched one at a time by BT (`GetNextStrip` -> `TransitToStrip` -> `FollowStrip`). No full-path pre-planning. Progress persisted in `mow_progress` grid layer.
 - **Area Recording:** `RecordArea` BT node records trajectory at 2 Hz, Douglas-Peucker simplification, saves polygon via `/map_server_node/add_area`. Live preview on `~/recording_trajectory`.
 - **Manual Mowing:** Dedicated BT state (COMMAND_MANUAL_MOW=7). Teleop via `/cmd_vel_teleop`, blade managed by GUI. Collision_monitor/GPS/SLAM remain active.
 - **Emergency Auto-Reset:** BT auto-resets emergency when robot placed on dock (charging detected). Firmware is safety authority.
-- **GPS fusion:** `navsat_transform_node` (robot_localization) replaces custom `gps_pose_converter`. Provides GPS→map transform for `ekf_map`.
-- **SLAM heading:** `slam_heading_node` extracts heading from SLAM TF for diagnostics — not fused into ekf_map (avoids feedback loop). SLAM provides occupancy grid only.
+- **GPS fusion:** FusionCore takes `/gps/fix` (NavSatFix) directly — no intermediate converter. `navsat_to_absolute_pose_node` still provides `/gps/absolute_pose` for GUI and BT.
+- **SLAM:** SLAM Toolbox publishes `map→odom` TF (20 Hz) and occupancy grid. No feedback into FusionCore.
 - **Nav2 tuning:** Global costmap 30m x 30m rolling window; keepout_filter disabled in global costmap (blocks transit/docking); collision_monitor PolygonStop min_points=8, PolygonSlow min_points=6; source_timeout 5.0s (ARM TF jitter); progress checker 0.15m required movement, 30s timeout; failure_tolerance 1.0; speeds: mowing 0.3/0.15 m/s, transit 0.2 m/s, max 0.3 m/s.
 - **Joystick:** Foxglove client passes `schemaName` in `clientAdvertise` for JSON-to-CDR conversion. GUI shows joystick during "RECORDING" state (not just "AREA_RECORDING").
 
@@ -210,11 +210,12 @@ When using Claude Code on this project:
 - Do NOT add ROS1 patterns (rosserial, roscore, catkin) — this is ROS2 only
 - Do NOT use FastRTPS — Cyclone DDS is required
 - Do NOT mock the database/firmware in integration tests — use real interfaces
-- Do NOT add `publish_tf: true` to SLAM Toolbox — ekf_map is the sole map→odom TF authority
-- Do NOT set `transform_publish_period` > 0 in SLAM Toolbox — it must not broadcast TF
+- Do NOT add a second TF publisher for `map→odom` — SLAM Toolbox is the sole authority
+- Do NOT feed SLAM output into FusionCore — causes feedback loops (SLAM reads FusionCore's TF)
+- Do NOT use robot_localization — replaced by FusionCore (single UKF)
 - Do NOT send blade commands without firmware safety checks
 - Do NOT hardcode GPS coordinates, dock poses, or NTRIP credentials
 - Do NOT use MPPI controller for coverage paths — it jumps between swaths
 - Do NOT use RPP for coverage paths — use FTCController for <10mm lateral accuracy on swaths
-- Do NOT use `base_link` as robot_base_frame in Nav2/EKF — use `base_footprint` (REP-105)
+- Do NOT use `base_link` as robot_base_frame in Nav2/FusionCore — use `base_footprint` (REP-105)
 - Do NOT use opennav_docking UndockRobot — use Nav2 BackUp behavior (isDocked() unreliable with GPS/SLAM drift)

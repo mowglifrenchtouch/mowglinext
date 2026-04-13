@@ -33,9 +33,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-kilted-nav2-core \
     ros-kilted-nav2-util \
     ros-kilted-nav2-msgs \
-    # ── SLAM and localization ──
+    # ── SLAM (FusionCore is built from source in the workspace) ──
     ros-kilted-slam-toolbox \
-    ros-kilted-robot-localization \
     # ── DDS ──
     ros-kilted-rmw-cyclonedds-cpp \
     # ── Docking ──

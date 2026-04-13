@@ -21,9 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-kilted-nav2-lifecycle-manager \
     ros-kilted-nav2-waypoint-follower \
     ros-kilted-nav2-velocity-smoother \
-    # SLAM and localization
+    # SLAM (FusionCore is built from source in the workspace)
     ros-kilted-slam-toolbox \
-    ros-kilted-robot-localization \
     # Motion control
     ros-kilted-twist-mux \
     # Behavior trees
@@ -116,6 +115,13 @@ COPY src/mowgli_simulation/package.xml    src/mowgli_simulation/package.xml
 COPY src/mowgli_simulation/CMakeLists.txt src/mowgli_simulation/CMakeLists.txt
 COPY src/mowgli_bringup/package.xml       src/mowgli_bringup/package.xml
 COPY src/mowgli_bringup/CMakeLists.txt    src/mowgli_bringup/CMakeLists.txt
+# FusionCore (source-built sensor fusion)
+COPY src/fusioncore/fusioncore_core/package.xml    src/fusioncore/fusioncore_core/package.xml
+COPY src/fusioncore/fusioncore_core/CMakeLists.txt src/fusioncore/fusioncore_core/CMakeLists.txt
+COPY src/fusioncore/fusioncore_ros/package.xml     src/fusioncore/fusioncore_ros/package.xml
+COPY src/fusioncore/fusioncore_ros/CMakeLists.txt  src/fusioncore/fusioncore_ros/CMakeLists.txt
+COPY src/fusioncore/compass_msgs/package.xml       src/fusioncore/compass_msgs/package.xml
+COPY src/fusioncore/compass_msgs/CMakeLists.txt    src/fusioncore/compass_msgs/CMakeLists.txt
 
 # Resolve rosdep dependencies (cached until package.xml changes)
 RUN rosdep update --rosdistro kilted \
@@ -160,6 +166,7 @@ RUN /bin/bash -c "\
     source /opt/ros/kilted/setup.bash && \
     source install/setup.bash && \
     colcon build \
+      --packages-ignore fusioncore_gazebo \
       --cmake-args -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTING=OFF \
       --parallel-workers \$(nproc) \
       --event-handlers console_cohesion+ \

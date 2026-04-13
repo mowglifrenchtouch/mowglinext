@@ -21,16 +21,15 @@ Complete Mowgli robot mower system launch.
 
 Brings up all subsystems:
   1. mowgli.launch.py        — hardware bridge, RSP, twist_mux
-  2. navigation.launch.py    — SLAM, dual EKF, Nav2
+  2. navigation.launch.py    — SLAM, FusionCore, Nav2
   3. Behavior tree node       — mowgli_behavior
   4. Map server               — mowgli_map
-  5. Coverage server (optional) — opennav_coverage
-  6. Wheel odometry            — mowgli_localization
-  7. GPS pose converter        — mowgli_localization
-  8. Localization monitor      — mowgli_localization
-  9. Diagnostics               — mowgli_monitoring
-  10. MQTT bridge (optional)   — mowgli_monitoring
-  11. foxglove_bridge — WebSocket bridge for GUI and Foxglove Studio
+  5. Wheel odometry            — mowgli_localization
+  6. NavSat converter          — mowgli_localization (GPS for GUI/BT)
+  7. Localization monitor      — mowgli_localization
+  8. Diagnostics               — mowgli_monitoring
+  9. MQTT bridge (optional)   — mowgli_monitoring
+  10. foxglove_bridge — WebSocket bridge for GUI and Foxglove Studio
 """
 
 import os
@@ -40,9 +39,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
-    ExecuteProcess,
     IncludeLaunchDescription,
-    TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -215,13 +212,9 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
-    # 7a. navsat_transform_node (robot_localization)
-    # Converts GPS NavSatFix → map-frame Odometry for ekf_map.
-    # Handles datum, magnetic declination, yaw offset.
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    # 7a-legacy. NavSatFix → AbsolutePose converter (for GUI + BT)
-    # Kept alongside navsat_transform_node for /gps/absolute_pose topic.
+    # 7a. NavSat → AbsolutePose converter (for GUI + BT)
+    # FusionCore takes /gps/fix directly; this node converts to
+    # /gps/absolute_pose for the GUI and behavior tree.
     # ------------------------------------------------------------------
     datum_lat = float(robot_params.get("datum_lat", 0.0))
     datum_lon = float(robot_params.get("datum_lon", 0.0))
@@ -233,43 +226,6 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             localization_params,
             {"datum_lat": datum_lat, "datum_lon": datum_lon},
-            {"use_sim_time": use_sim_time},
-        ],
-    )
-
-    # navsat_transform_node disabled: doesn't work with differential IMU
-    # (outputs 0,0 because it can't determine the GPS→map rotation).
-    # Using gps_pose_converter instead which derives heading from GPS velocity.
-    # TODO: fix navsat_transform with proper absolute heading source.
-
-    # ------------------------------------------------------------------
-    # 7b. GPS pose converter (AbsolutePose → PoseWithCovarianceStamped)
-    # ------------------------------------------------------------------
-    gps_pose_converter_node = Node(
-        package="mowgli_localization",
-        executable="gps_pose_converter_node",
-        name="gps_pose_converter_node",
-        output="screen",
-        parameters=[
-            localization_params,
-            {"use_sim_time": use_sim_time},
-        ],
-    )
-
-    # ------------------------------------------------------------------
-    # 7c. SLAM heading extractor
-    # ------------------------------------------------------------------
-    # Extracts yaw from SLAM's slam_map→odom TF and publishes it as a
-    # PoseWithCovarianceStamped for the EKF to fuse. Provides absolute
-    # heading from LiDAR map matching — works without magnetometer,
-    # when stationary, and under canopy.
-    slam_heading_node = Node(
-        condition=IfCondition(use_lidar),
-        package="mowgli_localization",
-        executable="slam_heading_node",
-        name="slam_heading",
-        output="screen",
-        parameters=[
             {"use_sim_time": use_sim_time},
         ],
     )
@@ -390,57 +346,9 @@ def generate_launch_description() -> LaunchDescription:
             obstacle_tracker_node,
             wheel_odometry_node,
             navsat_converter_node,  # publishes /gps/absolute_pose for GUI + BT
-            gps_pose_converter_node,  # publishes /gps/pose for ekf_map
-            slam_heading_node,
             localization_monitor_node,
             diagnostics_node,
             mqtt_bridge_node,
             foxglove_bridge_node,
-            # Publish initial dock heading to ekf_map after startup.
-            # ekf_map has no heading source while stationary on the dock
-            # (GPS heading needs motion, SLAM heading needs scan nodes).
-            # dock_pose_yaw (compass) → ENU: yaw = pi/2 - compass
-            _initial_pose_action(robot_params),
         ]
-    )
-
-
-def _initial_pose_action(robot_params: dict) -> TimerAction:
-    """Publish initial dock pose to /set_pose after a delay."""
-    import math
-
-    dock_yaw_compass = float(robot_params.get("dock_pose_yaw", 0.0))
-    dock_x = float(robot_params.get("dock_pose_x", 0.0))
-    dock_y = float(robot_params.get("dock_pose_y", 0.0))
-    enu_yaw = math.pi / 2.0 - dock_yaw_compass
-    qw = math.cos(enu_yaw / 2.0)
-    qz = math.sin(enu_yaw / 2.0)
-
-    # Delay 10s for EKF to start, then publish once
-    return TimerAction(
-        period=10.0,
-        actions=[
-            ExecuteProcess(
-                cmd=[
-                    "ros2", "topic", "pub", "--once", "/set_pose",
-                    "geometry_msgs/msg/PoseWithCovarianceStamped",
-                    (
-                        "{"
-                        f"header: {{frame_id: map}},"
-                        f"pose: {{pose: {{"
-                        f"position: {{x: {dock_x}, y: {dock_y}, z: 0.0}},"
-                        f"orientation: {{x: 0, y: 0, z: {qz:.6f}, w: {qw:.6f}}}"
-                        f"}}, covariance: ["
-                        "0.01,0,0,0,0,0,"
-                        "0,0.01,0,0,0,0,"
-                        "0,0,1e6,0,0,0,"
-                        "0,0,0,1e6,0,0,"
-                        "0,0,0,0,1e6,0,"
-                        "0,0,0,0,0,0.01"
-                        "]}}"
-                    ),
-                ],
-                output="screen",
-            ),
-        ],
     )
