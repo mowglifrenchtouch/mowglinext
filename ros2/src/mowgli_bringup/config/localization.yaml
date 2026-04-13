@@ -33,8 +33,8 @@ fusioncore_node:
     encoder.yaw_noise: 0.04
 
     # GNSS: u-blox F9P RTK
-    gnss.base_noise_xy: 0.5
-    gnss.base_noise_z: 2.0
+    gnss.base_noise_xy: 1.0
+    gnss.base_noise_z: 5.0
     gnss.heading_noise: 0.1
     gnss.max_hdop: 4.0
     gnss.min_satellites: 4
