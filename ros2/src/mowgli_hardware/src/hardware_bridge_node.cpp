@@ -128,7 +128,13 @@ private:
     pub_imu_ = create_publisher<sensor_msgs::msg::Imu>("~/imu/data_raw", 10);
     pub_wheel_odom_ = create_publisher<nav_msgs::msg::Odometry>("~/wheel_odom", 10);
     pub_battery_state_ = create_publisher<sensor_msgs::msg::BatteryState>("/battery_state", 10);
-    // dock_pose_fix publisher removed — FusionCore handles GPS fusion directly.
+    // Dock heading for FusionCore: while charging, publish dock yaw on
+    // /gnss/heading at 1 Hz so FusionCore has a heading anchor.
+    // Stops automatically when robot undocks (GPS velocity takes over).
+    pub_dock_heading_ = create_publisher<sensor_msgs::msg::Imu>("/gnss/heading", 10);
+    timer_dock_heading_ = create_wall_timer(
+        std::chrono::seconds(1),
+        [this]() { publish_dock_heading(); });
   }
 
   void create_subscribers()
@@ -556,6 +562,26 @@ private:
     pub_imu_->publish(msg);
   }
 
+  void publish_dock_heading()
+  {
+    if (!is_charging_) return;
+
+    // Publish dock heading as sensor_msgs/Imu on /gnss/heading.
+    // FusionCore interprets the orientation quaternion as heading in ENU.
+    // dock_yaw_ is compass heading; convert to ENU: yaw_enu = pi/2 - compass
+    const double enu_yaw = M_PI / 2.0 - dock_yaw_;
+    auto msg = sensor_msgs::msg::Imu{};
+    msg.header.stamp = now();
+    msg.header.frame_id = "base_footprint";
+    msg.orientation.z = std::sin(enu_yaw / 2.0);
+    msg.orientation.w = std::cos(enu_yaw / 2.0);
+    // Tight yaw covariance — we know the dock heading from compass at install
+    msg.orientation_covariance[0] = 0.01;  // roll
+    msg.orientation_covariance[4] = 0.01;  // pitch
+    msg.orientation_covariance[8] = 0.01;  // yaw (~6° 1-sigma)
+    pub_dock_heading_->publish(msg);
+  }
+
   void handle_ui_event(const uint8_t* data, std::size_t len)
   {
     if (len < sizeof(LlUiEvent))
@@ -809,6 +835,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_imu_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_wheel_odom_;
   rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr pub_battery_state_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_dock_heading_;
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr sub_cmd_vel_;
   rclcpp::Subscription<mowgli_interfaces::msg::HighLevelStatus>::SharedPtr sub_hl_status_;
@@ -819,6 +846,7 @@ private:
   rclcpp::TimerBase::SharedPtr timer_read_;
   rclcpp::TimerBase::SharedPtr timer_heartbeat_;
   rclcpp::TimerBase::SharedPtr timer_high_level_;
+  rclcpp::TimerBase::SharedPtr timer_dock_heading_;
 
   // ---------------------------------------------------------------------------
   // Members: serial and protocol
