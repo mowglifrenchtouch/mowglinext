@@ -258,31 +258,32 @@ export const DiagnosticsPage = () => {
     const sectionLocalization = (
         <Row gutter={[12, 12]}>
             <Col xs={24} lg={12}>
-                <Card title={<Space><CompassOutlined/> FusionCore Pose</Space>} size="small">
+                <Card title={<Space><CompassOutlined/> FusionCore Pose</Space>} size="small"
+                      extra={pose.pose?.pose?.position ? <Tag color="success">Live</Tag> : <Tag>Waiting...</Tag>}>
                     <Row gutter={[12, 12]}>
                         <Col span={8}>
                             <Statistic
                                 title="X (m)"
-                                value={pose.pose?.pose?.position?.x}
-                                precision={3}
-                               
+                                value={pose.pose?.pose?.position?.x ?? "-"}
+                                precision={pose.pose?.pose?.position ? 3 : undefined}
+
                             />
                         </Col>
                         <Col span={8}>
                             <Statistic
                                 title="Y (m)"
-                                value={pose.pose?.pose?.position?.y}
-                                precision={3}
-                               
+                                value={pose.pose?.pose?.position?.y ?? "-"}
+                                precision={pose.pose?.pose?.position ? 3 : undefined}
+
                             />
                         </Col>
                         <Col span={8}>
                             <Statistic
                                 title="Z (m)"
-                                value={poseZ}
-                                precision={3}
+                                value={pose.pose?.pose?.position ? poseZ : "-"}
+                                precision={pose.pose?.pose?.position ? 3 : undefined}
                                 valueStyle={zDriftColor ? {color: zDriftColor} : undefined}
-                               
+
                             />
                         </Col>
                         <Col span={8}>
