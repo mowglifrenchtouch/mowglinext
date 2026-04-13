@@ -40,7 +40,7 @@ func NewAPI(dbProvider types.IDBProvider, dockerProvider types.IDockerProvider, 
 	MowgliNextRoutes(apiGroup, rosProvider)
 	SetupRoutes(apiGroup, firmwareProvider)
 	SystemRoutes(apiGroup)
-	DiagnosticsRoutes(apiGroup, dockerProvider, rosProvider)
+	DiagnosticsRoutes(apiGroup, dockerProvider, rosProvider, dbProvider)
 	ScheduleRoutes(apiGroup, dbProvider)
 	tileServer, err := dbProvider.Get("system.map.enabled")
 	if err != nil {
