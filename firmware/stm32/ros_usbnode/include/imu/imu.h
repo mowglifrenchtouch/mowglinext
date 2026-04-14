@@ -30,9 +30,6 @@ float IMU_Onboard_ReadTemp(void);
 void IMU_ReadGyro(float *x, float *y, float *z);
 typedef float (*IMU_ReadBarometerTemperatureC)(void);
 typedef float (*IMU_ReadBarometerAltitudeMeters)(void);
-void IMU_Onboard_AccelerometerSetCovariance(float *cm);
-void IMU_AccelerometerSetCovariance(float *cm);
-void IMU_GyroSetCovariance(float *cm);
 void IMU_Normalize( VECTOR* p );
 
 /* Any external IMU needs to implement the following functions and adhere to the ROS REP 103 standard (https://www.ros.org/reps/rep-0103.html) */
@@ -46,10 +43,6 @@ int IMU_HasGyro();
 int IMU_HasMag();
 void IMU_ReadMag(float *x, float *y, float *z);
 
-/* IMU calibration (accel/gyro only) */
-#define IMU_CAL_SAMPLES     100
-void IMU_CalibrateExternal(void);
-void IMU_CalibrateOnboard(void);
 
 #ifdef __cplusplus
 }

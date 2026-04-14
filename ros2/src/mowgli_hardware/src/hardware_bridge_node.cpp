@@ -109,8 +109,7 @@ private:
     lift_recovery_mode_ = declare_parameter<bool>("lift_recovery_mode", false);
     lift_blade_resume_delay_sec_ = declare_parameter<double>("lift_blade_resume_delay_sec", 1.0);
     // imu_yaw parameter is used by URDF for mounting rotation, not needed here
-    gyro_bias_alpha_ = declare_parameter<double>("gyro_bias_alpha", 0.005);
-    gyro_bias_min_samples_ = declare_parameter<int>("gyro_bias_min_samples", 200);
+    imu_cal_samples_ = declare_parameter<int>("imu_cal_samples", 200);
 
     RCLCPP_INFO(get_logger(),
                 "Parameters: serial_port=%s baud_rate=%d heartbeat_rate=%.1f Hz "
@@ -360,12 +359,41 @@ private:
       is_charging_ = (pkt.status_bitmask & STATUS_BIT_CHARGING) != 0u;
       msg.is_charging = is_charging_;
 
-      // Reset gyro bias accumulator on dock transition so we recalibrate
-      // each time the robot returns to the dock.
-      if (is_charging_ && !was_charging)
+      // Start IMU calibration when charging and not already calibrating.
+      // Triggers on: (1) dock transition, (2) first status packet if
+      // already on dock at boot.
+      if (is_charging_ && !imu_cal_collecting_ && !imu_cal_ready_)
       {
-        gyro_bias_samples_ = 0;
-        RCLCPP_INFO(get_logger(), "Docked — starting gyro bias calibration");
+        imu_cal_collecting_ = true;
+        imu_cal_count_ = 0;
+        imu_cal_sum_ax_ = imu_cal_sum_ay_ = 0.0;
+        imu_cal_sum_gx_ = imu_cal_sum_gy_ = imu_cal_sum_gz_ = 0.0;
+        imu_cal_samples_ax_.clear();
+        imu_cal_samples_ay_.clear();
+        imu_cal_samples_gx_.clear();
+        imu_cal_samples_gy_.clear();
+        imu_cal_samples_gz_.clear();
+        RCLCPP_INFO(get_logger(),
+                    "On dock — starting IMU calibration (%d samples)",
+                    imu_cal_samples_);
+      }
+
+      // Re-calibrate when robot re-docks after a mowing session
+      if (is_charging_ && !was_charging && imu_cal_ready_)
+      {
+        imu_cal_ready_ = false;
+        imu_cal_collecting_ = true;
+        imu_cal_count_ = 0;
+        imu_cal_sum_ax_ = imu_cal_sum_ay_ = 0.0;
+        imu_cal_sum_gx_ = imu_cal_sum_gy_ = imu_cal_sum_gz_ = 0.0;
+        imu_cal_samples_ax_.clear();
+        imu_cal_samples_ay_.clear();
+        imu_cal_samples_gx_.clear();
+        imu_cal_samples_gy_.clear();
+        imu_cal_samples_gz_.clear();
+        RCLCPP_INFO(get_logger(),
+                    "Re-docked — restarting IMU calibration (%d samples)",
+                    imu_cal_samples_);
       }
       msg.rain_detected = (pkt.status_bitmask & STATUS_BIT_RAIN) != 0u;
       msg.sound_module_available = (pkt.status_bitmask & STATUS_BIT_SOUND_AVAIL) != 0u;
@@ -517,57 +545,99 @@ private:
     msg.header.stamp = now();
     msg.header.frame_id = "imu_link";
 
-    msg.linear_acceleration.x = static_cast<double>(pkt.acceleration_mss[0]);
-    msg.linear_acceleration.y = static_cast<double>(pkt.acceleration_mss[1]);
-    msg.linear_acceleration.z = static_cast<double>(pkt.acceleration_mss[2]);
-
+    double ax = static_cast<double>(pkt.acceleration_mss[0]);
+    double ay = static_cast<double>(pkt.acceleration_mss[1]);
     double gx = static_cast<double>(pkt.gyro_rads[0]);
     double gy = static_cast<double>(pkt.gyro_rads[1]);
     double gz = static_cast<double>(pkt.gyro_rads[2]);
 
-    // Gyro bias estimation: when docked and idle the robot is guaranteed
-    // stationary, so any non-zero gyro reading is bias/drift. We track
-    // the bias with an exponential moving average (EMA) and subtract it
-    // from all future readings — including while mowing.
-    const bool stationary_on_dock = is_charging_ && (current_mode_ == 0u);
-    if (stationary_on_dock)
+    // IMU calibration: collect samples while docked and idle, then compute
+    // offsets (mean) and covariances (variance). Same algorithm as firmware
+    // IMU_CalibrateExternal() but run on the ROS2 side each time the robot
+    // docks — catches residual drift the boot calibration missed.
+    // Accel Z is not calibrated (preserves gravity for sensor fusion).
+    if (imu_cal_collecting_)
     {
-      if (gyro_bias_samples_ == 0)
-      {
-        // First sample: seed the EMA
-        gyro_bias_x_ = gx;
-        gyro_bias_y_ = gy;
-        gyro_bias_z_ = gz;
-      }
-      else
-      {
-        const double a = gyro_bias_alpha_;
-        gyro_bias_x_ += a * (gx - gyro_bias_x_);
-        gyro_bias_y_ += a * (gy - gyro_bias_y_);
-        gyro_bias_z_ += a * (gz - gyro_bias_z_);
-      }
-      ++gyro_bias_samples_;
+      imu_cal_sum_ax_ += ax;
+      imu_cal_sum_ay_ += ay;
+      imu_cal_sum_gx_ += gx;
+      imu_cal_sum_gy_ += gy;
+      imu_cal_sum_gz_ += gz;
+      imu_cal_samples_ax_.push_back(ax);
+      imu_cal_samples_ay_.push_back(ay);
+      imu_cal_samples_gx_.push_back(gx);
+      imu_cal_samples_gy_.push_back(gy);
+      imu_cal_samples_gz_.push_back(gz);
+      ++imu_cal_count_;
 
-      if (gyro_bias_samples_ == gyro_bias_min_samples_ && !gyro_bias_ready_)
+      if (imu_cal_count_ >= imu_cal_samples_)
       {
-        gyro_bias_ready_ = true;
+        const double n = static_cast<double>(imu_cal_count_);
+        imu_cal_offset_ax_ = imu_cal_sum_ax_ / n;
+        imu_cal_offset_ay_ = imu_cal_sum_ay_ / n;
+        imu_cal_offset_gx_ = imu_cal_sum_gx_ / n;
+        imu_cal_offset_gy_ = imu_cal_sum_gy_ / n;
+        imu_cal_offset_gz_ = imu_cal_sum_gz_ / n;
+
+        // Compute variance for covariance diagonal
+        imu_cal_cov_ax_ = imu_cal_cov_ay_ = 0.0;
+        imu_cal_cov_gx_ = imu_cal_cov_gy_ = imu_cal_cov_gz_ = 0.0;
+        for (int i = 0; i < imu_cal_count_; ++i)
+        {
+          imu_cal_cov_ax_ += std::pow(imu_cal_samples_ax_[i] - imu_cal_offset_ax_, 2);
+          imu_cal_cov_ay_ += std::pow(imu_cal_samples_ay_[i] - imu_cal_offset_ay_, 2);
+          imu_cal_cov_gx_ += std::pow(imu_cal_samples_gx_[i] - imu_cal_offset_gx_, 2);
+          imu_cal_cov_gy_ += std::pow(imu_cal_samples_gy_[i] - imu_cal_offset_gy_, 2);
+          imu_cal_cov_gz_ += std::pow(imu_cal_samples_gz_[i] - imu_cal_offset_gz_, 2);
+        }
+        imu_cal_cov_ax_ /= n;
+        imu_cal_cov_ay_ /= n;
+        imu_cal_cov_gx_ /= n;
+        imu_cal_cov_gy_ /= n;
+        imu_cal_cov_gz_ /= n;
+
+        imu_cal_collecting_ = false;
+        imu_cal_ready_ = true;
         RCLCPP_INFO(get_logger(),
-                    "Gyro bias calibration converged after %d samples: "
-                    "[%.6f, %.6f, %.6f] rad/s",
-                    gyro_bias_samples_,
-                    gyro_bias_x_,
-                    gyro_bias_y_,
-                    gyro_bias_z_);
+                    "IMU calibration complete (%d samples) — "
+                    "accel offset [%.4f, %.4f] m/s², "
+                    "gyro offset [%.6f, %.6f, %.6f] rad/s, "
+                    "accel cov [%.6f, %.6f], gyro cov [%.6f, %.6f, %.6f]",
+                    imu_cal_count_,
+                    imu_cal_offset_ax_,
+                    imu_cal_offset_ay_,
+                    imu_cal_offset_gx_,
+                    imu_cal_offset_gy_,
+                    imu_cal_offset_gz_,
+                    imu_cal_cov_ax_,
+                    imu_cal_cov_ay_,
+                    imu_cal_cov_gx_,
+                    imu_cal_cov_gy_,
+                    imu_cal_cov_gz_);
+
+        // Free sample buffers
+        imu_cal_samples_ax_.clear();
+        imu_cal_samples_ay_.clear();
+        imu_cal_samples_gx_.clear();
+        imu_cal_samples_gy_.clear();
+        imu_cal_samples_gz_.clear();
       }
     }
 
-    // Apply bias correction when we have a valid estimate
-    if (gyro_bias_ready_)
+    // Apply calibration offsets
+    if (imu_cal_ready_)
     {
-      gx -= gyro_bias_x_;
-      gy -= gyro_bias_y_;
-      gz -= gyro_bias_z_;
+      ax -= imu_cal_offset_ax_;
+      ay -= imu_cal_offset_ay_;
+      gx -= imu_cal_offset_gx_;
+      gy -= imu_cal_offset_gy_;
+      gz -= imu_cal_offset_gz_;
     }
+
+    msg.linear_acceleration.x = ax;
+    msg.linear_acceleration.y = ay;
+    msg.linear_acceleration.z =
+        static_cast<double>(pkt.acceleration_mss[2]);  // Z uncalibrated (gravity)
 
     msg.angular_velocity.x = gx;
     msg.angular_velocity.y = gy;
@@ -608,12 +678,36 @@ private:
     msg.orientation_covariance[4] = 0.001;  // pitch variance (tight)
     msg.orientation_covariance[8] = 99.0;  // yaw   variance (don't constrain)
 
+    // Accel covariance: use calibrated values if available, else defaults.
+    if (imu_cal_ready_)
+    {
+      // Floor at 0.001 so covariance is never zero (EKF singularity).
+      msg.linear_acceleration_covariance[0] = std::max(imu_cal_cov_ax_, 0.001);
+      msg.linear_acceleration_covariance[4] = std::max(imu_cal_cov_ay_, 0.001);
+    }
+    else
+    {
+      msg.linear_acceleration_covariance[0] = 0.01;
+      msg.linear_acceleration_covariance[4] = 0.01;
+    }
+    msg.linear_acceleration_covariance[8] = 0.01;  // Z — uncalibrated default
+
     // Gyro covariance: WT901 gyro z-axis severely under-reports yaw rate
-    // (~17% of actual). Set high covariance so the EKF trusts wheel odom
-    // angular velocity over the gyro for yaw rate.
-    msg.angular_velocity_covariance[0] = 0.1;  // roll rate
-    msg.angular_velocity_covariance[4] = 0.1;  // pitch rate
-    msg.angular_velocity_covariance[8] = 1.0;  // yaw rate — low confidence
+    // (~17% of actual). Set high yaw covariance so the EKF trusts wheel odom.
+    // Use calibrated values for roll/pitch rate if available.
+    if (imu_cal_ready_)
+    {
+      msg.angular_velocity_covariance[0] = std::max(imu_cal_cov_gx_, 0.001);
+      msg.angular_velocity_covariance[4] = std::max(imu_cal_cov_gy_, 0.001);
+      msg.angular_velocity_covariance[8] =
+          std::max(imu_cal_cov_gz_, 0.01);  // keep high floor for yaw
+    }
+    else
+    {
+      msg.angular_velocity_covariance[0] = 0.1;  // roll rate
+      msg.angular_velocity_covariance[4] = 0.1;  // pitch rate
+      msg.angular_velocity_covariance[8] = 1.0;  // yaw rate — low confidence
+    }
 
     pub_imu_->publish(msg);
   }
@@ -953,14 +1047,19 @@ private:
   bool odom_initialized_{false};
   bool wheels_stationary_{true};
 
-  // Gyro bias estimate (updated via EMA while docked and idle)
-  double gyro_bias_x_{0.0};
-  double gyro_bias_y_{0.0};
-  double gyro_bias_z_{0.0};
-  double gyro_bias_alpha_{0.005};  // EMA smoothing factor
-  int gyro_bias_min_samples_{200};  // samples before bias is trusted
-  int gyro_bias_samples_{0};  // samples accumulated this dock session
-  bool gyro_bias_ready_{false};  // true once min_samples reached
+  // IMU calibration state (computed while docked and idle)
+  int imu_cal_samples_{200};
+  bool imu_cal_collecting_{false};
+  bool imu_cal_ready_{false};
+  int imu_cal_count_{0};
+  double imu_cal_sum_ax_{0.0}, imu_cal_sum_ay_{0.0};
+  double imu_cal_sum_gx_{0.0}, imu_cal_sum_gy_{0.0}, imu_cal_sum_gz_{0.0};
+  std::vector<double> imu_cal_samples_ax_, imu_cal_samples_ay_;
+  std::vector<double> imu_cal_samples_gx_, imu_cal_samples_gy_, imu_cal_samples_gz_;
+  double imu_cal_offset_ax_{0.0}, imu_cal_offset_ay_{0.0};
+  double imu_cal_offset_gx_{0.0}, imu_cal_offset_gy_{0.0}, imu_cal_offset_gz_{0.0};
+  double imu_cal_cov_ax_{0.01}, imu_cal_cov_ay_{0.01};
+  double imu_cal_cov_gx_{0.1}, imu_cal_cov_gy_{0.1}, imu_cal_cov_gz_{0.1};
 
   bool dock_pose_written_{false};
 };

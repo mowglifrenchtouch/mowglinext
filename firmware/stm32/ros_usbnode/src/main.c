@@ -158,7 +158,8 @@ int main(void)
   DB_TRACE(" * Soft I2C (J18) initialized\r\n");
   DB_TRACE(" * Testing supported IMUs:\r\n");
   IMU_Init();
-  IMU_CalibrateExternal();
+  // IMU calibration is handled on the ROS2 side (hardware_bridge_node)
+  // when the robot is on the dock.
   PANEL_Init();
   DB_TRACE(" * Panel initialized\r\n");
   Emergency_Init();
