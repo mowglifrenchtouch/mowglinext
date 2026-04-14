@@ -22,5 +22,5 @@ services:
       MAVROS_GCS_URL: ${MAVROS_GCS_URL:-}
       MAVROS_TGT_SYSTEM: ${MAVROS_TGT_SYSTEM:-1}
       MAVROS_TGT_COMPONENT: ${MAVROS_TGT_COMPONENT:-1}
-      MAVROS_LAUNCH_FILE: ${MAVROS_LAUNCH_FILE:-px4.launch}
+      MAVROS_AUTOPILOT: ${MAVROS_AUTOPILOT:-ardupilot}
     restart: unless-stopped

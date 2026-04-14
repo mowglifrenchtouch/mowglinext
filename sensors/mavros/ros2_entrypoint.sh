@@ -13,21 +13,36 @@ source /opt/ros/kilted/setup.bash
 : "${MAVROS_GCS_URL:=}"
 : "${MAVROS_TGT_SYSTEM:=1}"
 : "${MAVROS_TGT_COMPONENT:=1}"
-: "${MAVROS_LAUNCH_FILE:=px4.launch}"
+: "${MAVROS_AUTOPILOT:=ardupilot}"
 
 if [ "${MAVROS_ENABLED}" != "true" ]; then
   echo "MAVROS is disabled. Exiting."
   exit 0
 fi
 
+case "${MAVROS_AUTOPILOT}" in
+  ardupilot|apm)
+    MAVROS_LAUNCH_FILE="apm.launch"
+    ;;
+  px4)
+    MAVROS_LAUNCH_FILE="px4.launch"
+    ;;
+  *)
+    echo "Unsupported MAVROS_AUTOPILOT='${MAVROS_AUTOPILOT}'"
+    echo "Supported values: ardupilot, apm, px4"
+    exit 1
+    ;;
+esac
+
 MAVROS_FCU_URL="serial://${MAVROS_PORT}:${MAVROS_BAUD}"
 
 echo "Starting MAVROS with:"
+echo "  MAVROS_AUTOPILOT=${MAVROS_AUTOPILOT}"
+echo "  MAVROS_LAUNCH_FILE=${MAVROS_LAUNCH_FILE}"
 echo "  MAVROS_FCU_URL=${MAVROS_FCU_URL}"
 echo "  MAVROS_GCS_URL=${MAVROS_GCS_URL}"
 echo "  MAVROS_TGT_SYSTEM=${MAVROS_TGT_SYSTEM}"
 echo "  MAVROS_TGT_COMPONENT=${MAVROS_TGT_COMPONENT}"
-echo "  MAVROS_LAUNCH_FILE=${MAVROS_LAUNCH_FILE}"
 
 launch_args=(
   "fcu_url:=${MAVROS_FCU_URL}"

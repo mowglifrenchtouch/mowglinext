@@ -18,6 +18,7 @@ select_hardware_backend() {
     2)
       export HARDWARE_BACKEND="mavros"
       info "Selected backend: Pixhawk via MAVROS"
+      select_mavros_autopilot || return 1
 
       echo ""
       warn "Please connect the Pixhawk to a USB port before continuing."
@@ -137,4 +138,28 @@ detect_mavros_by_id() {
 
   export MAVROS_BY_ID="${candidates[$((choice - 1))]}"
   info "Selected MAVROS device: ${MAVROS_BY_ID}"
+}
+select_mavros_autopilot() {
+  echo ""
+  echo "Select MAVROS autopilot stack:"
+  echo "  [1] ArduPilot / ArduRover"
+  echo "  [2] PX4"
+  echo ""
+  printf "Choice [1-2]: "
+  read -r choice
+
+  case "$choice" in
+    1)
+      export MAVROS_AUTOPILOT="ardupilot"
+      info "Selected MAVROS autopilot: ArduPilot"
+      ;;
+    2)
+      export MAVROS_AUTOPILOT="px4"
+      info "Selected MAVROS autopilot: PX4"
+      ;;
+    *)
+      error "Invalid choice"
+      return 1
+      ;;
+  esac
 }
