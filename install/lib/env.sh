@@ -69,13 +69,13 @@ setup_env() {
 
   # MAVROS / backend
   : "${HARDWARE_BACKEND:=mowgli}"
+  : "${MAVROS_AUTOPILOT:=ardupilot}"
   : "${MAVROS_BY_ID:=}"
   : "${MAVROS_PORT:=/dev/mavros}"
   : "${MAVROS_BAUD:=921600}"
   : "${MAVROS_GCS_URL:=}"
   : "${MAVROS_TGT_SYSTEM:=1}"
   : "${MAVROS_TGT_COMPONENT:=1}"
-  : "${MAVROS_LAUNCH_FILE:=px4.launch}"
 
   local enable_mavros="false"
   if [[ "$HARDWARE_BACKEND" == "mavros" ]]; then
@@ -123,14 +123,14 @@ setup_env() {
   upsert_env_key "$env_file" "GUI_IMAGE" "$GUI_IMAGE"
 
   upsert_env_key "$env_file" "HARDWARE_BACKEND" "$HARDWARE_BACKEND"
-  upsert_env_key "$env_file" "ENABLE_MAVROS" "$enable_mavros"
+  upsert_env_key "$env_file" "MAVROS_ENABLED" "$enable_mavros"
   upsert_env_key "$env_file" "MAVROS_BY_ID" "$MAVROS_BY_ID"
   upsert_env_key "$env_file" "MAVROS_PORT" "$MAVROS_PORT"
   upsert_env_key "$env_file" "MAVROS_BAUD" "$MAVROS_BAUD"
   upsert_env_key "$env_file" "MAVROS_GCS_URL" "$MAVROS_GCS_URL"
   upsert_env_key "$env_file" "MAVROS_TGT_SYSTEM" "$MAVROS_TGT_SYSTEM"
   upsert_env_key "$env_file" "MAVROS_TGT_COMPONENT" "$MAVROS_TGT_COMPONENT"
-  upsert_env_key "$env_file" "MAVROS_LAUNCH_FILE" "$MAVROS_LAUNCH_FILE"
+  upsert_env_key "$env_file" "MAVROS_AUTOPILOT" "$MAVROS_AUTOPILOT"
 
   info "Updated $env_file"
 }
