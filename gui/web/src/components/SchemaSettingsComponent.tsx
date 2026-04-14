@@ -1,5 +1,5 @@
 import React, { CSSProperties, useCallback, useEffect, useState } from "react";
-import { Card, Col, Row, Spin, Switch, Input, InputNumber, Select, Form, Button, Space, Typography } from "antd";
+import { Alert, Card, Col, Row, Spin, Switch, Input, InputNumber, Select, Form, Button, Space, Typography } from "antd";
 import { SaveOutlined, ReloadOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { JSONSchemaProperty, JSONSchemaCondition, useSettingsSchema } from "../hooks/useSettingsSchema.ts";
 import { useIsMobile } from "../hooks/useIsMobile";
@@ -278,7 +278,7 @@ export const SchemaSettingsComponent: React.FC<{
 }> = (props) => {
     const isMobile = useIsMobile();
     const { colors } = useThemeMode();
-    const { schema, values: savedValues, saveValues, loading } = useSettingsSchema();
+    const { schema, values: savedValues, saveValues, loading, restartRequired } = useSettingsSchema();
     const [localValues, setLocalValues] = useState<Record<string, any>>({});
 
     useEffect(() => {
@@ -304,6 +304,20 @@ export const SchemaSettingsComponent: React.FC<{
     return (
         <Row>
             <Col span={24} style={{ height: isMobile ? "auto" : "80vh", overflowY: isMobile ? undefined : "auto", paddingBottom: 80, ...props.contentStyle }}>
+                {restartRequired && props.onRestartOM && (
+                    <Alert
+                        type="warning"
+                        showIcon
+                        message="Restart required"
+                        description="Settings have been saved. Restart ROS2 to apply the new configuration."
+                        action={
+                            <Button size="small" type="primary" icon={<ReloadOutlined />} onClick={props.onRestartOM}>
+                                Restart Now
+                            </Button>
+                        }
+                        style={{ marginBottom: 16 }}
+                    />
+                )}
                 {Object.entries(sections).map(([key, section]) => (
                     <React.Fragment key={key}>
                         {key === "sensor_settings" && (

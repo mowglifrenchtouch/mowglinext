@@ -1,9 +1,11 @@
 import {Outlet, useMatches, useNavigate} from "react-router-dom";
 import {Layout, Typography} from "antd";
 import {
+    BarChartOutlined,
     BulbOutlined,
     ClockCircleOutlined,
     HeatMapOutlined,
+    MedicineBoxOutlined,
     MessageOutlined,
     RobotOutlined,
     RocketOutlined,
@@ -25,6 +27,8 @@ const navItems = [
     {key: '/onboarding', label: 'Onboarding', icon: <RocketOutlined/>},
     {key: '/settings', label: 'Settings', icon: <SettingOutlined/>},
     {key: '/logs', label: 'Logs', icon: <MessageOutlined/>},
+    {key: '/diagnostics', label: 'Diagnostics', icon: <MedicineBoxOutlined/>},
+    {key: '/statistics', label: 'Statistics', icon: <BarChartOutlined/>},
 ];
 
 const bottomNavItems = [
@@ -41,6 +45,8 @@ const pageTitles: Record<string, string> = {
     '/map': 'Map',
     '/schedule': 'Schedule',
     '/logs': 'Logs',
+    '/diagnostics': 'Diagnostics',
+    '/statistics': 'Statistics',
 };
 
 export default function Root() {

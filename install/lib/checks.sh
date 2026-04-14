@@ -153,7 +153,7 @@ check_firmware() {
 
   local status_data
   status_data=$(docker exec mowgli-ros2 bash -c \
-    "source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && timeout 5 ros2 topic echo /hardware_bridge/status --once 2>/dev/null" \
+    "source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && timeout 5 ros2 topic echo /hardware_bridge/status --once 2>/dev/null" \
     2>/dev/null || echo "")
 
   if [[ -z "$status_data" ]]; then
@@ -189,7 +189,7 @@ check_gps() {
 
   local fix_data
   fix_data=$(docker exec mowgli-ros2 bash -c \
-    "source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && timeout 5 ros2 topic echo /gps/fix --once 2>/dev/null" \
+    "source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && timeout 5 ros2 topic echo /gps/fix --once 2>/dev/null" \
     2>/dev/null || echo "")
 
   if [[ -z "$fix_data" ]]; then
@@ -292,7 +292,7 @@ check_lidar() {
 
   local scan_check
   scan_check=$(docker exec mowgli-ros2 bash -c \
-    "source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && ros2 topic info /scan 2>/dev/null" \
+    "source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && ros2 topic info /scan 2>/dev/null" \
     2>/dev/null || echo "")
 
   local pub_count
@@ -317,7 +317,7 @@ check_slam() {
 
   local slam_state
   slam_state=$(docker exec mowgli-ros2 bash -c \
-    "source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && ros2 topic info /slam_toolbox/pose 2>/dev/null" \
+    "source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && ros2 topic info /slam_toolbox/pose 2>/dev/null" \
     2>/dev/null || echo "")
 
   if echo "$slam_state" | grep -q "Publisher count: [1-9]"; then
@@ -383,7 +383,7 @@ check_gui() {
 
   local fg_info
   fg_info=$(docker exec mowgli-ros2 bash -c \
-    "source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && ros2 node list 2>/dev/null" \
+    "source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && ros2 node list 2>/dev/null" \
     2>/dev/null | grep foxglove_bridge || echo "")
 
   if [[ -n "$fg_info" ]]; then

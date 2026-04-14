@@ -10,7 +10,7 @@ set -e
 echo "=== MowgliNext: Setting up ROS2 workspace ==="
 
 # Source ROS2
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/kilted/setup.bash
 
 cd /ros2_ws
 
@@ -40,7 +40,7 @@ echo "Resolving rosdep dependencies..."
 rosdep install \
     --from-paths src \
     --ignore-src \
-    --rosdistro jazzy \
+    --rosdistro kilted \
     -y || true
 
 # ---------------------------------------------------------------------------

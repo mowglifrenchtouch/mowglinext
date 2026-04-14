@@ -2,7 +2,7 @@
 
 Comprehensive technical documentation of the Mowgli ROS2 system design, including package organization, data flow, communication protocols, and integration points.
 
-Built on **ROS2 Jazzy** with **Gazebo Harmonic** simulation, this architecture spans 12 focused packages providing complete autonomous lawn mower functionality.
+Built on **ROS2 Kilted** with **Gazebo Harmonic** simulation, this architecture spans 12 focused packages providing complete autonomous lawn mower functionality.
 
 ## System Overview
 
@@ -66,7 +66,7 @@ Mowgli ROS2 is organized as a **12-package ecosystem** with clear separation of 
 |---------|---------|--------------|
 | **mowgli_interfaces** | Message, service, and action type definitions | ROS2 core |
 | **mowgli_hardware** | Serial bridge to STM32 firmware (COBS + CRC-16 protocol) | mowgli_interfaces |
-| **mowgli_localization** | Multi-source localization (wheel odometry, IMU, RTK-GPS fusion, EKF) | mowgli_interfaces, robot_localization |
+| **mowgli_localization** | Multi-source localization (wheel odometry, IMU, RTK-GPS fusion via FusionCore UKF) | mowgli_interfaces, fusioncore_cpp |
 | **mowgli_nav2_plugins** | Nav2 controller plugins (FTC, RPP + RotationShimController, goal checkers) | nav2_core, mowgli_interfaces |
 | **mowgli_brv_planner** | Coverage path planning using B-RV algorithm (MBB sweep direction, grid-based boustrophedon, Voronoi roadmap transit) | mowgli_interfaces, nav_msgs |
 | **mowgli_behavior** | Reactive behavior tree control (BehaviorTree.CPP v4) | mowgli_interfaces, nav2_msgs |
@@ -449,41 +449,45 @@ Inputs:
 
 ↓
 
-three_nodes:
+Source nodes:
 
 1) wheel_odometry_node
    - Integrates RL/RR encoder ticks
    - Publishes /wheel_odom (Odometry)
    - 50 Hz
 
-2) gps_pose_converter_node
-   - RTK fix → local ENU pose
-   - Publishes /gps/pose (PoseWithCovarianceStamped)
+2) navsat_to_absolute_pose_node
+   - RTK fix → local ENU pose (for GUI and BT reference only)
+   - Publishes /gps/absolute_pose (PoseWithCovarianceStamped)
    - Variable rate (10-20 Hz depending on RTK health)
 
 3) localization_monitor_node
-   - Monitors EKF variance
+   - Monitors FusionCore variance
    - Detects degradation (5 modes)
    - Publishes /localization/status (DiagnosticStatus)
 
 ↓
 
-Inputs to robot_localization (launched by mowgli_bringup):
+FusionCore Sensor Fusion (launched by mowgli_bringup):
 
-1) ekf_odom node (50 Hz)
-   - Fuses: /wheel_odom + /imu/data
-   - Output: /odometry/filtered_odom (odom → base_link)
+FusionCore node (50 Hz, single UKF)
+   - Fuses: /wheel_odom + /imu/data + /gps/fix (NavSatFix directly)
+   - Output: /fusion/odom (nav_msgs/Odometry, odom → base_footprint)
+   - Publishes TF: odom → base_footprint
 
-2) ekf_map node (20 Hz)
-   - Fuses: /odometry/filtered_odom + /gps/pose
-   - Output: /odometry/filtered_map (map → odom)
+↓
+
+SLAM Toolbox (20 Hz):
+   - Fuses: /scan + /fusion/odom
+   - Output: /map (occupancy grid)
+   - Publishes TF: map → odom (TF authority for map→odom)
 
 ↓
 
 Final Output:
-  /tf tree: map → odom → base_link
-  /odometry/filtered_odom (local estimate)
-  /odometry/filtered_map (global estimate with GPS correction)
+  /tf tree: map → odom → base_footprint
+  /fusion/odom (sensor fusion result, both local and GPS-corrected)
+  /map (occupancy grid from SLAM)
 ```
 
 #### 3a. wheel_odometry_node
@@ -535,25 +539,27 @@ wheel_odometry:
     timeout_period_ms: 5000            # Warn if no WheelTick for 5s
 ```
 
-#### 3b. gps_pose_converter_node
+#### 3b. navsat_to_absolute_pose_node
 
 **Inputs:**
 - `/gps/rtk_fix` (sensor_msgs/NavSatFix with fix type indicator)
 
 **Outputs:**
-- `/gps/pose` (geometry_msgs/PoseWithCovarianceStamped)
+- `/gps/absolute_pose` (geometry_msgs/PoseWithCovarianceStamped)
+
+**Purpose:** Convert NavSatFix (latitude/longitude) to local ENU pose for GUI visualization and Behavior Tree reference. Note that FusionCore fuses `/gps/fix` directly (no intermediate converter).
 
 **Algorithm: GNSS to Local ENU**
 
 ```
-1. First fix sets local origin (lat0, lon0, alt0)
-2. All subsequent fixes converted to ENU relative to origin:
+1. GPS origin (datum) set from mowgli_robot.yaml (datum_lat, datum_long)
+2. All fixes converted to ENU relative to datum origin:
 
-   Δlat = lat - lat0
-   Δlon = lon - lon0
-   Δalt = alt - alt0
+   Δlat = lat - datum_lat
+   Δlon = lon - datum_long
+   Δalt = alt - datum_alt
 
-   e = EARTH_RADIUS_M * Δlon * cos(lat0)
+   e = EARTH_RADIUS_M * Δlon * cos(datum_lat)
    n = EARTH_RADIUS_M * Δlat
    u = Δalt
 
@@ -566,22 +572,19 @@ wheel_odometry:
    No fix:        skip publishing
 ```
 
-**Parameters (gps_pose_converter.yaml):**
+**Parameters (navsat_to_absolute_pose.yaml):**
 ```yaml
-gps_pose_converter:
+navsat_to_absolute_pose:
   ros__parameters:
     map_frame_id: "map"
     earth_radius_m: 6371008.8
-    origin_lat: 0.0                   # Set on first fix if not specified
-    origin_lon: 0.0
-    origin_alt: 0.0
+    # Datum origin read from mowgli_robot.yaml
 ```
 
 #### 3c. localization_monitor_node
 
 **Inputs:**
-- `/odometry/filtered_odom` (from ekf_odom)
-- `/odometry/filtered_map` (from ekf_map)
+- `/fusion/odom` (from FusionCore UKF)
 - `/status` (for wheel tick freshness)
 - `/gps/rtk_fix` (for fix status)
 
@@ -593,11 +596,11 @@ gps_pose_converter:
 
 | Level | Name | Condition | Response |
 |-------|------|-----------|----------|
-| 0 | OK | EKF healthy, all sensors fresh | Continue normally |
+| 0 | OK | FusionCore healthy, all sensors fresh | Continue normally |
 | 1 | ODOMETRY_STALE | No wheel ticks for 2s | Warn in logs, reduce planner timeout |
-| 2 | GPS_TIMEOUT | No fix for 10s (RTK Float OK) | Use odom-only, increase drift tolerance |
+| 2 | GPS_TIMEOUT | No fix for 10s (RTK Float OK) | Use wheel odom only, increase drift tolerance |
 | 3 | GPS_DEGRADED | RTK Float (not Fixed) | Use GPS but with higher variance |
-| 4 | FILTER_DIVERGENCE | EKF variance > threshold | Emergency stop recommended |
+| 4 | FILTER_DIVERGENCE | FusionCore variance > threshold | Emergency stop recommended |
 
 **Parameters (localization_monitor.yaml):**
 ```yaml
@@ -605,8 +608,24 @@ localization_monitor:
   ros__parameters:
     odom_stale_timeout_sec: 2.0
     gps_timeout_sec: 10.0
-    max_acceptable_ekf_variance: 0.25   # m² for position
+    max_acceptable_fusion_variance: 0.25   # m² for position
 ```
+
+#### 3d. FusionCore Diagnostics Integration
+
+**Monitoring:**
+The diagnostics_node monitors FusionCore health by subscribing to `/fusion/odom` and checking:
+- **Rate:** Verify 50 Hz update rate (report WARN if < 20 Hz)
+- **Position variance:** Monitor x, y, z components of pose covariance
+- **Orientation (yaw):** Check yaw angle convergence and variance
+- **Flat constraint:** Monitor if z-position error is within expected bounds (grass terrain variation)
+- **Z-drift detection:** Flag if vertical variance grows uncontrolled (indicates filter divergence)
+
+**Diagnostics Output:**
+Aggregated into `/diagnostics` as sub-status with levels:
+- **OK:** Rate nominal, variances converged, no drift
+- **WARN:** Rate degraded or variance increasing
+- **ERROR:** Rate critical or variance diverging (filter failure)
 
 ---
 
@@ -662,15 +681,17 @@ base_footprint (on ground, fixed to base_link)
 ```
 Map frame (SLAM origin)
     │
-    ├── [ekf_map output]
+    ├── [SLAM Toolbox publishes map→odom @ 20 Hz]
     │
-Odometry frame (local origin)
+Odometry frame (local dead-reckoning origin)
     │
-    ├── [ekf_odom output]
+    ├── [FusionCore publishes odom→base_footprint @ 50 Hz]
     │
-Base link (robot centre)
+Base footprint (on ground, robot frame for Nav2/FusionCore)
     │
-    ├── [robot_state_publisher outputs]
+    ├── [robot_state_publisher outputs static TFs]
+    │
+Base link (rear wheel axle, OpenMower convention)
     │
 Sensor frames:
     ├── imu_link (IMU data frame)
@@ -687,8 +708,9 @@ Starts:
 1. `robot_state_publisher` – Processes URDF/xacro, publishes robot_description and static TFs
 2. `hardware_bridge_node` – Serial bridge to STM32
 3. `twist_mux` – Priority-based cmd_vel multiplexer
-4. `robot_localization` (dual EKF) – Wheel odometry fusion
-5. (Optional) SLAM, Nav2, behavior tree nodes
+4. `FusionCore` (single UKF, lifecycle node) – Wheel odometry + IMU + GPS fusion
+5. `wheel_odometry_node`, `imu_filter_madgwick`, `navsat_to_absolute_pose_node`, `localization_monitor_node` – Sensor preparation
+6. (Optional) SLAM, Nav2, behavior tree nodes
 
 **simulation.launch.py** – Gazebo Ignition
 
@@ -970,17 +992,21 @@ BehaviorTreeNode (main ROS2 node, 10 Hz)
                 ├── Sequence: MowingSequence (COMMAND_START = 1)
                 │   ├── IsCommand(1)
                 │   ├── Undock (with GPS wait, SLAM save, heading calibration)
-                │   ├── Cell-based strip coverage loop:
-                │   │   ├── ReactiveSequence: MowingCommandGuard
-                │   │   │   ├── IsCommand(1) — abort if user cancels
-                │   │   │   ├── RainGuard — dock, wait, resume
-                │   │   │   ├── BatteryGuard — dock, charge to 95%, resume
-                │   │   │   └── Repeat(500): StripLoop
-                │   │   │       ├── GetNextStrip(area=0)
-                │   │   │       ├── TransitToStrip (RPP)
-                │   │   │       └── FollowStrip (FTCController)
-                │   │   └── FailedCoverageDock
-                │   └── Mow complete → disable blade, save, dock → IDLE_DOCKED
+                │   ├── Multi-area coverage loop:
+                │   │   └── Repeat(until no more areas): AreaLoop
+                │   │       ├── GetNextUnmowedArea() — fetch next unmowed area polygon
+                │   │       ├── Cell-based strip coverage loop:
+                │   │       │   ├── ReactiveSequence: MowingCommandGuard
+                │   │       │   │   ├── IsCommand(1) — abort if user cancels
+                │   │       │   │   ├── RainGuard — dock, wait, resume
+                │   │       │   │   ├── BatteryGuard — dock, charge to 95%, resume
+                │   │       │   │   └── Repeat(500): StripLoop
+                │   │       │   │       ├── GetNextStrip(current_area)
+                │   │       │   │       ├── TransitToStrip (RPP)
+                │   │       │   │       └── FollowStrip (FTCController)
+                │   │       │   └── FailedCoverageDock
+                │   │       └── Mark area as complete, continue to next area
+                │   └── All areas complete → disable blade, save, dock → IDLE_DOCKED
                 │
                 ├── Sequence: HomeSequence (COMMAND_HOME = 2)
                 │   ├── IsCommand(2)
@@ -1018,7 +1044,7 @@ The tree implements a priority-based fallback selector with reactive guards:
 2. **Boundary Guard:** If outside mowing area → stop, back up (up to 5 attempts), emergency stop if still outside.
 3. **GPS Mode Selector:** Switch between precise (RTK) and degraded navigation modes.
 4. **Critical Battery Dock:** If battery < 10% → dock immediately (uninterruptible).
-5. **Mowing (COMMAND_START=1):** Cell-based strip coverage with GPS wait, heading calibration from undock, rain/battery reactive guards, strip-by-strip execution via GetNextStrip/TransitToStrip/FollowStrip.
+5. **Mowing (COMMAND_START=1):** Multi-area coverage: iterates through all unmowed areas via GetNextUnmowedArea, then cell-based strip coverage per area with GPS wait, heading calibration from undock, rain/battery reactive guards, strip-by-strip execution via GetNextStrip/TransitToStrip/FollowStrip. Coverage progress tracked per area.
 6. **Home (COMMAND_HOME=2):** Return to dock on user request.
 7. **Area Recording (COMMAND_RECORD_AREA=3):** Drive the boundary, record trajectory at 2 Hz, finish (cmd 5) saves Douglas-Peucker simplified polygon via map_server_node, cancel (cmd 6) discards.
 8. **Manual Mowing (COMMAND_MANUAL_MOW=7):** Teleop via `/cmd_vel_teleop` (twist_mux priority). Blade managed by GUI (fire-and-forget to firmware). Collision_monitor, GPS, SLAM all remain active.
@@ -1155,11 +1181,16 @@ class UndockRobot : public BT::AsyncActionNode
 // Port In: dock_type
 // Returns RUNNING/SUCCESS/FAILURE
 
+// Multi-area coverage node:
+class GetNextUnmowedArea : public BT::AsyncActionNode
+// Fetches next unmowed area from map_server_node ~/get_next_unmowed_area
+// Returns SUCCESS with area polygon and coverage status, FAILURE when all areas complete
+
 // Cell-based coverage nodes:
 class GetNextStrip : public BT::AsyncActionNode
 // Fetches next unvisited strip from map_server_node ~/get_next_strip
 // Port In: area_index
-// Returns SUCCESS with strip path, FAILURE when coverage complete
+// Returns SUCCESS with strip path, FAILURE when current area coverage complete
 
 class TransitToStrip : public BT::AsyncActionNode
 // Navigates to start of current strip using Nav2 (RPP controller)
@@ -1242,6 +1273,9 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory) {
   factory.registerNodeType<UndockRobot>("UndockRobot");
   factory.registerNodeType<RecordResumeUndockFailure>("RecordResumeUndockFailure");
   factory.registerNodeType<ResetEmergency>("ResetEmergency");
+
+  // Multi-area coverage node
+  factory.registerNodeType<GetNextUnmowedArea>("GetNextUnmowedArea");
 
   // Cell-based coverage nodes
   factory.registerNodeType<GetNextStrip>("GetNextStrip");
@@ -1343,6 +1377,31 @@ Phase: headland → mbb → grid → sweep → voronoi → complete
 
 Allows behavior tree to monitor progress and detect hangs.
 
+#### Multi-Area Coverage
+
+**Concept:** Instead of a single coverage path, users can define multiple mowing areas (polygons) that are mowed sequentially in a single autonomous session.
+
+**Workflow:**
+1. User records multiple areas using `COMMAND_RECORD_AREA` (3) — each area is a polygon boundary saved to map_server
+2. User initiates mowing with `COMMAND_START` (1)
+3. Behavior tree calls `GetNextUnmowedArea()` to fetch first area
+4. Coverage planner generates strip path for that area
+5. Robot mows current area strip-by-strip via GetNextStrip/TransitToStrip/FollowStrip
+6. Once area is complete, BT calls `GetNextUnmowedArea()` again to fetch next area
+7. Process repeats until all areas are mowed
+
+**Progress Tracking:**
+- Each area maintains its own coverage grid (`mow_progress` layer) persisted across sessions
+- High-level status includes `current_area` and `areas_remaining` fields
+- GUI shows progress per area and overall session progress
+- If session interrupted, robot resumes from last completed area on restart
+
+**Map Server Integration:**
+- `map_server_node` maintains list of mowing areas and their coverage state
+- Service: `/map_server_node/get_next_unmowed_area` — returns next area and its current coverage grid
+- Service: `/map_server_node/mark_area_complete` — marks area as finished
+- Enables robust recovery from power loss or manual pause
+
 ---
 
 ### 8. mowgli_monitoring
@@ -1420,6 +1479,20 @@ diagnostics_node:
 Publishes `diagnostic_msgs/DiagnosticArray` to `/diagnostics` topic:
 - Used by system monitors, RViz diagnostics viewer, and external dashboards
 - Also ingested by BehaviorTree condition nodes (e.g., IsLocalizationHealthy, IsBatteryLow)
+
+#### Behavior Tree Visualization
+
+**BT State Logging:**
+The behavior_tree_node publishes active node information via `/behavior_tree_log` topic:
+- **Message type:** `BehaviorTreeLog` (custom msg in mowgli_interfaces)
+- **Contents:** Active node name, node type, tick timestamp, execution status
+- **Frequency:** Every 10 Hz tick, only when BT status changes
+- **Use:** GUI displays active BT node in real-time diagnostics page
+
+**GUI Integration:**
+- Diagnostics page shows current BT node path and state
+- Helps identify where robot is stuck or failing (e.g., "FollowCoveragePath" stuck on obstacle)
+- Updates in real-time as BT executes
 
 ---
 
@@ -1642,21 +1715,15 @@ foxglove_bridge:
      ├─ Fuses IMU gyro + accel
      └─→ /imu/data (filtered orientation)
 
-   robot_localization (ekf_odom, 50 Hz):
-     ├─ Fuses /wheel_odom + /imu/data
-     ├─ Output: /odometry/filtered_odom (local estimate, odom frame)
-     └─→ /tf: odom → base_link
+   FusionCore (single UKF, 50 Hz):
+     ├─ Fuses /wheel_odom + /imu/data + /gps/fix (NavSatFix directly)
+     ├─ Output: /fusion/odom (sensor fusion result, odom → base_footprint)
+     └─→ /tf: odom → base_footprint
 
-   GPS fusion (ekf_map, 20 Hz, if RTK fix):
-     ├─ /gps/rtk_fix → gps_pose_converter → /gps/pose (ENU)
-     ├─ Fuses /odometry/filtered_odom + /gps/pose
-     ├─ Output: /odometry/filtered_map (global estimate, map frame)
-     └─→ /tf: map → odom (corrects drift)
-
-   SLAM (slam_toolbox, async):
-     ├─ /scan + /odometry/filtered_odom
+   SLAM (slam_toolbox, 20 Hz):
+     ├─ /scan + /fusion/odom
      ├─ Output: /map (occupancy grid)
-     └─→ /tf: map → odom (loop closure correction)
+     └─→ /tf: map → odom (scan matching + loop closure, TF authority)
 
    FTCController (10 Hz, coverage) / RPP Controller (10 Hz, transit):
      ├─ Reads robot pose from /tf: odom → base_link
@@ -1707,7 +1774,8 @@ foxglove_bridge:
 
 11. Telemetry (Foxglove Bridge, 8765/ws):
     → Web UI receives:
-       ├─ /odometry/filtered_map (robot pose on map)
+       ├─ /fusion/odom (robot pose from sensor fusion)
+       ├─ /map (occupancy grid from SLAM)
        ├─ /coverage_path and /coverage_outline (visualization)
        ├─ /scan (LiDAR pointcloud)
        ├─ /diagnostics (system health)
@@ -1722,16 +1790,16 @@ foxglove_bridge:
 
 ```
 map (SLAM origin, or GPS-corrected)
-  │ [published by ekf_map in robot_localization @ 20 Hz]
+  │ [published by SLAM Toolbox @ 20 Hz]
   │
   odom (local dead-reckoning origin)
-  │ [published by ekf_odom in robot_localization @ 50 Hz]
+  │ [published by FusionCore @ 50 Hz]
   │
-  base_link (robot body frame, wheel axle height)
-  │ [published by robot_state_publisher from URDF]
+  base_footprint (on ground, robot frame for Nav2/FusionCore)
+  │ [published by FusionCore from URDF]
   │
-  ├── base_footprint (ground contact point, fixed offset from base_link)
-  │   └── used by Nav2 costmap for footprint inflation
+  ├── base_link (robot body frame, wheel axle height per OpenMower convention)
+  │   └── [published by robot_state_publisher from URDF]
   │
   ├── imu_link (fixed to chassis, IMU measurement frame)
   │   └── [hardware_bridge publishes IMU data in this frame]
@@ -1750,10 +1818,10 @@ map (SLAM origin, or GPS-corrected)
 
 | Frame | Publisher | Rate | Purpose |
 |-------|-----------|------|---------|
-| map | ekf_map (robot_localization) | 20 Hz | Global origin (SLAM/GPS) |
-| odom | ekf_odom (robot_localization) | 50 Hz | Local dead-reckoning origin |
-| base_link | robot_state_publisher | Static | Robot body (from URDF) |
-| base_footprint | robot_state_publisher | Static | Footprint inflation center |
+| map | SLAM Toolbox | 20 Hz | Global origin (scan matching + loop closure) |
+| odom | FusionCore | 50 Hz | Local dead-reckoning origin (wheel odometry reference) |
+| base_footprint | FusionCore | 50 Hz | On ground, robot frame for Nav2/controllers (per REP-105) |
+| base_link | robot_state_publisher | Static | Rear wheel axle (OpenMower convention) |
 | imu_link | robot_state_publisher | Static | IMU sensor frame |
 | laser_link | robot_state_publisher | Static | LiDAR origin |
 | gps_link | robot_state_publisher | Static | GPS antenna location |
@@ -1761,10 +1829,10 @@ map (SLAM origin, or GPS-corrected)
 
 **Frame Conventions:**
 
-- `map` – Global frame, typically z-up, x-east, y-north (REP-103). Set by first SLAM loop closure or GPS initial fix.
-- `odom` – Local odometry frame, z-up. Origin drifts due to integration error; corrected by ekf_map.
-- `base_link` – Robot body frame. Wheel axle height z = 0 (convention). Xy center at robot geometric center.
-- `base_footprint` – Projection of base_link onto z = 0 (ground level). Used for Nav2 footprint inflation.
+- `map` – Global frame, typically z-up, x-east, y-north (REP-103). Set by SLAM Toolbox via scan matching.
+- `odom` – Local odometry frame, z-up. Represents wheel odometry reference; drift corrected by SLAM.
+- `base_footprint` – Ground contact point, robot frame for Nav2. Published by FusionCore.
+- `base_link` – Robot body frame at rear wheel axle height (OpenMower convention). Static offset from base_footprint.
 
 **Simulation (Gazebo Harmonic):**
 
@@ -1791,16 +1859,16 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 | `/power` | mowgli_interfaces/Power | hardware_bridge_node | 100 Hz | Battery voltage, charging current |
 | `/wheel_odom` | nav_msgs/Odometry | wheel_odometry_node | 50 Hz | Dead-reckoning from wheel encoders |
 | `/gps/rtk_fix` | sensor_msgs/NavSatFix | GPS hardware driver | 10–20 Hz | RTK fix (latitude, longitude, altitude) |
-| `/gps/pose` | geometry_msgs/PoseWithCovarianceStamped | gps_pose_converter_node | 10–20 Hz | RTK position converted to local ENU |
-| `/odometry/filtered_odom` | nav_msgs/Odometry | ekf_odom (robot_localization) | 50 Hz | Local estimate (odom frame) |
-| `/odometry/filtered_map` | nav_msgs/Odometry | ekf_map (robot_localization) | 20 Hz | Global estimate (map frame) with GPS correction |
+| `/gps/absolute_pose` | geometry_msgs/PoseWithCovarianceStamped | navsat_to_absolute_pose_node | 10–20 Hz | RTK position converted to local ENU (for visualization) |
+| `/fusion/odom` | nav_msgs/Odometry | FusionCore | 50 Hz | Fused estimate (odom→base_footprint) with GPS+IMU+wheels |
 | `/localization/status` | diagnostic_msgs/DiagnosticStatus | localization_monitor_node | 2 Hz | EKF health, degradation mode |
 | `/coverage_planner_node/coverage_path` | nav_msgs/Path | coverage_planner_node | Once per plan | B-RV coverage path with poses |
 | `/coverage_planner_node/coverage_outline` | nav_msgs/Path | coverage_planner_node | Once per plan | Headland outline for visualization |
 | `/path` | nav_msgs/Path | planner_server (Nav2) | 1 Hz | Global path from Nav2 planner |
 | `/cmd_vel` | geometry_msgs/Twist | twist_mux | 10–50 Hz | Final velocity command (to hardware/Gazebo) |
 | `/diagnostics` | diagnostic_msgs/DiagnosticArray | diagnostics_node (mowgli_monitoring) | 1 Hz | System health aggregation |
-| `/high_level_status` | mowgli_interfaces/HighLevelStatus | behavior_tree_node | 10 Hz | Current high-level mode (IDLE=1, AUTONOMOUS=2, RECORDING=3, MANUAL_MOWING=4) with coverage progress |
+| `/behavior_tree_log` | mowgli_interfaces/BehaviorTreeLog | behavior_tree_node | 10 Hz | Active BT node, node type, execution status (for GUI diagnostics visualization) |
+| `/high_level_status` | mowgli_interfaces/HighLevelStatus | behavior_tree_node | 10 Hz | Current high-level mode (IDLE=1, AUTONOMOUS=2, RECORDING=3, MANUAL_MOWING=4) with coverage progress per area |
 
 **Subscribers (Sinks):**
 
@@ -1809,9 +1877,9 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 | `/cmd_vel` | hardware_bridge_node / Gazebo | Motor/wheel commands |
 | `/scan` | slam_toolbox, nav2_local_costmap, diagnostics_node | SLAM, obstacle detection, monitoring |
 | `/imu/data_raw` | diagnostics_node | Monitor IMU freshness |
-| `/odometry/filtered_odom` | slam_toolbox, nav2 controller, diagnostics_node | SLAM input, localized pose for control |
-| `/odometry/filtered_map` | nav2 planner, behavior_tree (goal comparison), diagnostics_node | Global navigation reference |
-| `/gps/rtk_fix` | gps_pose_converter_node, diagnostics_node | Convert fix to local frame, monitor GPS |
+| `/fusion/odom` | slam_toolbox, nav2 controller, diagnostics_node | SLAM input, localized pose for control |
+| `/map` | nav2 planner, behavior_tree (goal comparison), diagnostics_node | Global navigation reference |
+| `/gps/rtk_fix` | FusionCore, navsat_to_absolute_pose_node, diagnostics_node | Sensor fusion, convert fix to local frame, monitor GPS |
 | `/status` | behavior_tree_node, localization_monitor_node, diagnostics_node | Health checks, sensor freshness |
 | `/emergency` | behavior_tree_node, diagnostics_node | Emergency monitoring |
 | `/power` | behavior_tree_node, diagnostics_node | Battery level monitoring |
@@ -1826,8 +1894,9 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 | `/emergency_stop` | EmergencyStop | hardware_bridge_node | behavior_tree_node, ResetEmergency BT node | Assert/release latched emergency |
 | `/high_level_control` | HighLevelControl | behavior_tree_node | GUI | Mode commands (START=1, HOME=2, RECORD_AREA=3, S2=4, RECORD_FINISH=5, RECORD_CANCEL=6, MANUAL_MOW=7) |
 | `/map_server_node/add_area` | AddMowingArea | map_server_node | RecordArea BT node | Save recorded mowing area polygon |
+| `/map_server_node/get_next_unmowed_area` | GetNextUnmowedArea | map_server_node | behavior_tree_node (GetNextUnmowedArea BT node) | Fetch next unmowed area polygon and coverage grid |
+| `/map_server_node/mark_area_complete` | MarkAreaComplete | map_server_node | behavior_tree_node | Mark area as mowing complete, persist coverage state |
 | `/navigate_to_pose` | nav2_msgs/NavigateToPose | nav2_behavior_tree_navigator | behavior_tree_node | Send goal to Nav2 |
-| `/robot_localization/set_pose` | robot_localization/SetPose | ekf_odom | startup/testing tools | Initialize odometry origin |
 
 **Actions (Async Request-Response):**
 
@@ -1852,16 +1921,17 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
    - **Infrastructure:** mowgli_bringup (launch, config), mowgli_description (URDF/xacro), mowgli_map (map storage)
    - **Third-party:** opennav_coverage (Nav2 coverage server)
 
-2. **ROS2 Jazzy + Gazebo Harmonic:** Modern robotics stack with first-class simulation support and lifecycle management.
+2. **ROS2 Kilted + Gazebo Harmonic:** Modern robotics stack with first-class simulation support and lifecycle management.
 
 3. **Decoupled Communication:** ROS2 pub/sub (topics), services, and actions isolate packages. Easy to substitute, test, or extend components independently.
 
 4. **Robust Serial Protocol (COBS + CRC-16):** Enables reliable bidirectional communication between Raspberry Pi and STM32 firmware over noisy USB at 115200 baud.
 
-5. **Dual-Tier EKF Localization:**
-   - Local (ekf_odom, 50 Hz): Fast odometry + IMU fusion for real-time control
-   - Global (ekf_map, 20 Hz): Corrects drift using GPS or SLAM loop closures
-   - Graceful degradation: operates without GPS in GNSS-denied areas
+5. **Single-Tier UKF Localization (FusionCore):**
+   - Fuses wheel odometry + IMU + GPS in single UKF (50 Hz)
+   - Outputs `/fusion/odom` (odom→base_footprint) with GPS correction
+   - SLAM Toolbox provides map→odom TF authority via scan matching (20 Hz)
+   - Graceful degradation: operates without GPS in GNSS-denied areas (wheel+IMU only)
 
 6. **Coverage Path Following:** FTCController (Follow-the-Carrot) is the active controller for FollowCoveragePath, achieving <10mm lateral accuracy with 3-axis PID control and in-place rotation at swath turns. RPP remains active for FollowPath (transit and docking).
 
@@ -1870,11 +1940,12 @@ This allows SLAM, costmap, and other nodes to use standard ROS2 frame names rega
 8. **Reactive Behavior Trees (BehaviorTree.CPP v4):** 10 Hz non-preemptive tree execution with priority-based fallback selection:
    - Emergency guard: highest priority, interrupts all activity
    - Multi-mode state machine: IDLE → UNDOCKING → MOWING (with recovery) → DOCKING
-   - Composable async action nodes (NavigateToPose, PlanCoveragePath, FollowCoveragePath)
+   - Multi-area coverage: iterates through multiple mowing areas sequentially, each with independent coverage progress tracking
+   - Composable async action nodes (NavigateToPose, GetNextUnmowedArea, PlanCoveragePath, FollowCoveragePath)
 
 9. **Priority-Based Command Routing:** twist_mux mediates three command sources (emergency > teleoperation > navigation) before forwarding to hardware bridge.
 
-10. **Comprehensive Health Monitoring:** Diagnostics aggregator tracks 8 subsystems (hardware bridge, emergency, battery, IMU, LiDAR, GPS, odometry, motors) with multi-level status (OK, WARN, ERROR, STALE) for autonomous decision-making.
+10. **Comprehensive Health Monitoring:** Diagnostics aggregator tracks 8 subsystems (hardware bridge, emergency, battery, IMU, LiDAR, GPS, odometry, motors) and FusionCore UKF health (rate, variance, z-drift) with multi-level status (OK, WARN, ERROR, STALE) for autonomous decision-making. Real-time BT visualization shows active node path and execution state in GUI diagnostics page.
 
 11. **Unified Simulation-to-Hardware Workflow:**
     - Gazebo Harmonic with ros_gz_bridge enables identical ROS2 stack on both sim and real hardware

@@ -4,14 +4,14 @@
 # MAVLink bridge for ArduPilot/PX4 flight controllers.
 # Publishes IMU, GPS, and other MAVLink data to ROS2 topics.
 # =============================================================================
-FROM ros:jazzy-ros-base
+FROM ros:kilted-ros-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ros-jazzy-mavros \
-    ros-jazzy-mavros-extras \
-    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-kilted-mavros \
+    ros-kilted-mavros-extras \
+    ros-kilted-rmw-cyclonedds-cpp \
  && rm -rf /var/lib/apt/lists/*
 
 # Install GeographicLib datasets required by MAVROS

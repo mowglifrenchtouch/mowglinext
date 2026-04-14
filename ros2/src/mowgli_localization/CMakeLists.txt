@@ -59,22 +59,6 @@ ament_target_dependencies(wheel_odometry_node
 )
 
 # ---------------------------------------------------------------------------
-# Executable: gps_pose_converter_node
-# ---------------------------------------------------------------------------
-
-add_executable(gps_pose_converter_node
-  src/gps_pose_converter_node.cpp
-)
-
-target_include_directories(gps_pose_converter_node PUBLIC ${INCLUDE_DIR})
-
-ament_target_dependencies(gps_pose_converter_node
-  rclcpp
-  geometry_msgs
-  mowgli_interfaces
-)
-
-# ---------------------------------------------------------------------------
 # Executable: navsat_to_absolute_pose_node
 # ---------------------------------------------------------------------------
 
@@ -111,42 +95,6 @@ ament_target_dependencies(localization_monitor_node
 )
 
 # ---------------------------------------------------------------------------
-# Executable: slam_heading_node
-# ---------------------------------------------------------------------------
-
-add_executable(slam_heading_node
-  src/slam_heading_node.cpp
-)
-
-target_include_directories(slam_heading_node PUBLIC ${INCLUDE_DIR})
-
-ament_target_dependencies(slam_heading_node
-  rclcpp
-  geometry_msgs
-  tf2
-  tf2_geometry_msgs
-)
-
-# ---------------------------------------------------------------------------
-# Executable: map_odom_fuser_node
-# ---------------------------------------------------------------------------
-
-add_executable(map_odom_fuser_node
-  src/map_odom_fuser_node.cpp
-)
-
-target_include_directories(map_odom_fuser_node PUBLIC ${INCLUDE_DIR})
-
-ament_target_dependencies(map_odom_fuser_node
-  rclcpp
-  nav_msgs
-  geometry_msgs
-  tf2
-  tf2_ros
-  tf2_geometry_msgs
-)
-
-# ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
 
@@ -158,11 +106,8 @@ install(
 install(
   TARGETS
     wheel_odometry_node
-    gps_pose_converter_node
     navsat_to_absolute_pose_node
     localization_monitor_node
-    slam_heading_node
-    map_odom_fuser_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}

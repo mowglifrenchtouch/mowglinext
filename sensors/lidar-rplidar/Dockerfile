@@ -8,13 +8,13 @@
 #   LIDAR_IMAGE=ghcr.io/cedbossneo/mowglinext/lidar-rplidar:main
 # or override the build context in docker-compose.override.yml.
 # =============================================================================
-FROM ros:jazzy-ros-base AS build
+FROM ros:kilted-ros-base AS build
 
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-colcon-common-extensions \
-    ros-jazzy-ament-cmake \
+    ros-kilted-ament-cmake \
     build-essential \
     cmake \
     git \
@@ -27,7 +27,7 @@ RUN git clone --depth 1 -b ros2 \
       src/rplidar_ros
 
 RUN /bin/bash -c "\
-    source /opt/ros/jazzy/setup.bash && \
+    source /opt/ros/kilted/setup.bash && \
     colcon build \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
       --parallel-workers \$(nproc) \
@@ -36,11 +36,11 @@ RUN /bin/bash -c "\
 # =============================================================================
 # Runtime — minimal image
 # =============================================================================
-FROM ros:jazzy-ros-base AS runtime
+FROM ros:kilted-ros-base AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-kilted-rmw-cyclonedds-cpp \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros2_ws

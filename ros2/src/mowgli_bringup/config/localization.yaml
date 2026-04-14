@@ -1,174 +1,77 @@
 # ---------------------------------------------------------------------------
-# NavSat → AbsolutePose converter (ublox_gps bridge)
-# datum_lat/datum_lon define the local map frame origin.
-# Override in mowgli_robot.yaml for your garden location.
+# FusionCore configuration — single UKF fusing GPS + IMU + wheels.
+#
+# ARCHITECTURE:
+#   FusionCore publishes odom → base_footprint TF (GPS-anchored odometry).
+#   SLAM Toolbox publishes map → odom TF (LiDAR scan matching).
+#   No dual-EKF, no navsat_transform_node.
+#
+# INPUT TOPICS (remapped in launch file):
+#   /wheel_odom  (nav_msgs/Odometry)    — wheel encoder velocity
+#   /imu/data    (sensor_msgs/Imu)      — gyro + accel
+#   /gps/fix     (sensor_msgs/NavSatFix) — RTK GPS position
+#
+# OUTPUT:
+#   /fusion/odom (nav_msgs/Odometry)    — fused state estimate
+#   TF: odom → base_footprint          — at publish_rate Hz
 # ---------------------------------------------------------------------------
-navsat_to_absolute_pose:
+fusioncore_node:
   ros__parameters:
-    datum_lat: 0.0
-    datum_lon: 0.0
-
-# Dual EKF configuration for robot_localization.
-#
-# DESIGN PHILOSOPHY:
-#   Wheel ticks are unreliable on soft/wet ground (slipping is certain).
-#   GPS RTK is the primary position source — when fix/float is available,
-#   GPS dominates.  SLAM/LiDAR compensates during GPS outages.
-#   Wheel ticks provide velocity hints only, with high uncertainty.
-#
-# ekf_odom  – fuses wheel odometry + IMU into odom → base_link TF.
-#             Wheel velocity has HIGH process noise (low trust).
-# ekf_map   – fuses filtered odometry + GPS pose into map → odom TF.
-#             GPS covariance comes from the receiver itself (low for RTK fix).
-#
-# State vector layout for *_config arrays (15 elements):
-#   x, y, z,  roll, pitch, yaw,
-#   vx, vy, vz,  vroll, vpitch, vyaw,
-#   ax, ay, az
-
-ekf_odom:
-  ros__parameters:
-    frequency: 50.0
-    sensor_timeout: 0.1
-    two_d_mode: true
-    publish_tf: true
+    base_frame: base_footprint
     odom_frame: odom
-    base_link_frame: base_footprint
-    world_frame: odom
+    publish_rate: 50.0
 
-    # Wheel odometry: fuse linear velocity (vx, vy) and yaw rate.
-    # Wheel ticks slip on wet/soft ground — treat as low-confidence velocity
-    # hint, NOT a position source.  The IMU and GPS provide the real position.
-    odom0: /wheel_odom
-    odom0_config: [false, false, false,
-                   false, false, false,
-                   true,  true,  false,
-                   false, false, true,
-                   false, false, false]
-    odom0_queue_size: 10
-    odom0_nodelay: false
-    odom0_differential: false
-    odom0_relative: false
+    # IMU: hardware_bridge publishes identity orientation with tight
+    # roll/pitch covariance (flat-ground constraint) and loose yaw.
+    # has_magnetometer=true tells FusionCore to fuse the orientation.
+    imu.gyro_noise: 0.02
+    imu.accel_noise: 0.1
+    imu.has_magnetometer: true
 
-    # IMU gyro: fuse yaw CHANGES and yaw rate (smooth, high-frequency).
-    # differential=true avoids gyro drift and prevents fighting with SLAM.
-    imu0: /imu/data
-    imu0_config: [false, false, false,
-                  false, false, true,
-                  false, false, false,
-                  false, false, true,
-                  false, false, false]
-    imu0_queue_size: 10
-    imu0_nodelay: false
-    imu0_differential: true
-    imu0_relative: false
-    imu0_remove_gravitational_acceleration: true
+    # Wheel encoders: noisy on soft/wet ground
+    encoder.vel_noise: 0.15
+    encoder.yaw_noise: 0.04
 
-    # Process noise tuning — HIGH values for velocity states (vx=6, vy=7)
-    # because wheel ticks drift on real terrain.  Position states (x=0, y=1)
-    # also elevated because without GPS, position accumulates wheel errors.
-    # IMU-related states (yaw=5, vyaw=11) have lower noise — IMU is reliable.
-    process_noise_covariance: [0.10, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.10, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.15, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.15, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015]
+    # GNSS: u-blox F9P RTK
+    gnss.base_noise_xy: 1.0
+    gnss.base_noise_z: 5.0
+    gnss.heading_noise: 0.1
+    gnss.max_hdop: 4.0
+    gnss.min_satellites: 4
 
-ekf_map:
-  ros__parameters:
-    frequency: 20.0
-    sensor_timeout: 0.2
-    two_d_mode: true
-    # ekf_map publishes map→odom TF, anchoring the map frame to GPS datum.
-    # SLAM provides heading corrections via /slam/heading but does NOT
-    # publish TF. This ensures area polygons recorded in GPS coordinates
-    # align with the map frame.
-    publish_tf: true
-    odom_frame: odom
-    base_link_frame: base_footprint
-    world_frame: map
+    # GPS antenna is approximately above base_footprint origin
+    gnss.lever_arm_x: 0.0
+    gnss.lever_arm_y: 0.0
+    gnss.lever_arm_z: 0.0
 
-    # Filtered odometry from the odom EKF: velocity only (not position).
-    # Position comes from GPS.  Using odom position here would let wheel-tick
-    # drift contaminate the map frame.  We only fuse velocity + yaw rate so
-    # the EKF has inter-GPS dynamics.
-    odom0: /odometry/filtered_odom
-    odom0_config: [false, false, false,
-                   false, false, false,
-                   true,  true,  false,
-                   false, false, true,
-                   false, false, false]
-    odom0_queue_size: 10
-    odom0_nodelay: false
-    odom0_differential: false
-    odom0_relative: false
+    # No second GPS receiver
+    gnss.fix2_topic: ""
+    # No compass_msgs heading source
+    gnss.azimuth_topic: ""
 
-    # GPS pose (PoseWithCovarianceStamped from gps_pose_converter or sim remap).
-    # Position: covariance from receiver quality — RTK fix ~2cm, float ~20cm.
-    # Heading: derived from velocity vector by gps_pose_converter. The yaw
-    #   covariance is speed-dependent: tight when moving (GPS heading reliable),
-    #   very large when stationary (IMU dominates). This aligns the map frame
-    #   with geographic ENU when the robot is moving.
-    pose0: /gps/pose
-    pose0_config: [true,  true,  false,
-                   false, false, true,
-                   false, false, false,
-                   false, false, false,
-                   false, false, false]
-    pose0_queue_size: 10
-    pose0_nodelay: false
-    pose0_differential: false
-    pose0_relative: false
-    # Reject GPS measurements with Mahalanobis distance > 3.0 from current
-    # estimate. When docked with tight dock_pose_fix, GPS measurements that
-    # disagree (due to float noise) will be rejected.
-    pose0_rejection_threshold: 3.0
+    # Mahalanobis outlier rejection — catches GPS jumps and encoder spikes.
+    # GNSS threshold raised from chi2(3,0.999)=16.27 to 100 because the
+    # stationary UKF drifts on IMU alone between 5 Hz GPS fixes, causing
+    # every fix to be rejected once the first one fails the gate.
+    outlier_rejection: true
+    outlier_threshold_gnss: 100.0
+    outlier_threshold_imu: 15.09    # chi2(6, 0.999)
+    outlier_threshold_enc: 11.34    # chi2(3, 0.999)
+    outlier_threshold_hdg: 10.83    # chi2(1, 0.999)
 
-    # Dock pose fix removed — ekf_map doesn't publish TF and nothing reads
-    # its output. SLAM is the sole TF authority. Re-add if ekf_map becomes
-    # the map→odom TF publisher.
+    # Adaptive noise estimation — auto-tunes from innovation sequence
+    adaptive.imu: true
+    adaptive.encoder: true
+    adaptive.gnss: true
+    adaptive.window: 50       # ~1s at 50 Hz publish rate
+    adaptive.alpha: 0.01
 
-    # SLAM heading: slam_heading_node subscribes to /slam_toolbox/pose
-    # (SLAM's internal scan-matched pose) and extracts yaw. No circular
-    # dependency because it reads the pose topic, not the map→odom TF.
-    # Provides absolute heading from LiDAR features — works without
-    # magnetometer, when stationary, and under tree canopy.
-    pose2: /slam/heading
-    pose2_config: [false, false, false,
-                   false, false, true,
-                   false, false, false,
-                   false, false, false,
-                   false, false, false]
-    pose2_queue_size: 5
-    pose2_nodelay: false
-    pose2_differential: false
-    pose2_relative: false
-
-    # Process noise — elevated for position (x=0, y=1) because without GPS
-    # the filter relies on wheel-derived velocity which drifts.  This makes
-    # the filter rapidly snap back to GPS when it returns.
-    process_noise_covariance: [0.20, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.20, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.10, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.10, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,
-                                0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015]
+    # UKF process noise — q_position elevated so position uncertainty grows
+    # fast without GPS, making the filter snap back when GPS is available.
+    ukf.q_position: 0.5
+    ukf.q_orientation: 0.01
+    ukf.q_velocity: 0.1
+    ukf.q_angular_vel: 0.1
+    ukf.q_acceleration: 1.0
+    ukf.q_gyro_bias: 1.0e-5
+    ukf.q_accel_bias: 1.0e-5

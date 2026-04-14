@@ -1,8 +1,9 @@
-import {useCallback, useRef, useState} from "react";
-import type {Twist} from "../../../types/ros.ts";
+import {useCallback, useEffect, useRef, useState} from "react";
+import type {TwistStamped} from "../../../types/ros.ts";
 import type {IJoystickUpdateEvent} from "react-joystick-component/build/lib/Joystick";
 
 const JOY_SEND_INTERVAL_MS = 100;
+const BLADE_KEEPALIVE_MS = 10000;
 
 interface UseManualModeOptions {
     mowerAction: (action: string, params: Record<string, unknown>) => () => Promise<void>;
@@ -10,9 +11,10 @@ interface UseManualModeOptions {
 }
 
 export function useManualMode({mowerAction, joyStream}: UseManualModeOptions) {
-    const [manualMode, setManualMode] = useState<number | undefined>();
-    const lastTwistRef = useRef<Twist | null>(null);
+    const [manualMode, setManualMode] = useState(false);
+    const lastTwistRef = useRef<TwistStamped | null>(null);
     const joyIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+    const bladeIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
     const startJoyInterval = useCallback(() => {
         clearInterval(joyIntervalRef.current);
@@ -28,46 +30,57 @@ export function useManualMode({mowerAction, joyStream}: UseManualModeOptions) {
         joyIntervalRef.current = undefined;
     }, []);
 
+    const stopBladeKeepalive = useCallback(() => {
+        clearInterval(bladeIntervalRef.current);
+        bladeIntervalRef.current = undefined;
+    }, []);
+
+    // Cleanup on unmount — stop blade keepalive and joy interval
+    useEffect(() => {
+        return () => {
+            clearInterval(bladeIntervalRef.current);
+            clearInterval(joyIntervalRef.current);
+        };
+    }, []);
+
     const handleManualMode = async () => {
-        // Start the joy WebSocket immediately so it's ready when the user moves the joystick.
-        // Don't wait for the MANUAL_MOWING state to propagate back via highLevelStatus.
-        joyStream.start("/api/mowglinext/publish/joy");
+        // Joy stream is auto-started by useMapStreams when state becomes MANUAL_MOWING.
+        // Send the command first — the BT will transition to MANUAL_MOWING state.
         await mowerAction("high_level_control", {Command: 7})();
-        // Enable mowing blade immediately, then keep it alive every 10s
+        // Enable mowing blade and keep it alive
         await mowerAction("mow_enabled", {MowEnabled: 1, MowDirection: 0})();
-        setManualMode(setInterval(() => {
-            (async () => {
-                await mowerAction("mow_enabled", {MowEnabled: 1, MowDirection: 0})();
-            })();
-        }, 10000));
+        stopBladeKeepalive();
+        bladeIntervalRef.current = setInterval(() => {
+            mowerAction("mow_enabled", {MowEnabled: 1, MowDirection: 0})();
+        }, BLADE_KEEPALIVE_MS);
+        setManualMode(true);
     };
 
     const handleStopManualMode = async () => {
         await mowerAction("high_level_control", {Command: 2})();
-        clearInterval(manualMode);
-        setManualMode(undefined);
+        stopBladeKeepalive();
         stopJoyInterval();
         lastTwistRef.current = null;
+        setManualMode(false);
         await mowerAction("mow_enabled", {MowEnabled: 0, MowDirection: 0})();
     };
 
     const handleJoyMove = useCallback((event: IJoystickUpdateEvent) => {
-        const msg: Twist = {
-            linear: {x: event.y ?? 0, y: 0, z: 0},
-            angular: {z: (event.x ?? 0) * -1, x: 0, y: 0},
+        const msg: TwistStamped = {
+            header: {stamp: {sec: 0, nanosec: 0}, frame_id: ""},
+            twist: {linear: {x: event.y ?? 0, y: 0, z: 0}, angular: {z: (event.x ?? 0) * -1, x: 0, y: 0}},
         };
         lastTwistRef.current = msg;
         joyStream.sendJsonMessage(msg);
-        // Start the repeat interval if not already running
         if (!joyIntervalRef.current) {
             startJoyInterval();
         }
     }, [joyStream, startJoyInterval]);
 
     const handleJoyStop = useCallback(() => {
-        const msg: Twist = {
-            linear: {x: 0, y: 0, z: 0},
-            angular: {z: 0, x: 0, y: 0},
+        const msg: TwistStamped = {
+            header: {stamp: {sec: 0, nanosec: 0}, frame_id: ""},
+            twist: {linear: {x: 0, y: 0, z: 0}, angular: {z: 0, x: 0, y: 0}},
         };
         lastTwistRef.current = null;
         stopJoyInterval();

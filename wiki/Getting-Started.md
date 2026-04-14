@@ -48,9 +48,9 @@ The fastest way to explore and develop MowgliNext — no local setup required:
 
 ### What's included
 
-The devcontainer provides a complete ROS2 Jazzy development environment:
+The devcontainer provides a complete ROS2 Kilted development environment:
 
-- Full Nav2 navigation stack, SLAM Toolbox, robot_localization
+- Full Nav2 navigation stack, SLAM Toolbox, FusionCore (UKF sensor fusion)
 - Gazebo Harmonic simulation (headless)
 - B-RV coverage planner (mowgli_brv_planner)
 - Foxglove Bridge + rosbridge for visualization
@@ -150,6 +150,56 @@ docker compose up -d
 | GUI | `http://<mower-ip>:4006` |
 | Foxglove | `ws://<mower-ip>:8765` |
 | Rosbridge | `ws://<mower-ip>:9090` |
+
+## GUI Features
+
+### Diagnostics Page
+
+Access the diagnostics dashboard at `http://<mower-ip>:4006/#/diagnostics`.
+
+**Displays:**
+- **Containers:** Status of each Docker service (ros2, slam, nav2, etc.)
+- **System metrics:** CPU usage, memory, disk
+- **Localization:** FusionCore pose, position variance, orientation, z-drift
+- **Sensors:** GPS status, LiDAR freshness, IMU health
+- **Behavior Tree:** Current active node, execution state, mode
+- **Coverage:** Areas remaining, current strip progress, cells mowed
+- **ROS Diagnostics:** Aggregated health status (OK, WARN, ERROR, STALE) for all subsystems
+- **SLAM Map Tools:**
+  - View map info (resolution, dimensions, origin)
+  - Save map to persistent storage
+  - Delete map to reset SLAM
+
+**Configuration Cross-Checks:**
+Verifies consistency between:
+- GPS datum origin and robot odometry
+- SLAM resolution vs. coverage cell width
+- Motor power limits and battery voltage
+- Emergency stop state and hardware ready status
+
+### Statistics Page
+
+Access session statistics at `http://<mower-ip>:4006/#/statistics`.
+
+**Automatic Session Recording:**
+Each mowing session is automatically logged with:
+- Start time, end time, duration
+- Total distance traveled
+- Area mowed (m²), mowing efficiency (%)
+- Blade time active
+- Obstacles detected and avoided
+- Power consumed (Wh)
+
+**Session History:**
+- View past sessions with date, duration, area covered
+- Compare efficiency across multiple runs
+- Track seasonal trends in mowing patterns
+
+**Aggregate Statistics:**
+- Total mowed area across all sessions
+- Average efficiency and speed
+- Maintenance intervals (blade usage hours)
+- Weather exposure (rain detection events)
 
 ## Next Steps
 

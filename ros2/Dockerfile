@@ -3,72 +3,71 @@
 # Installs all runtime ROS2 dependencies. Both runtime and simulation stages
 # inherit from here, keeping the image lean.
 # =============================================================================
-FROM ros:jazzy-ros-base AS base
+FROM ros:kilted-ros-base AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Navigation
-    ros-jazzy-nav2-bringup \
-    ros-jazzy-nav2-bt-navigator \
-    ros-jazzy-nav2-controller \
-    ros-jazzy-nav2-planner \
-    ros-jazzy-nav2-behaviors \
-    ros-jazzy-nav2-regulated-pure-pursuit-controller \
-    ros-jazzy-nav2-smac-planner \
-    ros-jazzy-nav2-costmap-2d \
-    ros-jazzy-nav2-map-server \
-    ros-jazzy-nav2-lifecycle-manager \
-    ros-jazzy-nav2-waypoint-follower \
-    ros-jazzy-nav2-velocity-smoother \
-    # SLAM and localization
-    ros-jazzy-slam-toolbox \
-    ros-jazzy-robot-localization \
+    ros-kilted-nav2-bringup \
+    ros-kilted-nav2-bt-navigator \
+    ros-kilted-nav2-controller \
+    ros-kilted-nav2-planner \
+    ros-kilted-nav2-behaviors \
+    ros-kilted-nav2-regulated-pure-pursuit-controller \
+    ros-kilted-nav2-smac-planner \
+    ros-kilted-nav2-costmap-2d \
+    ros-kilted-nav2-map-server \
+    ros-kilted-nav2-lifecycle-manager \
+    ros-kilted-nav2-waypoint-follower \
+    ros-kilted-nav2-velocity-smoother \
+    # SLAM (FusionCore is built from source in the workspace)
+    ros-kilted-slam-toolbox \
     # Motion control
-    ros-jazzy-twist-mux \
+    ros-kilted-twist-mux \
     # Behavior trees
-    ros-jazzy-behaviortree-cpp \
+    ros-kilted-behaviortree-cpp \
     # Robot description / TF
-    ros-jazzy-xacro \
-    ros-jazzy-robot-state-publisher \
-    ros-jazzy-joint-state-publisher \
-    ros-jazzy-tf2-ros \
-    ros-jazzy-tf2-eigen \
-    ros-jazzy-tf2-geometry-msgs \
+    ros-kilted-xacro \
+    ros-kilted-robot-state-publisher \
+    ros-kilted-joint-state-publisher \
+    ros-kilted-tf2-ros \
+    ros-kilted-tf2-eigen \
+    ros-kilted-tf2-geometry-msgs \
     # Grid map
-    ros-jazzy-grid-map-core \
-    ros-jazzy-grid-map-ros \
-    ros-jazzy-grid-map-msgs \
+    ros-kilted-grid-map-core \
+    ros-kilted-grid-map-ros \
+    ros-kilted-grid-map-msgs \
     # Diagnostics
-    ros-jazzy-diagnostic-msgs \
-    ros-jazzy-diagnostic-updater \
+    ros-kilted-diagnostic-msgs \
+    ros-kilted-diagnostic-updater \
     # Foxglove Bridge (WebSocket bridge for GUI and Foxglove Studio)
-    ros-jazzy-foxglove-bridge \
+    ros-kilted-foxglove-bridge \
     # u-blox and RTCM message definitions (for foxglove_bridge schema resolution)
-    ros-jazzy-ublox-msgs \
-    ros-jazzy-nmea-msgs \
-    ros-jazzy-rtcm-msgs \
+    ros-kilted-ublox-msgs \
+    ros-kilted-nmea-msgs \
+    ros-kilted-rtcm-msgs \
     # tinyxml2 (required at runtime by BehaviorTree.CPP)
     libtinyxml2-dev \
     # Topic tools (relay, throttle — used in simulation for topic remapping)
-    ros-jazzy-topic-tools \
+    ros-kilted-topic-tools \
     # Docking (opennav_docking — dock/undock action server)
     # DockRobot/UndockRobot actions are in nav2_msgs (already installed).
     # The docking_server executable is in opennav_docking.
-    ros-jazzy-opennav-docking \
+    ros-kilted-opennav-docking \
     # Rotation shim controller for transit navigation
-    ros-jazzy-nav2-rotation-shim-controller \
+    ros-kilted-nav2-rotation-shim-controller \
     # Nav2 core headers (FTC controller plugin depends on nav2_core)
-    ros-jazzy-nav2-core \
-    ros-jazzy-nav2-util \
+    ros-kilted-nav2-core \
+    ros-kilted-nav2-util \
     # Nav2 msgs (CostmapFilterInfo for costmap filters)
-    ros-jazzy-nav2-msgs \
+    ros-kilted-nav2-msgs \
     # Simulation bridge (needed at runtime for ros_gz_bridge topic bridging)
-    ros-jazzy-ros-gz-sim \
-    ros-jazzy-ros-gz-bridge \
+    ros-kilted-ros-gz-sim \
+    ros-kilted-ros-gz-bridge \
     # DDS middleware — Cyclone DDS is more reliable than FastRTPS on ARM
     # (no shared memory, no stale /dev/shm segments, better service discovery)
-    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-kilted-rmw-cyclonedds-cpp \
     # Utilities
     python3-argcomplete \
  && rm -rf /var/lib/apt/lists/*
@@ -86,8 +85,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-colcon-common-extensions \
     python3-rosdep \
     python3-vcstool \
-    ros-jazzy-ament-cmake \
-    ros-jazzy-rosidl-default-generators \
+    ros-kilted-ament-cmake \
+    ros-kilted-rosidl-default-generators \
     build-essential \
     cmake \
     git \
@@ -116,13 +115,20 @@ COPY src/mowgli_simulation/package.xml    src/mowgli_simulation/package.xml
 COPY src/mowgli_simulation/CMakeLists.txt src/mowgli_simulation/CMakeLists.txt
 COPY src/mowgli_bringup/package.xml       src/mowgli_bringup/package.xml
 COPY src/mowgli_bringup/CMakeLists.txt    src/mowgli_bringup/CMakeLists.txt
+# FusionCore (source-built sensor fusion)
+COPY src/fusioncore/fusioncore_core/package.xml    src/fusioncore/fusioncore_core/package.xml
+COPY src/fusioncore/fusioncore_core/CMakeLists.txt src/fusioncore/fusioncore_core/CMakeLists.txt
+COPY src/fusioncore/fusioncore_ros/package.xml     src/fusioncore/fusioncore_ros/package.xml
+COPY src/fusioncore/fusioncore_ros/CMakeLists.txt  src/fusioncore/fusioncore_ros/CMakeLists.txt
+COPY src/fusioncore/compass_msgs/package.xml       src/fusioncore/compass_msgs/package.xml
+COPY src/fusioncore/compass_msgs/CMakeLists.txt    src/fusioncore/compass_msgs/CMakeLists.txt
 
 # Resolve rosdep dependencies (cached until package.xml changes)
-RUN rosdep update --rosdistro jazzy \
+RUN rosdep update --rosdistro kilted \
  && rosdep install \
       --from-paths src \
       --ignore-src \
-      --rosdistro jazzy \
+      --rosdistro kilted \
       -y \
  || true
 
@@ -137,7 +143,7 @@ FROM deps AS build-interfaces
 COPY src/mowgli_interfaces/ src/mowgli_interfaces/
 
 RUN /bin/bash -c "\
-    source /opt/ros/jazzy/setup.bash && \
+    source /opt/ros/kilted/setup.bash && \
     colcon build \
       --packages-select mowgli_interfaces \
       --cmake-args -DCMAKE_BUILD_TYPE=Release \
@@ -155,11 +161,19 @@ ARG BUILD_TYPE=Release
 # Now copy the rest of the source tree
 COPY src/ src/
 
+# FusionCore monorepo has a top-level CMakeLists.txt that colcon treats as a
+# single cmake package, shadowing the sub-packages. Symlink sub-packages to
+# workspace root so colcon discovers them individually.
+RUN ln -sf fusioncore/fusioncore_core src/fusioncore_core \
+ && ln -sf fusioncore/fusioncore_ros  src/fusioncore_ros \
+ && ln -sf fusioncore/compass_msgs    src/compass_msgs
+
 # Build all packages (mowgli_interfaces is already built and cached)
 RUN /bin/bash -c "\
-    source /opt/ros/jazzy/setup.bash && \
+    source /opt/ros/kilted/setup.bash && \
     source install/setup.bash && \
     colcon build \
+      --packages-ignore fusioncore fusioncore_gazebo \
       --cmake-args -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTING=OFF \
       --parallel-workers \$(nproc) \
       --event-handlers console_cohesion+ \
@@ -167,7 +181,7 @@ RUN /bin/bash -c "\
 
 # Run unit tests (non-blocking)
 RUN /bin/bash -c "\
-    source /opt/ros/jazzy/setup.bash && \
+    source /opt/ros/kilted/setup.bash && \
     source install/setup.bash && \
     colcon test \
       --ctest-args -L 'gtest' --output-on-failure \
@@ -220,10 +234,10 @@ FROM runtime AS simulation
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Gazebo Harmonic comes via ros-jazzy-ros-gz-sim (Jazzy default pairing)
-    ros-jazzy-ros-gz-sim \
-    ros-jazzy-ros-gz-bridge \
-    ros-jazzy-ros-gz-interfaces \
+    # Gazebo Harmonic comes via ros-kilted-ros-gz-sim (Jazzy default pairing)
+    ros-kilted-ros-gz-sim \
+    ros-kilted-ros-gz-bridge \
+    ros-kilted-ros-gz-interfaces \
     # Headless rendering (sensors need a virtual display when no GPU)
     xvfb \
     # VNC + lightweight desktop for Gazebo GUI access from macOS

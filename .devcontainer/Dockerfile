@@ -8,7 +8,7 @@
 # Gazebo runs headless (CPU rendering) — connect Foxglove Studio to
 # ws://localhost:8765 for visualization.
 # =============================================================================
-FROM ros:jazzy-ros-base
+FROM ros:kilted-ros-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -17,65 +17,64 @@ ARG DEBIAN_FRONTEND=noninteractive
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # ── Navigation ──
-    ros-jazzy-nav2-bringup \
-    ros-jazzy-nav2-bt-navigator \
-    ros-jazzy-nav2-controller \
-    ros-jazzy-nav2-planner \
-    ros-jazzy-nav2-behaviors \
-    ros-jazzy-nav2-regulated-pure-pursuit-controller \
-    ros-jazzy-nav2-smac-planner \
-    ros-jazzy-nav2-costmap-2d \
-    ros-jazzy-nav2-map-server \
-    ros-jazzy-nav2-lifecycle-manager \
-    ros-jazzy-nav2-waypoint-follower \
-    ros-jazzy-nav2-velocity-smoother \
-    ros-jazzy-nav2-rotation-shim-controller \
-    ros-jazzy-nav2-core \
-    ros-jazzy-nav2-util \
-    ros-jazzy-nav2-msgs \
-    # ── SLAM and localization ──
-    ros-jazzy-slam-toolbox \
-    ros-jazzy-robot-localization \
+    ros-kilted-nav2-bringup \
+    ros-kilted-nav2-bt-navigator \
+    ros-kilted-nav2-controller \
+    ros-kilted-nav2-planner \
+    ros-kilted-nav2-behaviors \
+    ros-kilted-nav2-regulated-pure-pursuit-controller \
+    ros-kilted-nav2-smac-planner \
+    ros-kilted-nav2-costmap-2d \
+    ros-kilted-nav2-map-server \
+    ros-kilted-nav2-lifecycle-manager \
+    ros-kilted-nav2-waypoint-follower \
+    ros-kilted-nav2-velocity-smoother \
+    ros-kilted-nav2-rotation-shim-controller \
+    ros-kilted-nav2-core \
+    ros-kilted-nav2-util \
+    ros-kilted-nav2-msgs \
+    # ── SLAM (FusionCore is built from source in the workspace) ──
+    ros-kilted-slam-toolbox \
     # ── DDS ──
-    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-kilted-rmw-cyclonedds-cpp \
     # ── Docking ──
-    ros-jazzy-opennav-docking \
+    ros-kilted-opennav-docking \
     # ── Motion control ──
-    ros-jazzy-twist-mux \
-    ros-jazzy-topic-tools \
+    ros-kilted-twist-mux \
+    ros-kilted-topic-tools \
     # ── Behavior trees ──
-    ros-jazzy-behaviortree-cpp \
+    ros-kilted-behaviortree-cpp \
     # ── Robot description / TF ──
-    ros-jazzy-xacro \
-    ros-jazzy-robot-state-publisher \
-    ros-jazzy-joint-state-publisher \
-    ros-jazzy-tf2-ros \
-    ros-jazzy-tf2-eigen \
-    ros-jazzy-tf2-geometry-msgs \
+    ros-kilted-xacro \
+    ros-kilted-robot-state-publisher \
+    ros-kilted-joint-state-publisher \
+    ros-kilted-tf2-ros \
+    ros-kilted-tf2-eigen \
+    ros-kilted-tf2-geometry-msgs \
     # ── Grid map ──
-    ros-jazzy-grid-map-core \
-    ros-jazzy-grid-map-ros \
-    ros-jazzy-grid-map-msgs \
+    ros-kilted-grid-map-core \
+    ros-kilted-grid-map-ros \
+    ros-kilted-grid-map-msgs \
     # ── Diagnostics ──
-    ros-jazzy-diagnostic-msgs \
-    ros-jazzy-diagnostic-updater \
+    ros-kilted-diagnostic-msgs \
+    ros-kilted-diagnostic-updater \
     # ── Bridges ──
-    ros-jazzy-foxglove-bridge \
-    ros-jazzy-rosbridge-suite \
+    ros-kilted-foxglove-bridge \
+    ros-kilted-rosbridge-suite \
     # ── Message definitions ──
-    ros-jazzy-ublox-msgs \
-    ros-jazzy-nmea-msgs \
-    ros-jazzy-rtcm-msgs \
+    ros-kilted-ublox-msgs \
+    ros-kilted-nmea-msgs \
+    ros-kilted-rtcm-msgs \
     # ── Gazebo Harmonic (headless simulation) ──
-    ros-jazzy-ros-gz-sim \
-    ros-jazzy-ros-gz-bridge \
-    ros-jazzy-ros-gz-interfaces \
+    ros-kilted-ros-gz-sim \
+    ros-kilted-ros-gz-bridge \
+    ros-kilted-ros-gz-interfaces \
     # ── Build tools ──
     python3-colcon-common-extensions \
     python3-rosdep \
     python3-vcstool \
-    ros-jazzy-ament-cmake \
-    ros-jazzy-rosidl-default-generators \
+    ros-kilted-ament-cmake \
+    ros-kilted-rosidl-default-generators \
     build-essential \
     cmake \
     git \
@@ -106,7 +105,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ---------------------------------------------------------------------------
 # 2. rosdep init (needed for resolving deps on first build)
 # ---------------------------------------------------------------------------
-RUN rosdep update --rosdistro jazzy || true
+RUN rosdep update --rosdistro kilted || true
 
 # ---------------------------------------------------------------------------
 # 3. Workspace directory
@@ -116,7 +115,7 @@ WORKDIR /ros2_ws
 # ---------------------------------------------------------------------------
 # 4. Environment setup — auto-source ROS2 + workspace in every shell
 # ---------------------------------------------------------------------------
-RUN echo 'source /opt/ros/jazzy/setup.bash' >> /etc/bash.bashrc && \
+RUN echo 'source /opt/ros/kilted/setup.bash' >> /etc/bash.bashrc && \
     echo '[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash' >> /etc/bash.bashrc && \
     echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp' >> /etc/bash.bashrc && \
     echo 'export RCUTILS_COLORIZED_OUTPUT=1' >> /etc/bash.bashrc

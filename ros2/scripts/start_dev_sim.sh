@@ -14,7 +14,7 @@ VNC_PORT="${VNC_PORT:-5901}"
 NOVNC_PORT="${NOVNC_PORT:-6080}"
 VNC_RESOLUTION="${VNC_RESOLUTION:-1280x720}"
 
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/kilted/setup.bash
 
 # ---- Build workspace if install tree is empty or stale ----------------------
 if [ ! -f /ros2_ws/install/setup.bash ]; then

@@ -417,7 +417,7 @@ auto_detect_position() {
   local fix_data="" lat="" lon=""
   local attempt=0
   while [[ $attempt -lt 12 ]]; do
-    fix_data=$(docker exec mowgli-ros2 bash -c "source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && timeout 5 ros2 topic echo /gps/fix --once 2>/dev/null" 2>/dev/null || true)
+    fix_data=$(docker exec mowgli-ros2 bash -c "source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && timeout 5 ros2 topic echo /gps/fix --once 2>/dev/null" 2>/dev/null || true)
     lat=$(echo "$fix_data" | grep "latitude:" | awk '{print $2}')
     lon=$(echo "$fix_data" | grep "longitude:" | awk '{print $2}')
 
@@ -440,7 +440,7 @@ auto_detect_position() {
   local is_charging="false"
   if docker inspect -f '{{.State.Status}}' mowgli-ros2 2>/dev/null | grep -q running; then
     local status_data
-    status_data=$(docker exec mowgli-ros2 bash -c "source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && timeout 5 ros2 topic echo /hardware_bridge/status --once 2>/dev/null" 2>/dev/null || true)
+    status_data=$(docker exec mowgli-ros2 bash -c "source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && timeout 5 ros2 topic echo /hardware_bridge/status --once 2>/dev/null" 2>/dev/null || true)
     is_charging=$(echo "$status_data" | grep "is_charging:" | awk '{print $2}')
   fi
 

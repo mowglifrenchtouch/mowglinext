@@ -9,7 +9,7 @@ Validates the full mowing cycle WITHOUT LiDAR:
   4. Dock back when complete
 
 No obstacle avoidance test — without LiDAR there is no obstacle detection.
-GPS-only localization: ekf_map publishes map→odom TF using GPS+IMU+wheel odometry.
+GPS-only localization: FusionCore publishes odom→base_footprint TF using GPS+IMU+wheel odometry.
 
 Usage:
   # Launch simulation first:
@@ -83,8 +83,8 @@ class NoLidarE2ETestNode(Node):
         self.current_phase = TestPhase.WAITING
         self.phase_start_time = time.time()
 
-        # EKF pose (map frame) for path deviation — more accurate than odom
-        self.ekf_map_pose = None
+        # Fused pose (odom frame, GPS-anchored) for path deviation
+        self.fusion_pose = None
 
         # QoS profiles
         sensor_qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -108,8 +108,8 @@ class NoLidarE2ETestNode(Node):
         )
         self.create_subscription(
             Odometry,
-            "/mowgli/localization/odom_map",
-            self._on_ekf_map,
+            "/fusion/odom",
+            self._on_fusion_odom,
             sensor_qos,
         )
         self.create_subscription(
@@ -217,17 +217,17 @@ class NoLidarE2ETestNode(Node):
         ):
             self.metrics.robot_poses.append((t, x, y, yaw))
 
-    def _on_ekf_map(self, msg: Odometry):
+    def _on_fusion_odom(self, msg: Odometry):
         """EKF map-frame pose — used for path deviation measurement."""
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
-        self.ekf_map_pose = (x, y)
+        self.fusion_pose = (x, y)
 
         t = time.time() - self.metrics.start_time
         if (
             self.coverage_path
             and self.current_phase == TestPhase.MOWING
-            and self.ekf_map_pose
+            and self.fusion_pose
         ):
             min_dist = self._min_distance_to_path(x, y)
             self.metrics.path_deviations.append((t, min_dist))
@@ -297,8 +297,8 @@ class NoLidarE2ETestNode(Node):
                 f"Robot pose: ({x:.2f}, {y:.2f}, yaw={math.degrees(yaw):.1f})"
             )
 
-        if self.ekf_map_pose:
-            mx, my = self.ekf_map_pose
+        if self.fusion_pose:
+            mx, my = self.fusion_pose
             report.append(f"EKF map pose: ({mx:.2f}, {my:.2f})")
 
         if devs:
@@ -455,7 +455,7 @@ def main():
     rclpy.init()
     node = NoLidarE2ETestNode()
 
-    # Wait for TF chain (ekf_odom + ekf_map must be publishing)
+    # Wait for TF chain (FusionCore + SLAM must be publishing)
     if not wait_for_tf(node, timeout=120.0):
         node.get_logger().error("TF chain never became available. Aborting.")
         node.destroy_node()

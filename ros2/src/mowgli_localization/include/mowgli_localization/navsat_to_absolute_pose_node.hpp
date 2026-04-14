@@ -34,6 +34,7 @@
 #pragma once
 
 #include <cmath>
+#include <memory>
 
 #include "geometry_msgs/msg/pose_with_covariance.hpp"
 #include "mowgli_interfaces/msg/absolute_pose.hpp"

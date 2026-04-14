@@ -21,16 +21,15 @@ Complete Mowgli robot mower system launch.
 
 Brings up all subsystems:
   1. mowgli.launch.py        — hardware bridge, RSP, twist_mux
-  2. navigation.launch.py    — SLAM, dual EKF, Nav2
+  2. navigation.launch.py    — SLAM, FusionCore, Nav2
   3. Behavior tree node       — mowgli_behavior
   4. Map server               — mowgli_map
-  5. Coverage server (optional) — opennav_coverage
-  6. Wheel odometry            — mowgli_localization
-  7. GPS pose converter        — mowgli_localization
-  8. Localization monitor      — mowgli_localization
-  9. Diagnostics               — mowgli_monitoring
-  10. MQTT bridge (optional)   — mowgli_monitoring
-  11. foxglove_bridge — WebSocket bridge for GUI and Foxglove Studio
+  5. Wheel odometry            — mowgli_localization
+  6. NavSat converter          — mowgli_localization (GPS for GUI/BT)
+  7. Localization monitor      — mowgli_localization
+  8. Diagnostics               — mowgli_monitoring
+  9. MQTT bridge (optional)   — mowgli_monitoring
+  10. foxglove_bridge — WebSocket bridge for GUI and Foxglove Studio
 """
 
 import os
@@ -213,8 +212,12 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
-    # 7a. NavSatFix → AbsolutePose converter (ublox_gps bridge)
+    # 7a. NavSat → AbsolutePose converter (for GUI + BT)
+    # FusionCore takes /gps/fix directly; this node converts to
+    # /gps/absolute_pose for the GUI and behavior tree.
     # ------------------------------------------------------------------
+    datum_lat = float(robot_params.get("datum_lat", 0.0))
+    datum_lon = float(robot_params.get("datum_lon", 0.0))
     navsat_converter_node = Node(
         package="mowgli_localization",
         executable="navsat_to_absolute_pose_node",
@@ -222,42 +225,7 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[
             localization_params,
-            {
-                "datum_lat": robot_params.get("datum_lat", 0.0),
-                "datum_lon": robot_params.get("datum_lon", 0.0),
-            },
-            {"use_sim_time": use_sim_time},
-        ],
-    )
-
-    # ------------------------------------------------------------------
-    # 7b. GPS pose converter (AbsolutePose → PoseWithCovarianceStamped)
-    # ------------------------------------------------------------------
-    gps_pose_converter_node = Node(
-        package="mowgli_localization",
-        executable="gps_pose_converter_node",
-        name="gps_pose_converter_node",
-        output="screen",
-        parameters=[
-            localization_params,
-            {"use_sim_time": use_sim_time},
-        ],
-    )
-
-    # ------------------------------------------------------------------
-    # 7c. SLAM heading extractor
-    # ------------------------------------------------------------------
-    # Extracts yaw from SLAM's slam_map→odom TF and publishes it as a
-    # PoseWithCovarianceStamped for the EKF to fuse. Provides absolute
-    # heading from LiDAR map matching — works without magnetometer,
-    # when stationary, and under canopy.
-    slam_heading_node = Node(
-        condition=IfCondition(use_lidar),
-        package="mowgli_localization",
-        executable="slam_heading_node",
-        name="slam_heading",
-        output="screen",
-        parameters=[
+            {"datum_lat": datum_lat, "datum_lon": datum_lon},
             {"use_sim_time": use_sim_time},
         ],
     )
@@ -377,12 +345,12 @@ def generate_launch_description() -> LaunchDescription:
             map_server_node,
             obstacle_tracker_node,
             wheel_odometry_node,
-            navsat_converter_node,
-            gps_pose_converter_node,
-            slam_heading_node,
+            navsat_converter_node,  # publishes /gps/absolute_pose for GUI + BT
             localization_monitor_node,
             diagnostics_node,
             mqtt_bridge_node,
             foxglove_bridge_node,
+            # Dock heading is published by hardware_bridge at 1 Hz while
+            # charging (/gnss/heading). No separate launch action needed.
         ]
     )

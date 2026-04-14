@@ -25,8 +25,8 @@ PARALLEL_WORKERS=$(nproc)
 
 cd "${WORKSPACE}"
 
-# shellcheck source=/opt/ros/jazzy/setup.bash
-source /opt/ros/${ROS_DISTRO:-jazzy}/setup.bash
+# shellcheck source=/opt/ros/kilted/setup.bash
+source /opt/ros/${ROS_DISTRO:-kilted}/setup.bash
 
 echo "======================================================="
 echo " Mowgli ROS2 workspace build"

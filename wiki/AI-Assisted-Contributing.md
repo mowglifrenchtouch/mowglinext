@@ -50,7 +50,7 @@ If you have the [Everything Claude Code](https://github.com/anthropics/claude-co
 
 **DON'T:**
 - Blindly accept AI-generated code without reviewing it
-- Let AI add dependencies without checking they exist in ROS2 Jazzy
+- Let AI add dependencies without checking they exist in ROS2 Kilted
 - Trust AI with safety-critical blade control logic
 - Submit AI-generated code that you don't understand
 
@@ -60,17 +60,17 @@ These are real problems we've seen from AI-generated contributions:
 
 #### 1. Wrong ROS2 Distro
 
-AI models often generate code for ROS2 Humble or Foxy instead of Jazzy:
+AI models often generate code for ROS2 Humble or Foxy instead of Kilted:
 
 ```cpp
 // WRONG — Humble-era pattern
 auto node = rclcpp::Node::make_shared("my_node");
 
-// RIGHT — Jazzy pattern (same API, but check package availability)
-// Verify the package exists: apt list ros-jazzy-*
+// RIGHT — Kilted pattern (same API, but check package availability)
+// Verify the package exists: apt list ros-kilted-*
 ```
 
-**Check:** If AI suggests a ROS2 package, verify it exists for Jazzy: `apt list ros-jazzy-<package>`
+**Check:** If AI suggests a ROS2 package, verify it exists for Kilted: `apt list ros-kilted-<package>`
 
 #### 2. FastRTPS Instead of Cyclone DDS
 
@@ -84,9 +84,9 @@ RMW_IMPLEMENTATION: rmw_fastrtps_cpp
 RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
 ```
 
-#### 3. Publishing TF from EKF
+#### 3. SLAM as TF Authority
 
-AI may suggest enabling `publish_tf: true` on ekf_map. **Don't.** SLAM Toolbox is the sole TF authority for map→odom.
+AI may suggest having multiple nodes publish the same TF transforms. **Don't.** SLAM Toolbox is the sole TF authority for `map→odom` (20 Hz via scan matching). FusionCore publishes `odom→base_footprint` only.
 
 #### 4. MPPI Controller for Coverage
 

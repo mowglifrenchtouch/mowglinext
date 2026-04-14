@@ -198,6 +198,15 @@ void DiagnosticsNode::create_subscriptions()
                                                      on_odom(msg);
                                                    });
 
+  sub_fusion_odom_ =
+      create_subscription<nav_msgs::msg::Odometry>("/fusion/odom",
+                                                   sensor_qos,
+                                                   [this](
+                                                       nav_msgs::msg::Odometry::ConstSharedPtr msg)
+                                                   {
+                                                     on_fusion_odom(msg);
+                                                   });
+
   sub_gps_ = create_subscription<sensor_msgs::msg::NavSatFix>(
       "/gps/fix",
       sensor_qos,
@@ -260,6 +269,25 @@ void DiagnosticsNode::on_odom(nav_msgs::msg::Odometry::ConstSharedPtr /*msg*/)
   state_.odom_ever_received = true;
 }
 
+void DiagnosticsNode::on_fusion_odom(nav_msgs::msg::Odometry::ConstSharedPtr msg)
+{
+  const auto t = now();
+  state_.last_fusion_odom = *msg;
+  state_.last_fusion_time = t;
+  state_.fusion_ever_received = true;
+  state_.fusion_msg_count++;
+
+  // Compute rate over a 5-second sliding window
+  const double window = (t - state_.fusion_count_window_start).seconds();
+  state_.fusion_count_window++;
+  if (window >= 5.0)
+  {
+    state_.fusion_rate_hz = static_cast<double>(state_.fusion_count_window) / window;
+    state_.fusion_count_window = 0;
+    state_.fusion_count_window_start = t;
+  }
+}
+
 void DiagnosticsNode::on_gps(sensor_msgs::msg::NavSatFix::ConstSharedPtr msg)
 {
   state_.last_gps = *msg;
@@ -285,6 +313,7 @@ void DiagnosticsNode::publish_diagnostics()
   array.status.push_back(check_lidar(t));
   array.status.push_back(check_gps(t));
   array.status.push_back(check_odometry(t));
+  array.status.push_back(check_fusioncore(t));
   array.status.push_back(check_motors());
 
   pub_diagnostics_->publish(array);
@@ -499,6 +528,82 @@ diagnostic_msgs::msg::DiagnosticStatus DiagnosticsNode::check_odometry(
   status.level = classify_freshness(age_sec, false, freshness_warn_sec_, freshness_error_sec_);
   status.message = "Last odometry age: " + fmt_float(age_sec, 1) + "s";
   status.values.push_back(kv("age_sec", fmt_float(age_sec, 2)));
+
+  return status;
+}
+
+diagnostic_msgs::msg::DiagnosticStatus DiagnosticsNode::check_fusioncore(
+    const rclcpp::Time& now) const
+{
+  diagnostic_msgs::msg::DiagnosticStatus status;
+  status.name = "FusionCore";
+  status.hardware_id = "fusioncore/odom";
+
+  if (!state_.fusion_ever_received)
+  {
+    status.level = DiagLevel::ERROR;
+    status.message = "No /fusion/odom received";
+    return status;
+  }
+
+  const double age_sec = (now - state_.last_fusion_time).seconds();
+  status.level = classify_freshness(age_sec, false, freshness_warn_sec_, freshness_error_sec_);
+
+  const auto& odom = *state_.last_fusion_odom;
+  const auto& pos = odom.pose.pose.position;
+  const auto& q = odom.pose.pose.orientation;
+
+  // Extract roll, pitch, yaw from quaternion
+  const double sinr = 2.0 * (q.w * q.x + q.y * q.z);
+  const double cosr = 1.0 - 2.0 * (q.x * q.x + q.y * q.y);
+  const double roll_deg = std::atan2(sinr, cosr) * 180.0 / M_PI;
+
+  const double sinp = 2.0 * (q.w * q.y - q.z * q.x);
+  const double pitch_deg =
+      (std::abs(sinp) >= 1.0 ? std::copysign(90.0, sinp) : std::asin(sinp) * 180.0 / M_PI);
+
+  const double siny = 2.0 * (q.w * q.z + q.x * q.y);
+  const double cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+  const double yaw_deg = std::atan2(siny, cosy) * 180.0 / M_PI;
+
+  // Check flat constraint (roll/pitch should be near zero for ground robot)
+  const bool flat_ok = std::abs(roll_deg) < 5.0 && std::abs(pitch_deg) < 5.0;
+  // Check z-drift (should be near zero in odom frame)
+  const bool z_ok = std::abs(pos.z) < 2.0;
+
+  if (status.level == DiagLevel::OK)
+  {
+    if (!flat_ok)
+    {
+      status.level = DiagLevel::WARN;
+      status.message = "Roll/pitch drift detected";
+    }
+    else if (!z_ok)
+    {
+      status.level = DiagLevel::WARN;
+      status.message = "Z-drift: " + fmt_float(pos.z, 2) + "m";
+    }
+    else
+    {
+      status.message = "OK (" + fmt_float(state_.fusion_rate_hz, 1) + " Hz)";
+    }
+  }
+  else
+  {
+    status.message = "Stale (" + fmt_float(age_sec, 1) + "s ago)";
+  }
+
+  status.values.push_back(kv("rate_hz", fmt_float(state_.fusion_rate_hz, 1)));
+  status.values.push_back(kv("age_sec", fmt_float(age_sec, 2)));
+  status.values.push_back(kv("x_m", fmt_float(pos.x, 3)));
+  status.values.push_back(kv("y_m", fmt_float(pos.y, 3)));
+  status.values.push_back(kv("z_m", fmt_float(pos.z, 3)));
+  status.values.push_back(kv("roll_deg", fmt_float(roll_deg, 2)));
+  status.values.push_back(kv("pitch_deg", fmt_float(pitch_deg, 2)));
+  status.values.push_back(kv("yaw_deg", fmt_float(yaw_deg, 2)));
+  status.values.push_back(kv("flat_ok", flat_ok ? "true" : "false"));
+  status.values.push_back(kv("z_drift_ok", z_ok ? "true" : "false"));
+  status.values.push_back(kv("msg_count", std::to_string(state_.fusion_msg_count)));
 
   return status;
 }

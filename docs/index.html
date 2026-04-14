@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MowgliNext — Open-Source ROS2 Robot Mower</title>
-  <meta name="description" content="Autonomous robot mower built on ROS2 Jazzy with LiDAR SLAM, RTK-GPS, behavior trees, and coverage planning. Open source, community driven.">
+  <meta name="description" content="Autonomous robot mower built on ROS2 Kilted with LiDAR SLAM, RTK-GPS, behavior trees, and coverage planning. Open source, community driven.">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -155,7 +155,7 @@
       <div class="flow-step">
         <div class="flow-icon">🔄</div>
         <h3>Mow</h3>
-        <p>The B-RV planner generates efficient stripe patterns. The robot follows them precisely, tracking progress and replanning around obstacles.</p>
+        <p>Cell-based strip coverage generates efficient mowing patterns. The robot follows them with sub-centimeter accuracy, tracking progress and replanning around obstacles in real time.</p>
       </div>
     </div>
   </div>
@@ -169,14 +169,14 @@
 
       <div class="feature-card">
         <div class="icon">🗺️</div>
-        <h3>LiDAR SLAM</h3>
-        <p>Real-time mapping and localization using SLAM Toolbox, optimized for outdoor environments. No pre-built maps needed.</p>
+        <h3>LiDAR SLAM &amp; Map Management</h3>
+        <p>Real-time mapping with SLAM Toolbox, optimized for outdoor environments. Save, load, and delete maps from the web UI. No pre-built maps needed.</p>
       </div>
 
       <div class="feature-card">
         <div class="icon">📡</div>
-        <h3>RTK-GPS Fusion</h3>
-        <p>Dual Extended Kalman Filter fusing wheel odometry, IMU, and RTK-GPS for centimeter-accurate outdoor positioning.</p>
+        <h3>FusionCore Sensor Fusion</h3>
+        <p>Modern single-UKF combining GPS, IMU, and wheel odometry into one seamless positioning system. Replaces older multi-filter approaches with a unified, robust localization pipeline.</p>
       </div>
 
       <div class="feature-card">
@@ -199,8 +199,20 @@
 
       <div class="feature-card">
         <div class="icon">🌐</div>
-        <h3>Web GUI</h3>
-        <p>React + Go web interface for configuration, map editing, area management, and real-time monitoring from any device.</p>
+        <h3>Web GUI &amp; Diagnostics</h3>
+        <p>React + Go web interface for configuration, map editing, area management. Real-time health dashboard shows GPS, LiDAR, battery, and motion status from any device.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="icon">🗺️</div>
+        <h3>Multi-Area Mowing</h3>
+        <p>Record multiple mowing areas from your phone. The robot mows them all sequentially, optimizing paths across zones. Save unlimited area layouts.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="icon">📊</div>
+        <h3>Statistics &amp; History</h3>
+        <p>Automatic session recording with aggregate stats: area covered, time spent, blade hours, battery cycles. Review mowing history anytime.</p>
       </div>
 
       <div class="feature-card">
@@ -227,7 +239,7 @@
     │                                  │
     ▼                                  ▼
 ┌──────────────────────────────────────────────────────┐
-│  <span class="highlight">ROS2 Jazzy Stack</span>                                     │
+│  <span class="highlight">ROS2 Kilted Stack</span>                                     │
 │                                                      │
 │  ┌─────────────┐  ┌──────────┐  ┌─────────────────┐ │
 │  │  <span class="highlight">Nav2</span>        │  │  <span class="highlight">SLAM</span>    │  │  <span class="highlight">Behavior Tree</span>  │ │
@@ -236,9 +248,9 @@
 │  │  coverage    │  │          │  │                 │ │
 │  └─────────────┘  └──────────┘  └─────────────────┘ │
 │  ┌─────────────┐  ┌──────────┐  ┌─────────────────┐ │
-│  │  <span class="highlight">Coverage</span>    │  │ <span class="highlight">Localiz.</span> │  │  <span class="highlight">Hardware</span>       │ │
-│  │  Planner     │  │ Dual EKF │  │  Bridge         │ │
-│  │  (F2C v2)    │  │ GPS+IMU  │  │  COBS serial    │ │
+│  │  <span class="highlight">Coverage</span>    │  │<span class="highlight">FusionCore</span>│  │  <span class="highlight">Hardware</span>       │ │
+│  │  Planner     │  │ Single UKF │  │  Bridge         │ │
+│  │  (cell-based)│  │GPS+IMU+Odometry│  │  COBS serial    │ │
 │  └─────────────┘  └──────────┘  └────────┬────────┘ │
 └───────────────────────────────────────────┼──────────┘
           │                │                │
@@ -523,7 +535,7 @@
     <p>
       MowgliNext is <a href="https://github.com/cedbossneo/mowglinext/blob/main/LICENSE">GPLv3 licensed</a> — same as OpenMower, because open source is how we all win.
       <br>
-      Built on <a href="https://docs.ros.org/en/jazzy/">ROS2 Jazzy</a>,
+      Built on <a href="https://docs.ros.org/en/kilted/">ROS2 Kilted</a>,
       <a href="https://docs.nav2.org/">Nav2</a>, and
       <a href="https://www.boost.org/">Boost</a>.
     </p>

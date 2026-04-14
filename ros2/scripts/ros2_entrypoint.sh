@@ -2,7 +2,7 @@
 # =============================================================================
 # ros2_entrypoint.sh
 #
-# Container entrypoint. Sources ROS2 Jazzy and the workspace overlay before
+# Container entrypoint. Sources ROS2 Kilted and the workspace overlay before
 # exec'ing whatever command was passed as CMD (or via `docker run <cmd>`).
 #
 # NOTE: Make this script executable on the host before building:
@@ -11,8 +11,8 @@
 set -e
 
 # Source ROS2 base installation
-# shellcheck source=/opt/ros/jazzy/setup.bash
-source /opt/ros/jazzy/setup.bash
+# shellcheck source=/opt/ros/kilted/setup.bash
+source /opt/ros/kilted/setup.bash
 
 # Source the workspace overlay if it has been built (not present in dev before
 # first colcon build, but always present in runtime/simulation images).

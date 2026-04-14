@@ -2,7 +2,7 @@
 
 Complete guide to all configuration files and parameters in the Mowgli ROS2 system.
 
-This documentation is for ROS2 Jazzy with Gazebo Harmonic.
+This documentation is for ROS2 Kilted with Gazebo Harmonic.
 
 ## Overview
 
@@ -60,7 +60,7 @@ foxglove_bridge:
     # Subscribed topics (publish to all connected clients)
     subscribed_topics:
       - /scan                         # LiDAR scan
-      - /odometry/filtered_map        # Robot pose estimate
+      - /fusion/odom                  # Robot pose estimate from FusionCore
       - /costmap/costmap              # Global costmap
       - /local_costmap/costmap        # Local costmap
       - /path                         # Global plan
@@ -235,194 +235,111 @@ hardware_bridge:
 
 **File:** `src/mowgli_bringup/config/localization.yaml`
 
-**Purpose:** Tune the dual Extended Kalman Filter (EKF) for localization.
+**Purpose:** Configure FusionCore UKF for sensor fusion (wheel odometry, IMU, GPS).
 
 ### Architecture
 
-The system uses two EKF instances (from `robot_localization` package):
+The system uses **FusionCore**, a single Unscented Kalman Filter (UKF) that fuses:
+- Wheel odometry (50 Hz from wheel_odometry_node)
+- IMU data (50 Hz from imu_filter_madgwick)
+- GPS NavSatFix (10-20 Hz directly from GPS driver)
 
-1. **ekf_odom** (50 Hz)
-   - Inputs: Wheel odometry + IMU
-   - Output: `odom` → `base_link` frame
-   - Local estimation, fast update rate
+**Outputs:**
+- `/fusion/odom` (nav_msgs/Odometry) — fused state at 50 Hz
+- `/tf: odom → base_footprint` — transform at 50 Hz
 
-2. **ekf_map** (20 Hz)
-   - Inputs: Filtered odometry (from ekf_odom) + GPS
-   - Output: `map` → `odom` frame
-   - Global estimation, slower due to GPS latency
+**SLAM Toolbox** provides the `map → odom` transform (20 Hz) via scan matching. No feedback from SLAM into FusionCore.
 
-### ekf_odom Configuration
+### FusionCore Configuration
 
 ```yaml
-ekf_odom:
+fusioncore:
   ros__parameters:
-    # Update rate (Hz)
+    # Frequency (Hz)
     frequency: 50.0
 
-    # Timeout: if sensor hasn't published in this time, treat as stale
-    sensor_timeout: 0.1       # 100 ms
-
-    # 2D mode: constrain Z and roll/pitch to zero (lawn mowing is planar)
-    two_d_mode: true
-
-    # Publish TF updates (odom → base_link)
-    publish_tf: true
-
-    # Frame names
+    # Frame names (per REP-105)
     odom_frame: odom
-    base_link_frame: base_link
-    world_frame: odom         # Local frame (odom_frame is the world)
+    base_frame: base_footprint            # Robot frame for Nav2
+    map_frame: map
 
     # ─────────────────────────────────────────────────────────────
-    # Sensor configuration: wheel odometry
+    # Sensor inputs
     # ─────────────────────────────────────────────────────────────
-    odom0: /wheel_odom
-
-    # Which state dimensions to fuse from /wheel_odom
-    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
-    # We fuse only linear velocity (vx, vy) and angular velocity (vyaw)
-    odom0_config: [false, false, false,      # Position (x, y, z)
-                   false, false, false,      # Orientation (roll, pitch, yaw)
-                   true,  true,  false,     # Velocity (vx, vy, vz)
-                   false, false, true,      # Angular velocity (vroll, vpitch, vyaw)
-                   false, false, false]     # Acceleration (ax, ay, az)
-
-    odom0_queue_size: 10
-    odom0_nodelay: false
-    odom0_differential: false
-    odom0_relative: false
-
+    
+    # Wheel odometry (velocity-based fusion)
+    wheel_odometry_topic: /wheel_odom
+    
+    # IMU (orientation + angular velocity)
+    imu_topic: /imu/data
+    
+    # GPS (absolute position, NavSatFix)
+    gps_topic: /gps/fix
+    
     # ─────────────────────────────────────────────────────────────
-    # Sensor configuration: IMU (for attitude and angular velocity)
+    # Process noise (UKF motion model)
     # ─────────────────────────────────────────────────────────────
-    imu0: /imu/data
-
-    # Fuse absolute yaw (from compass/gyro fusion) and yaw rate
-    imu0_config: [false, false, false,
-                  false, false, true,       # Yaw orientation
-                  false, false, false,
-                  false, false, true,       # Yaw rate
-                  false, false, false]
-
-    imu0_queue_size: 10
-    imu0_nodelay: false
-    imu0_differential: false
-    imu0_relative: false
-    imu0_remove_gravitational_acceleration: true
-
+    # How much to trust the motion model vs. sensor updates
+    
+    process_noise_std_x: 0.05          # m, process noise for X position
+    process_noise_std_y: 0.05          # m, process noise for Y position
+    process_noise_std_theta: 0.06      # rad, process noise for yaw
+    process_noise_std_vx: 0.025        # m/s, process noise for X velocity
+    process_noise_std_vy: 0.025        # m/s, process noise for Y velocity
+    process_noise_std_vtheta: 0.02     # rad/s, process noise for yaw rate
+    
     # ─────────────────────────────────────────────────────────────
-    # Filter tuning: process noise covariance
+    # Measurement noise (sensor reliability)
     # ─────────────────────────────────────────────────────────────
-    # This is a 15×15 matrix (one variance per state dimension).
-    # Higher values = less trust in the motion model.
-    # If odometry drifts too much, increase these values.
-    # If filter ignores sensor inputs, decrease these values.
-
-    process_noise_covariance: [
-      0.05, 0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0.05, 0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0.06, 0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0.03, 0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0.03, 0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0.06, 0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0.025, 0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0.025, 0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0.04, 0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0.01, 0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0.01, 0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0.02, 0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0.01, 0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0.01, 0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0.015
-    ]
+    
+    # Wheel odometry measurement noise
+    wheel_odom_std_vx: 0.02            # m/s
+    wheel_odom_std_vy: 0.02            # m/s
+    wheel_odom_std_vtheta: 0.01        # rad/s
+    
+    # IMU measurement noise
+    imu_std_theta: 0.05                # rad (yaw from IMU)
+    imu_std_vtheta: 0.02               # rad/s (yaw rate)
+    
+    # GPS measurement noise (depends on RTK quality)
+    gps_std_x: 0.01                    # m (RTK Fixed ~1cm)
+    gps_std_y: 0.01                    # m
+    gps_outlier_threshold: 100.0       # m (reject fixes > 100m from prediction)
 ```
 
-### ekf_map Configuration
+### Tuning FusionCore
 
-```yaml
-ekf_map:
-  ros__parameters:
-    frequency: 20.0           # Slower due to GPS latency
-    sensor_timeout: 0.2       # Longer timeout window
-    two_d_mode: true
-    publish_tf: true
-
-    odom_frame: odom
-    base_link_frame: base_link
-    world_frame: map          # Global frame
-
-    # ─────────────────────────────────────────────────────────────
-    # Fuse filtered odometry from ekf_odom (full pose + velocity)
-    # ─────────────────────────────────────────────────────────────
-    odom0: /odometry/filtered_odom
-
-    odom0_config: [true,  true,  false,      # Position (x, y, z)
-                   false, false, true,       # Orientation (yaw only)
-                   true,  true,  false,     # Velocity (vx, vy)
-                   false, false, true,      # Angular velocity (vyaw)
-                   false, false, false]
-
-    odom0_queue_size: 10
-    odom0_nodelay: false
-    odom0_differential: false
-    odom0_relative: false
-
-    # ─────────────────────────────────────────────────────────────
-    # Fuse GPS pose (from gps_pose_converter_node)
-    # ─────────────────────────────────────────────────────────────
-    pose0: /gps/pose
-
-    # GPS gives us absolute X, Y position (in local ENU)
-    # But not orientation or velocity (GPS gives velocity but not reliable for 0.25 m field)
-    pose0_config: [true,  true,  false,
-                   false, false, false,
-                   false, false, false,
-                   false, false, false,
-                   false, false, false]
-
-    pose0_queue_size: 10
-    pose0_nodelay: false
-    pose0_differential: false
-    pose0_relative: false
-
-    # Process noise (looser than odom EKF due to GPS latency and variable accuracy)
-    process_noise_covariance: [
-      0.10, 0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0.10, 0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0.06, 0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0.03, 0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0.03, 0,    0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0.06, 0,     0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0.025, 0,     0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0.025, 0,    0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0.04, 0,    0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0.01, 0,    0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0.01, 0,    0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0.02, 0,    0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0.01, 0,    0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0.01, 0,
-      0,    0,    0,    0,    0,    0,    0,     0,     0,    0,    0,    0,    0,    0,    0.015
-    ]
-```
-
-### Tuning Process Noise
-
-**Concept:** Process noise represents trust in the motion model (physics).
+**Concept:** Adjust process noise and measurement noise to balance sensor trust.
 
 **If odometry drifts too much:**
-- Increase process noise covariance (e.g., 0.05 → 0.10)
-- Tells EKF "the robot isn't moving as predictably as we think"
-- Filter will rely more heavily on sensor measurements
+- Increase process noise (motion model less trusted)
+- Example: `process_noise_std_x: 0.05` → `0.10`
+- Filter will rely more on sensor measurements (IMU, GPS)
 
-**If filter ignores sensor inputs:**
-- Decrease process noise covariance (e.g., 0.05 → 0.02)
-- Tells EKF "we predict motion quite accurately"
-- Filter will trust the motion model over noisy sensor data
+**If filter jumps on sensor noise:**
+- Increase measurement noise (sensors less trusted)
+- Decrease process noise (motion model more trusted)
+- Example: `wheel_odom_std_vx: 0.02` → `0.05`
+
+**GPS outlier handling:**
+- `gps_outlier_threshold`: reject fixes > this distance from prediction
+- Typical: 100 m (accounts for initialization uncertainty)
+- Increase if robot is in GPS-denied area at startup
+- Decrease to 10-20 m in dense urban canyons
 
 **Typical values (for Mowgli):**
-- Position: 0.05–0.10 (odometry is noisy on grass)
-- Orientation: 0.03–0.06 (IMU is reasonably accurate)
-- Velocity: 0.025–0.04 (derived from position, inherits noise)
+- Position noise: 0.01 m (FusionCore fuses three sources)
+- Yaw noise: 0.05 rad (IMU + wheel differential)
+- GPS outlier: 100 m (stationary initialization)
+
+**Monitoring FusionCore Health:**
+The diagnostics system monitors FusionCore via `/fusion/odom`:
+- **Rate:** Checks for 50 Hz update frequency (warn if < 20 Hz)
+- **Position variance:** Monitors x, y covariance for convergence
+- **Orientation (yaw):** Tracks yaw angle and angular variance
+- **Z-drift detection:** Alerts if vertical variance grows uncontrolled (filter divergence)
+
+Access diagnostics at `http://<mower-ip>:4006/#/diagnostics` → FusionCore section
 
 ---
 
@@ -462,8 +379,8 @@ bt_navigator:
   ros__parameters:
     use_sim_time: false
     global_frame: map
-    robot_base_frame: base_link
-    odom_topic: /odometry/filtered_map     # Use the fused GPS-corrected odometry
+    robot_base_frame: base_footprint       # REP-105: ground contact point
+    odom_topic: /fusion/odom               # Use FusionCore fused odometry
 
     # Behavior tree execution
     bt_loop_duration: 10                   # ms per tick (100 Hz)
@@ -473,7 +390,7 @@ bt_navigator:
     default_nav_to_pose_bt_xml: "src/mowgli_bringup/config/navigate_to_pose.xml"
     default_nav_through_poses_bt_xml: ""
 
-    # Jazzy auto-loads plugins; no manual registration needed
+    # Kilted auto-loads plugins; no manual registration needed
 ```
 
 #### controller_server Configuration
@@ -499,7 +416,7 @@ controller_server:
     goal_checker_plugins: ["stopped_goal_checker", "coverage_goal_checker"]
     controller_plugins: ["FollowPath", "FollowCoveragePath"]
 
-    # Enable stamped velocity commands (Jazzy requirement)
+    # Enable stamped velocity commands (Kilted requirement)
     enable_stamped_cmd_vel: false
 
     # Progress checker: has robot moved at least 0.5 m in 10 seconds?
@@ -698,7 +615,7 @@ velocity_smoother:
     max_velocity: [0.5, 0.0, 0.8]          # [linear_x, linear_y, angular_z]
     max_accel: [0.4, 0.0, 1.0]             # Acceleration limits (m/s², rad/s²)
     max_decel: [0.4, 0.0, 1.0]             # Deceleration limits
-    odom_topic: "/odometry/filtered_map"
+    odom_topic: "/fusion/odom"
     cmd_vel_in_topic: "/cmd_vel"
     cmd_vel_out_topic: "/cmd_vel_smoothed"
 ```
@@ -1001,7 +918,7 @@ rviz2 -d src/mowgli_bringup/config/mowgli.rviz
 
 # Check diagnostics
 ros2 topic echo /localization/status
-ros2 topic echo /odometry/filtered_map
+ros2 topic echo /fusion/odom
 ```
 
 ### Step 4: Iterate
@@ -1016,8 +933,8 @@ Rerun with adjusted parameters, observe results, adjust again.
 |-----------|---------|------|-------|
 | `serial_port` | `/dev/mowgli` | – | any `/dev/tty*` |
 | `baud_rate` | 115200 | baud | 9600–230400 |
-| `ekf_odom` frequency | 50.0 | Hz | 10–100 |
-| `ekf_map` frequency | 20.0 | Hz | 5–50 |
+| `FusionCore` frequency | 50.0 | Hz | 30–100 |
+| `SLAM` frequency | 20.0 | Hz | 5–50 |
 | `controller_frequency` | 10.0 | Hz | 5–50 |
 | `desired_linear_vel` | 0.3 | m/s | 0.1–1.0 |
 | `lookahead_dist` | 0.6 | m | 0.2–1.5 |

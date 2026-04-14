@@ -52,7 +52,7 @@ echo "========================================================"
 echo ""
 
 # Source ROS2 and workspace
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/kilted/setup.bash
 if [ -f /ros2_ws/install/setup.bash ]; then
     source /ros2_ws/install/setup.bash
 fi

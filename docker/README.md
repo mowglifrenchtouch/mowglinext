@@ -1,13 +1,13 @@
-# Mowgli Docker — v3 (ROS2 Jazzy)
+# Mowgli Docker — v3 (ROS2 Kilted)
 
 Docker Compose deployment for the **Mowgli** open-source robot mower.
 v3 is a ground-up rewrite: the ROS1 Noetic stack has been replaced by a
-single `mowgli_ros2` container running **ROS2 Jazzy**, Nav2, SLAM Toolbox,
+single `mowgli_ros2` container running **ROS2 Kilted**, Nav2, SLAM Toolbox,
 and a full behavior-tree coverage planner.
 
 ## What changed from v2
 
-| v2 (ROS1 Noetic) | v3 (ROS2 Jazzy) |
+| v2 (ROS1 Noetic) | v3 (ROS2 Kilted) |
 |---|---|
 | `roscore` | Removed — DDS has no master |
 | `rosserial` | Removed — hardware bridge is inside `mowgli_ros2` |
@@ -539,7 +539,7 @@ Check the live fix quality from inside the container:
 
 ```bash
 docker exec mowgli-gps bash -c "
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/kilted/setup.bash
   ros2 topic echo /gps/fix --once"
 ```
 
@@ -621,7 +621,7 @@ Confirm the LiDAR is publishing:
 
 ```bash
 docker exec mowgli-ros2 bash -c "
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/kilted/setup.bash
   source /ros2_ws/install/setup.bash
   ros2 topic info /scan"
 ```
@@ -633,7 +633,7 @@ Also confirm the TF chain from `base_link` to `lidar_link` is complete:
 
 ```bash
 docker exec mowgli-ros2 bash -c "
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/kilted/setup.bash
   source /ros2_ws/install/setup.bash
   ros2 run tf2_tools view_frames"
 ```
@@ -651,7 +651,7 @@ To save the map manually without docking:
 
 ```bash
 docker exec mowgli-ros2 bash -c "
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/kilted/setup.bash
   source /ros2_ws/install/setup.bash
   ros2 service call /slam_toolbox/save_map \
     slam_toolbox/srv/SaveMap \
@@ -675,7 +675,7 @@ arrives:
 
 ```bash
 docker exec mowgli-ros2 bash -c "
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/kilted/setup.bash
   source /ros2_ws/install/setup.bash
   timeout 5 ros2 topic echo /hardware_bridge/status --once"
 ```
@@ -716,13 +716,13 @@ docker exec -it mowgli-ros2 bash
 
 # List all active ROS2 nodes
 docker exec mowgli-ros2 bash -c "
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/kilted/setup.bash
   source /ros2_ws/install/setup.bash
   ros2 node list"
 
 # List all active topics
 docker exec mowgli-ros2 bash -c "
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/kilted/setup.bash
   source /ros2_ws/install/setup.bash
   ros2 topic list"
 

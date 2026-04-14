@@ -20,7 +20,7 @@
  *
  * Subscribes to raw wheel tick counts from the STM32 firmware and integrates
  * them into a nav_msgs/msg/Odometry message suitable for consumption by the
- * robot_localization EKF.
+ * FusionCore UKF.
  *
  * Subscribed topics:
  *   /wheel_ticks   mowgli_interfaces/msg/WheelTick

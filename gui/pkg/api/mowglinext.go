@@ -202,6 +202,10 @@ func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			def, err = subscribe(provider, c, conn, "gps", 100)
 		case "pose":
 			def, err = subscribe(provider, c, conn, "pose", 100)
+		case "fusionRaw":
+			def, err = subscribe(provider, c, conn, "fusionRaw", 200)
+		case "btLog":
+			def, err = subscribe(provider, c, conn, "btLog", -1)
 		case "imu":
 			def, err = subscribe(provider, c, conn, "imu", 100)
 		case "ticks":
@@ -267,13 +271,13 @@ func PublisherRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 				c.Error(err)
 				break
 			}
-			var msgObj geometry.Twist
+			var msgObj geometry.TwistStamped
 			err = json.Unmarshal(msg, &msgObj)
 			if err != nil {
 				log.Printf("PublisherRoute: unmarshal error: %v", err)
 				continue
 			}
-			err = provider.Publish("/cmd_vel_teleop", "geometry_msgs/msg/Twist", &msgObj)
+			err = provider.Publish("/cmd_vel_teleop", "geometry_msgs/msg/TwistStamped", &msgObj)
 			if err != nil {
 				log.Printf("PublisherRoute: publish error: %v", err)
 				// Don't break — foxglove may reconnect; keep the browser WebSocket alive

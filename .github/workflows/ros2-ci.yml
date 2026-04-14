@@ -5,17 +5,19 @@ on:
     branches: [main]
     paths:
       - 'ros2/**'
+      - '.github/workflows/ros2-ci.yml'
   pull_request:
     branches: [main]
     paths:
       - 'ros2/**'
+      - '.github/workflows/ros2-ci.yml'
 
 concurrency:
   group: ros2-ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ROS_DISTRO: jazzy
+  ROS_DISTRO: kilted
 
 jobs:
   # ─── Build & Test ────────────────────────────────────────────────────────────
@@ -27,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - ros_distro: jazzy
+          - ros_distro: kilted
             ubuntu: "24.04"
 
     defaults:
@@ -37,6 +39,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Init FusionCore submodule
+        working-directory: .
+        run: git submodule update --init ros2/src/fusioncore
 
       - name: Setup ROS2 ${{ matrix.ros_distro }}
         uses: ros-tooling/setup-ros@v0.7

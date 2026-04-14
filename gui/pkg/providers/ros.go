@@ -30,7 +30,9 @@ var topicMap = map[string]topicDef{
 	"status":              {"/hardware_bridge/status", "mowgli_interfaces/msg/Status"},
 	"highLevelStatus":     {"/behavior_tree_node/high_level_status", "mowgli_interfaces/msg/HighLevelStatus"},
 	"gps":                 {"/gps/absolute_pose", "mowgli_interfaces/msg/AbsolutePose"},
-	"pose":                {"/odometry/filtered_map", "nav_msgs/msg/Odometry"},
+	"pose":                {"/fusion/odom", "nav_msgs/msg/Odometry"},
+	"fusionRaw":           {"/fusion/odom", "nav_msgs/msg/Odometry"},
+	"btLog":               {"/behavior_tree_log", "nav2_msgs/msg/BehaviorTreeLog"},
 	"imu":                 {"/imu/data", "sensor_msgs/msg/Imu"},
 	"ticks":               {"/wheel_odom", "nav_msgs/msg/Odometry"},
 	"map":                 {"", ""},                                                            // virtual – populated via map_server services
@@ -134,7 +136,8 @@ type RosProvider struct {
 	// Charging state from hardware_bridge/status (guarded by mtx)
 	isCharging bool
 
-	dbProvider types2.IDBProvider
+	dbProvider      types2.IDBProvider
+	sessionTracker  *SessionTracker
 }
 
 // NewRosProvider constructs a RosProvider, reads the foxglove URL from the
@@ -149,10 +152,11 @@ func NewRosProvider(dbProvider types2.IDBProvider) types2.IRosProvider {
 	}
 
 	r := &RosProvider{
-		client:      foxglove.NewClient(foxgloveURL),
-		subscribers: make(map[string]map[string]*RosSubscriber),
-		lastMessage: make(map[string][]byte),
-		dbProvider:  dbProvider,
+		client:         foxglove.NewClient(foxgloveURL),
+		subscribers:    make(map[string]map[string]*RosSubscriber),
+		lastMessage:    make(map[string][]byte),
+		dbProvider:     dbProvider,
+		sessionTracker: NewSessionTracker(dbProvider),
 	}
 
 	go func() {
@@ -282,6 +286,10 @@ func (r *RosProvider) fanOut(logicalKey string, msg []byte) {
 	r.lastMessage[logicalKey] = msg
 	for _, sub := range r.subscribers[logicalKey] {
 		sub.Publish(msg)
+	}
+	// Track mowing sessions from high-level status transitions
+	if logicalKey == "highLevelStatus" && r.sessionTracker != nil {
+		go r.sessionTracker.OnHighLevelStatus(msg)
 	}
 }
 

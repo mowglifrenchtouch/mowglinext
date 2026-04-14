@@ -20,10 +20,9 @@ navigation.launch.py
 Navigation stack launch file for the Mowgli robot mower.
 
 Brings up:
-  1. slam_toolbox           – online SLAM (mapping mode by default).
-  2. robot_localization     – dual EKF:
-       ekf_odom: wheel_odom + IMU  →  odom → base_link TF
-       ekf_map:  filtered_odom + GPS pose → map → odom TF
+  1. slam_toolbox           – online SLAM, TF authority for map → odom.
+  2. FusionCore             – single UKF (GPS+IMU+wheels), TF authority for
+                              odom → base_footprint.
   3. Nav2 bringup           – full navigation stack (controller, planner,
                               recoveries, BT navigator, costmaps, lifecycle).
 """
@@ -35,18 +34,23 @@ from ament_index_python.packages import get_package_prefix, get_package_share_di
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    EmitEvent,
     ExecuteProcess,
     GroupAction,
     IncludeLaunchDescription,
     LogInfo,
     OpaqueFunction,
     RegisterEventHandler,
+    TimerAction,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
-from launch_ros.actions import Node, SetParameter
+from launch_ros.actions import LifecycleNode, Node, SetParameter
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
+from lifecycle_msgs.msg import Transition
 from nav2_common.launch import RewrittenYaml
 
 
@@ -81,7 +85,7 @@ def generate_launch_description() -> LaunchDescription:
     use_ekf_arg = DeclareLaunchArgument(
         "use_ekf",
         default_value="True",
-        description="Run dual EKF nodes. Set to False in simulation where Gazebo provides odom TF.",
+        description="Run FusionCore. Set to False in simulation where Gazebo provides odom TF.",
     )
 
     slam_mode_arg = DeclareLaunchArgument(
@@ -347,43 +351,55 @@ def generate_launch_description() -> LaunchDescription:
     slam_toolbox_launch = OpaqueFunction(function=_launch_slam_toolbox)
 
     # ------------------------------------------------------------------
-    # 2. robot_localization – odom EKF
+    # 2. FusionCore — single UKF (GPS + IMU + wheels)
+    #    Publishes odom → base_footprint TF.
+    #    SLAM Toolbox publishes map → odom TF (re-enabled above).
     # ------------------------------------------------------------------
-    ekf_odom_node = Node(
+    fusioncore_node = LifecycleNode(
         condition=IfCondition(use_ekf),
-        package="robot_localization",
-        executable="ekf_node",
-        name="ekf_odom",
+        package="fusioncore_ros",
+        executable="fusioncore_node",
+        name="fusioncore_node",
+        namespace="",
         output="screen",
         parameters=[
             localization_params,
             {"use_sim_time": use_sim_time},
         ],
-        remappings=[("odometry/filtered", "odometry/filtered_odom")],
-    )
-
-    # 3. robot_localization – map EKF
-    ekf_map_node = Node(
-        condition=IfCondition(use_ekf),
-        package="robot_localization",
-        executable="ekf_node",
-        name="ekf_map",
-        output="screen",
-        parameters=[
-            localization_params,
-            {"use_sim_time": use_sim_time},
+        remappings=[
+            ("/odom/wheels", "/wheel_odom"),
+            ("/gnss/fix", "/gps/fix"),
         ],
-        remappings=[("odometry/filtered", "odometry/filtered_map")],
     )
 
-    # ------------------------------------------------------------------
-    # 3b. NO initial heading rotation on ekf_odom.
-    #     The map frame stays aligned with GPS: X=east, Y=north.
-    #     This ensures mowing area coordinates (stored in GPS frame) match
-    #     the map frame without rotation.
-    #     dock_pose_yaw is only used by dock_pose_fix to tell the EKF the
-    #     robot's heading while docked (not to rotate the whole frame).
-    # ------------------------------------------------------------------
+    # Auto-configure and activate the lifecycle node after startup
+    fusioncore_configure = RegisterEventHandler(
+        OnStateTransition(
+            target_lifecycle_node=fusioncore_node,
+            start_state="configuring",
+            goal_state="inactive",
+            entities=[
+                EmitEvent(
+                    event=ChangeState(
+                        lifecycle_node_matcher=lambda node: node == fusioncore_node,
+                        transition_id=Transition.TRANSITION_ACTIVATE,
+                    )
+                ),
+            ],
+        )
+    )
+
+    fusioncore_start = TimerAction(
+        period=2.0,
+        actions=[
+            EmitEvent(
+                event=ChangeState(
+                    lifecycle_node_matcher=lambda node: node == fusioncore_node,
+                    transition_id=Transition.TRANSITION_CONFIGURE,
+                )
+            ),
+        ],
+    )
 
     # ------------------------------------------------------------------
     # 4. Nav2 navigation (controllers, planners, behaviors, BT navigator)
@@ -396,10 +412,29 @@ def generate_launch_description() -> LaunchDescription:
     # Wrap in a GroupAction with SetParameter so bond_timeout is available as
     # a global parameter override — lifecycle_manager will pick it up.
     #
-    # Instead of a fixed 30 s delay, we gate Nav2 startup on the map→odom
-    # TF being available. wait_for_tf.py polls every 0.5 s and exits as
-    # soon as slam_toolbox publishes the transform, so Nav2 starts as
-    # early as possible.
+    # ------------------------------------------------------------------
+    # 3. Static map→odom fallback (no-SLAM mode)
+    # When SLAM is disabled, FusionCore's odom is already GPS-anchored
+    # so map≈odom. Publish a static identity TF to satisfy Nav2.
+    # ------------------------------------------------------------------
+    static_map_odom_tf = Node(
+        condition=UnlessCondition(slam),
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_map_odom_tf",
+        output="screen",
+        arguments=[
+            "--x", "0", "--y", "0", "--z", "0",
+            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--frame-id", "map",
+            "--child-frame-id", "odom",
+        ],
+        parameters=[{"use_sim_time": use_sim_time}],
+    )
+
+    # Gate Nav2 startup on the map→odom TF being available.
+    # wait_for_tf.py polls every 0.5 s and exits as soon as the
+    # transform is published (by SLAM or by static_map_odom_tf).
     # Installed to lib/mowgli_bringup/ by CMakeLists.txt (install PROGRAMS)
     wait_for_tf_script = os.path.join(
         get_package_prefix("mowgli_bringup"),
@@ -458,8 +493,10 @@ def generate_launch_description() -> LaunchDescription:
             map_file_arg,
             use_lidar_arg,
             slam_toolbox_launch,
-            ekf_odom_node,
-            ekf_map_node,
+            static_map_odom_tf,
+            fusioncore_node,
+            fusioncore_configure,
+            fusioncore_start,
             wait_for_slam_tf,
             nav2_after_tf,
         ]

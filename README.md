@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Autonomous robot mower built on ROS2 Jazzy — a fresh start from the ground up<br>
+  Autonomous robot mower built on ROS2 Kilted — a fresh start from the ground up<br>
   with LiDAR SLAM, RTK-GPS, behavior trees, and intelligent coverage planning.
 </p>
 
@@ -27,7 +27,7 @@ MowgliNext has a fully functional autonomous mowing stack running on real hardwa
 
 | Component | Status | Details |
 |-----------|:------:|---------|
-| ROS2 Jazzy | :white_check_mark: | Full stack on differential-drive mower, Cyclone DDS, multi-arch Docker |
+| ROS2 Kilted | :white_check_mark: | Full stack on differential-drive mower, Cyclone DDS, multi-arch Docker |
 | SLAM Toolbox | :white_check_mark: | Lifelong mode for mapping and localization; zero-odom only when charging AND idle to prevent corruption during undock |
 | Dual EKF Localization | :white_check_mark: | `ekf_odom` (50 Hz, wheel + IMU) and `ekf_map` (20 Hz, GPS + SLAM heading); heading calibration from EKF TF on undock |
 | RTK-GPS | :white_check_mark: | u-blox F9P support with GPS degradation handling and wait-for-fix logic |
@@ -143,7 +143,7 @@ See the [Getting Started](https://github.com/cedbossneo/mowglinext/wiki/Getting-
 ┌─────────────────────────────────────────────────┐
 │  GUI (React + Go)          :4006                │
 ├─────────────────────────────────────────────────┤
-│  ROS2 Stack (Jazzy)                             │
+│  ROS2 Stack (Kilted)                             │
 │  ┌──────────┐ ┌──────────┐ ┌──────────────────┐│
 │  │ Nav2     │ │ SLAM     │ │ Behavior Tree    ││
 │  │ (navigate│ │ Toolbox  │ │ (main_tree.xml)  ││

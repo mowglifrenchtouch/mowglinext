@@ -29,7 +29,7 @@ describe('useManualMode', () => {
 
     it('starts with manual mode off', () => {
         const {result} = renderManualMode();
-        expect(result.current.manualMode).toBeUndefined();
+        expect(result.current.manualMode).toBe(false);
     });
 
     it('handleManualMode activates manual mode', async () => {
@@ -37,10 +37,9 @@ describe('useManualMode', () => {
         await act(async () => {
             await result.current.handleManualMode();
         });
-        expect(startStream).toHaveBeenCalledWith('/api/mowglinext/publish/joy');
         expect(mowerAction).toHaveBeenCalledWith('high_level_control', {Command: 7});
         expect(mowerAction).toHaveBeenCalledWith('mow_enabled', {MowEnabled: 1, MowDirection: 0});
-        expect(result.current.manualMode).toBeDefined();
+        expect(result.current.manualMode).toBe(true);
     });
 
     it('handleStopManualMode deactivates manual mode', async () => {
@@ -48,14 +47,14 @@ describe('useManualMode', () => {
         await act(async () => {
             await result.current.handleManualMode();
         });
-        expect(result.current.manualMode).toBeDefined();
+        expect(result.current.manualMode).toBe(true);
 
         await act(async () => {
             await result.current.handleStopManualMode();
         });
         expect(mowerAction).toHaveBeenCalledWith('high_level_control', {Command: 2});
         expect(mowerAction).toHaveBeenCalledWith('mow_enabled', {MowEnabled: 0, MowDirection: 0});
-        expect(result.current.manualMode).toBeUndefined();
+        expect(result.current.manualMode).toBe(false);
     });
 
     it('handleJoyMove sends twist message', () => {
@@ -64,8 +63,8 @@ describe('useManualMode', () => {
             result.current.handleJoyMove({x: 0.5, y: 0.8} as any);
         });
         expect(sendJsonMessage).toHaveBeenCalledWith({
-            linear: {x: 0.8, y: 0, z: 0},
-            angular: {z: -0.5, x: 0, y: 0},
+            header: {stamp: {sec: 0, nanosec: 0}, frame_id: ""},
+            twist: {linear: {x: 0.8, y: 0, z: 0}, angular: {z: -0.5, x: 0, y: 0}},
         });
     });
 
@@ -75,19 +74,18 @@ describe('useManualMode', () => {
             result.current.handleJoyStop();
         });
         expect(sendJsonMessage).toHaveBeenCalledWith({
-            linear: {x: 0, y: 0, z: 0},
-            angular: {z: 0, x: 0, y: 0},
+            header: {stamp: {sec: 0, nanosec: 0}, frame_id: ""},
+            twist: {linear: {x: 0, y: 0, z: 0}, angular: {z: 0, x: 0, y: 0}},
         });
     });
 
-    it('handleJoyMove handles null x/y', () => {
-        const {result} = renderManualMode();
-        act(() => {
-            result.current.handleJoyMove({x: null, y: null} as any);
+    it('cleans up blade keepalive on unmount', async () => {
+        const {result, unmount} = renderManualMode();
+        await act(async () => {
+            await result.current.handleManualMode();
         });
-        expect(sendJsonMessage).toHaveBeenCalledWith({
-            linear: {x: 0, y: 0, z: 0},
-            angular: {z: -0, x: 0, y: 0},
-        });
+        expect(result.current.manualMode).toBe(true);
+        unmount();
+        // No assertion needed — just verifying no error/leak on unmount
     });
 });

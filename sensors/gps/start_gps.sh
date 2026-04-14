@@ -40,7 +40,7 @@ echo "[start_gps.sh] GPS port: $GPS_PORT @ ${GPS_BAUD} baud"
 echo "[start_gps.sh] NTRIP enabled: $NTRIP_ENABLED"
 
 set +u
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/kilted/setup.bash
 set -u
 
 # Generate runtime params override — only the device path.

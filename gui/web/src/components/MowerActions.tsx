@@ -135,10 +135,10 @@ export const MowerActions: React.FC<React.PropsWithChildren<{bare?: boolean}>> =
             {children}
             {children ? <Col><Divider type={"vertical"}/></Col> : null}
             <Col>
-                {highLevelStatus.state_name == "IDLE" ? <AsyncButton icon={<PlayCircleOutlined/>} type="primary" key="btnHLC1"
+                {(highLevelStatus.state_name === "IDLE" || highLevelStatus.state_name === "IDLE_DOCKED") ? <AsyncButton icon={<PlayCircleOutlined/>} type="primary" key="btnHLC1"
                                                                           onAsyncClick={mowerAction("high_level_control", {Command: 1})}
                 >Start</AsyncButton> : null}
-                {highLevelStatus.state_name !== "IDLE" ? <AsyncButton icon={<HomeOutlined/>} type="primary" key="btnHLC2"
+                {highLevelStatus.state_name !== "IDLE" && highLevelStatus.state_name !== "IDLE_DOCKED" ? <AsyncButton icon={<HomeOutlined/>} type="primary" key="btnHLC2"
                                                                            onAsyncClick={mowerAction("high_level_control", {Command: 2})}
                 >Home</AsyncButton> : null}
             </Col>
