@@ -109,6 +109,8 @@ private:
     lift_recovery_mode_ = declare_parameter<bool>("lift_recovery_mode", false);
     lift_blade_resume_delay_sec_ = declare_parameter<double>("lift_blade_resume_delay_sec", 1.0);
     // imu_yaw parameter is used by URDF for mounting rotation, not needed here
+    gyro_bias_alpha_ = declare_parameter<double>("gyro_bias_alpha", 0.005);
+    gyro_bias_min_samples_ = declare_parameter<int>("gyro_bias_min_samples", 200);
 
     RCLCPP_INFO(get_logger(),
                 "Parameters: serial_port=%s baud_rate=%d heartbeat_rate=%.1f Hz "
@@ -354,8 +356,17 @@ private:
                              ? mowgli_interfaces::msg::Status::MOWER_STATUS_OK
                              : mowgli_interfaces::msg::Status::MOWER_STATUS_INITIALIZING;
       msg.raspberry_pi_power = (pkt.status_bitmask & STATUS_BIT_RASPI_POWER) != 0u;
+      const bool was_charging = is_charging_;
       is_charging_ = (pkt.status_bitmask & STATUS_BIT_CHARGING) != 0u;
       msg.is_charging = is_charging_;
+
+      // Reset gyro bias accumulator on dock transition so we recalibrate
+      // each time the robot returns to the dock.
+      if (is_charging_ && !was_charging)
+      {
+        gyro_bias_samples_ = 0;
+        RCLCPP_INFO(get_logger(), "Docked — starting gyro bias calibration");
+      }
       msg.rain_detected = (pkt.status_bitmask & STATUS_BIT_RAIN) != 0u;
       msg.sound_module_available = (pkt.status_bitmask & STATUS_BIT_SOUND_AVAIL) != 0u;
       msg.sound_module_busy = (pkt.status_bitmask & STATUS_BIT_SOUND_BUSY) != 0u;
@@ -510,12 +521,57 @@ private:
     msg.linear_acceleration.y = static_cast<double>(pkt.acceleration_mss[1]);
     msg.linear_acceleration.z = static_cast<double>(pkt.acceleration_mss[2]);
 
-    // Publish raw gyro values without bias compensation.
-    // The EKF handles gyro drift via differential mode (imu0_differential: true).
-    // v2 (OpenMower/rosserial) published raw gyro and it worked correctly.
-    msg.angular_velocity.x = static_cast<double>(pkt.gyro_rads[0]);
-    msg.angular_velocity.y = static_cast<double>(pkt.gyro_rads[1]);
-    msg.angular_velocity.z = static_cast<double>(pkt.gyro_rads[2]);
+    double gx = static_cast<double>(pkt.gyro_rads[0]);
+    double gy = static_cast<double>(pkt.gyro_rads[1]);
+    double gz = static_cast<double>(pkt.gyro_rads[2]);
+
+    // Gyro bias estimation: when docked and idle the robot is guaranteed
+    // stationary, so any non-zero gyro reading is bias/drift. We track
+    // the bias with an exponential moving average (EMA) and subtract it
+    // from all future readings — including while mowing.
+    const bool stationary_on_dock = is_charging_ && (current_mode_ == 0u);
+    if (stationary_on_dock)
+    {
+      if (gyro_bias_samples_ == 0)
+      {
+        // First sample: seed the EMA
+        gyro_bias_x_ = gx;
+        gyro_bias_y_ = gy;
+        gyro_bias_z_ = gz;
+      }
+      else
+      {
+        const double a = gyro_bias_alpha_;
+        gyro_bias_x_ += a * (gx - gyro_bias_x_);
+        gyro_bias_y_ += a * (gy - gyro_bias_y_);
+        gyro_bias_z_ += a * (gz - gyro_bias_z_);
+      }
+      ++gyro_bias_samples_;
+
+      if (gyro_bias_samples_ == gyro_bias_min_samples_ && !gyro_bias_ready_)
+      {
+        gyro_bias_ready_ = true;
+        RCLCPP_INFO(get_logger(),
+                    "Gyro bias calibration converged after %d samples: "
+                    "[%.6f, %.6f, %.6f] rad/s",
+                    gyro_bias_samples_,
+                    gyro_bias_x_,
+                    gyro_bias_y_,
+                    gyro_bias_z_);
+      }
+    }
+
+    // Apply bias correction when we have a valid estimate
+    if (gyro_bias_ready_)
+    {
+      gx -= gyro_bias_x_;
+      gy -= gyro_bias_y_;
+      gz -= gyro_bias_z_;
+    }
+
+    msg.angular_velocity.x = gx;
+    msg.angular_velocity.y = gy;
+    msg.angular_velocity.z = gz;
 
     // Magnetometer data is ignored — uncalibrated on metal robot chassis,
     // gives ~229° error vs real heading. dock_pose_yaw is set from config
@@ -897,10 +953,14 @@ private:
   bool odom_initialized_{false};
   bool wheels_stationary_{true};
 
-  // Gyro bias estimate (updated when wheels are stationary)
+  // Gyro bias estimate (updated via EMA while docked and idle)
   double gyro_bias_x_{0.0};
   double gyro_bias_y_{0.0};
   double gyro_bias_z_{0.0};
+  double gyro_bias_alpha_{0.005};  // EMA smoothing factor
+  int gyro_bias_min_samples_{200};  // samples before bias is trusted
+  int gyro_bias_samples_{0};  // samples accumulated this dock session
+  bool gyro_bias_ready_{false};  // true once min_samples reached
 
   bool dock_pose_written_{false};
 };
