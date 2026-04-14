@@ -48,8 +48,8 @@ controller_server:
       plugin: "nav2_controller::SimpleProgressChecker"
       # Low threshold: in-place rotation barely moves the position but is valid
       # progress. The robot's slow motors need time to complete turns.
-      required_movement_radius: 0.05
-      movement_time_allowance: 60.0
+      required_movement_radius: 0.01
+      movement_time_allowance: 300.0
 
     stopped_goal_checker:
       plugin: "nav2_controller::StoppedGoalChecker"
