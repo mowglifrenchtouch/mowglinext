@@ -332,6 +332,10 @@ private:
   geometry_msgs::msg::Pose docking_pose_;
   bool docking_pose_set_{false};
 
+  /// Dock exclusion polygon — cells inside are NO_GO_ZONE (no mowing strips).
+  geometry_msgs::msg::Polygon dock_exclusion_polygon_;
+  bool has_dock_exclusion_{false};
+
   /// Cached strip layouts per area (recomputed when area changes).
   std::vector<StripLayout> strip_layouts_;
 

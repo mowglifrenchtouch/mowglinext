@@ -282,6 +282,34 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
     pose_msg.header.frame_id = map_frame_;
     pose_msg.pose = docking_pose_;
     docking_pose_pub_->publish(pose_msg);
+
+    // Store dock exclusion polygon — used to mark dock cells as NO_GO_ZONE
+    // in the classification layer so strips are not planned through the dock.
+    // The dock footprint is the robot chassis + 15cm margin on each side.
+    const double dock_half_length = 0.45;  // (0.60 chassis + 0.30 margin) / 2
+    const double dock_half_width = 0.35;   // (0.40 chassis + 0.30 margin) / 2
+    const double cy = std::cos(dock_yaw);
+    const double sy = std::sin(dock_yaw);
+    const double corners[][2] = {
+        {dock_half_length, dock_half_width},
+        {dock_half_length, -dock_half_width},
+        {-dock_half_length, -dock_half_width},
+        {-dock_half_length, dock_half_width},
+    };
+    for (const auto& c : corners)
+    {
+      geometry_msgs::msg::Point32 pt;
+      pt.x = static_cast<float>(dock_x + cy * c[0] - sy * c[1]);
+      pt.y = static_cast<float>(dock_y + sy * c[0] + cy * c[1]);
+      pt.z = 0.0f;
+      dock_exclusion_polygon_.points.push_back(pt);
+    }
+    dock_exclusion_polygon_.points.push_back(dock_exclusion_polygon_.points.front());
+    has_dock_exclusion_ = true;
+    RCLCPP_INFO(get_logger(),
+                "Dock exclusion zone: (%.2f, %.2f) yaw=%.2f, %.1fx%.1fm",
+                dock_x, dock_y, dock_yaw,
+                dock_half_length * 2, dock_half_width * 2);
   }
 
   // ── Publish timer ────────────────────────────────────────────────────────
@@ -1897,6 +1925,20 @@ void MapServerNode::apply_area_classifications()
       {
         map_.at(std::string(layers::CLASSIFICATION), *it) = no_go_val;
       }
+    }
+  }
+
+  // Mark dock exclusion zone as NO_GO_ZONE — no mowing strips planned here.
+  if (has_dock_exclusion_ && dock_exclusion_polygon_.points.size() >= 3)
+  {
+    grid_map::Polygon dock_gm;
+    for (const auto& pt : dock_exclusion_polygon_.points)
+    {
+      dock_gm.addVertex(grid_map::Position(static_cast<double>(pt.x), static_cast<double>(pt.y)));
+    }
+    for (grid_map::PolygonIterator it(map_, dock_gm); !it.isPastEnd(); ++it)
+    {
+      map_.at(std::string(layers::CLASSIFICATION), *it) = no_go_val;
     }
   }
 }
