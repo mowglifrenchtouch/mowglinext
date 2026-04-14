@@ -273,10 +273,7 @@ def generate_launch_description() -> LaunchDescription:
             rp = rcfg.get("mowgli", {}).get("ros__parameters", {})
             dx = float(rp.get("dock_pose_x", 0.0))
             dy = float(rp.get("dock_pose_y", 0.0))
-            compass_yaw = float(rp.get("dock_pose_yaw", 0.0))
-            # Convert compass heading (0=north, CW) to ENU yaw (0=east, CCW)
-            import math
-            dyaw = math.pi / 2.0 - compass_yaw
+            dyaw = float(rp.get("dock_pose_yaw", 0.0))
             dock_start_pose = [dx, dy, dyaw]
             actions.append(
                 LogInfo(msg=(
