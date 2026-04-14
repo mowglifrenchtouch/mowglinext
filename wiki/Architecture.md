@@ -535,7 +535,7 @@ Output:
 wheel_odometry:
   ros__parameters:
     wheel_separation_distance: 0.35    # Left-to-right wheel centre distance (m)
-    ticks_per_meter: 1000              # Encoder resolution
+    ticks_per_meter: 300              # Encoder resolution
     timeout_period_ms: 5000            # Warn if no WheelTick for 5s
 ```
 

@@ -34,7 +34,7 @@
  * Parameters:
  *   wheel_distance   (double, default 0.35 m)   – lateral distance between
  *                    the two driven wheels (track width).
- *   ticks_per_meter  (double, default 1000.0)   – encoder ticks per metre of
+ *   ticks_per_meter  (double, default 300.0)   – encoder ticks per metre of
  *                    wheel travel.
  *   publish_tf       (bool,   default false)     – when true the node also
  *                    broadcasts the odom → base_link TF.
@@ -89,7 +89,7 @@ private:
   // Parameters
   // ---------------------------------------------------------------------------
   double wheel_distance_{0.35};
-  double ticks_per_meter_{1000.0};
+  double ticks_per_meter_{300.0};
   bool publish_tf_{false};
 
   // ---------------------------------------------------------------------------

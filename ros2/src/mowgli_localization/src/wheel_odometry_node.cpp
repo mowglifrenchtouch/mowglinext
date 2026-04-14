@@ -82,7 +82,7 @@ WheelOdometryNode::WheelOdometryNode(const rclcpp::NodeOptions& options)
 void WheelOdometryNode::declare_parameters()
 {
   wheel_distance_ = declare_parameter<double>("wheel_distance", 0.35);
-  ticks_per_meter_ = declare_parameter<double>("ticks_per_meter", 1000.0);
+  ticks_per_meter_ = declare_parameter<double>("ticks_per_meter", 300.0);
   publish_tf_ = declare_parameter<bool>("publish_tf", false);
 }
 
