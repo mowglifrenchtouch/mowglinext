@@ -308,11 +308,14 @@ def generate_launch_description() -> LaunchDescription:
             dock_source = slam_toolbox_params_file
 
         # Build per-mode params from the (possibly dock-patched) source
+        # map_start_at_dock only for mapping (fresh map needs dock as origin).
+        # Lifelong/localization load saved posegraph — don't override position.
         dock_mapping_params = RewrittenYaml(
             source_file=dock_source,
             root_key="",
             param_rewrites={
                 "mode": "mapping",
+                "map_start_at_dock": "true",
                 "map_file_name": map_file_name,
                 "use_sim_time": use_sim_time,
             },
@@ -323,6 +326,7 @@ def generate_launch_description() -> LaunchDescription:
             root_key="",
             param_rewrites={
                 "mode": "localization",
+                "map_start_at_dock": "false",
                 "map_file_name": map_file_name,
                 "use_sim_time": use_sim_time,
             },
@@ -333,6 +337,7 @@ def generate_launch_description() -> LaunchDescription:
             root_key="",
             param_rewrites={
                 "mode": "lifelong",
+                "map_start_at_dock": "false",
                 "map_file_name": map_file_name,
                 "use_sim_time": use_sim_time,
             },
