@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
+
+# Run Docker immediately after adding the user to the docker group.
+# If the current shell has not reloaded group membership yet, fallback to sg.
+docker_cmd() {
+  if id -nG 2>/dev/null | grep -qw docker; then
+    docker "$@"
+  else
+    sg docker -c "$(printf '%q ' docker "$@")"
+  fi
+}
 # Ensure config files mounted as bind-mount *files* exist before compose runs.
 # Docker creates a directory when the host path is missing, which breaks the
 # container with "not a directory" errors.
-
 ensure_default_configs() {
   local defaults="$REPO_DIR/docker/config"
 
@@ -82,7 +91,6 @@ write_compose_merged() {
   # Generate a single self-contained docker-compose.yaml by merging all
   # selected compose templates. Users get one readable file instead of
   # needing to understand Docker Compose include/project mechanics.
-
   local output="$INSTALL_DIR/docker-compose.yaml"
 
   {
@@ -133,13 +141,13 @@ run_compose_stack() {
   info "Using env file: $INSTALL_DIR/.env"
 
   info "Pulling selected images..."
-  docker compose --env-file "$INSTALL_DIR/.env" pull
+  docker_cmd compose --env-file "$INSTALL_DIR/.env" pull
 
   echo ""
   info "Starting stack..."
-  docker compose --env-file "$INSTALL_DIR/.env" up -d
+  docker_cmd compose --env-file "$INSTALL_DIR/.env" up -d
 
   echo ""
   info "Current containers:"
-  docker compose --env-file "$INSTALL_DIR/.env" ps
+  docker_cmd compose --env-file "$INSTALL_DIR/.env" ps
 }
