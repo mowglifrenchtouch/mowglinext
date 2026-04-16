@@ -21,7 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-kilted-nav2-lifecycle-manager \
     ros-kilted-nav2-waypoint-follower \
     ros-kilted-nav2-velocity-smoother \
-    # SLAM (FusionCore is built from source in the workspace)
+    # SLAM — Cartographer is the active SLAM backend.
+    # slam_toolbox kept for mowgli_behavior build (SaveSlamMap BT node headers).
+    ros-kilted-cartographer-ros \
     ros-kilted-slam-toolbox \
     # Motion control
     ros-kilted-twist-mux \
