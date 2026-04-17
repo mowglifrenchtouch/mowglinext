@@ -6,12 +6,23 @@ set -euo pipefail
 # ============================================================
 
 # ---- Config ----
-OWNER="mowglifrenchtouch"
-REPO="mowglinext"
+OWNER="${OWNER:-mowglifrenchtouch}"
+REPO="${REPO:-mowglinext}"
 REGISTRY="ghcr.io/${OWNER}/${REPO}"
 
-# Tag final poussé sur GHCR
-TAG="mavros"
+# Tag principal
+TAG="${TAG:-mavros}"
+
+# Tags additionnels optionnels
+# Exemple:
+# 
+EXTRA_TAGS="nightly nightly-$(date +%Y%m%d)"
+EXTRA_TAGS="${EXTRA_TAGS:-}"
+
+# Build metadata
+BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 
 # Images à builder
 IMAGES=(
@@ -25,10 +36,10 @@ IMAGES=(
 )
 
 # Multi-arch
-PLATFORMS="linux/amd64,linux/arm64"
+PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 
 # Buildx builder name
-BUILDER_NAME="mowgli-builder"
+BUILDER_NAME="${BUILDER_NAME:-mowgli-builder}"
 
 # ---- Helpers ----
 info() {
@@ -72,6 +83,19 @@ ensure_fusioncore() {
   fi
 }
 
+make_tag_args() {
+  local image="$1"
+  local args=("-t" "${image}:${TAG}")
+
+  if [[ -n "${EXTRA_TAGS}" ]]; then
+    for extra in ${EXTRA_TAGS}; do
+      args+=("-t" "${image}:${extra}")
+    done
+  fi
+
+  printf '%s\n' "${args[@]}"
+}
+
 build_and_push() {
   local name="$1"
   local context="$2"
@@ -81,23 +105,34 @@ build_and_push() {
 
   info "Building ${name}"
   echo "       image: ${image}:${TAG}"
+  [[ -n "${EXTRA_TAGS}" ]] && echo "       extra tags: ${EXTRA_TAGS}"
   echo "       context: ${context}"
   echo "       dockerfile: ${dockerfile}"
   [[ -n "${target}" ]] && echo "       target: ${target}"
+  echo "       git branch: ${GIT_BRANCH}"
+  echo "       git sha: ${GIT_SHA}"
+
+  mapfile -t tag_args < <(make_tag_args "${image}")
 
   if [[ -n "${target}" ]]; then
     docker buildx build \
       --platform "${PLATFORMS}" \
       -f "${dockerfile}" \
       --target "${target}" \
-      -t "${image}:${TAG}" \
+      "${tag_args[@]}" \
+      --label org.opencontainers.image.created="${BUILD_DATE}" \
+      --label org.opencontainers.image.revision="${GIT_SHA}" \
+      --label org.opencontainers.image.source="https://github.com/${OWNER}/${REPO}" \
       --push \
       "${context}"
   else
     docker buildx build \
       --platform "${PLATFORMS}" \
       -f "${dockerfile}" \
-      -t "${image}:${TAG}" \
+      "${tag_args[@]}" \
+      --label org.opencontainers.image.created="${BUILD_DATE}" \
+      --label org.opencontainers.image.revision="${GIT_SHA}" \
+      --label org.opencontainers.image.source="https://github.com/${OWNER}/${REPO}" \
       --push \
       "${context}"
   fi
@@ -171,4 +206,6 @@ for img in "${IMAGES[@]}"; do
   esac
 done
 
-info "All images pushed successfully with tag: ${TAG}"
+info "All images pushed successfully"
+info "Primary tag: ${TAG}"
+[[ -n "${EXTRA_TAGS}" ]] && info "Extra tags: ${EXTRA_TAGS}"

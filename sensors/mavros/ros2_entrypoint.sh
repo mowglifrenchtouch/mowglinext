@@ -7,7 +7,7 @@ source /opt/ros/kilted/setup.bash
 : "${ROS_DOMAIN_ID:=0}"
 : "${RMW_IMPLEMENTATION:=rmw_cyclonedds_cpp}"
 
-: "${MAVROS_ENABLED:=true}"
+: "${HARDWARE_BACKEND:=mowgli}"
 : "${MAVROS_PORT:=/dev/mavros}"
 : "${MAVROS_BAUD:=921600}"
 : "${MAVROS_GCS_URL:=}"
@@ -15,8 +15,19 @@ source /opt/ros/kilted/setup.bash
 : "${MAVROS_TGT_COMPONENT:=1}"
 : "${MAVROS_AUTOPILOT:=ardupilot}"
 
-if [ "${MAVROS_ENABLED}" != "true" ]; then
-  echo "MAVROS is disabled. Exiting."
+if [ -n "${MAVROS_ENABLED:-}" ]; then
+  expected_alias="false"
+  if [ "${HARDWARE_BACKEND}" = "mavros" ]; then
+    expected_alias="true"
+  fi
+
+  if [ "${MAVROS_ENABLED}" != "${expected_alias}" ]; then
+    echo "Warning: MAVROS_ENABLED=${MAVROS_ENABLED} disagrees with HARDWARE_BACKEND=${HARDWARE_BACKEND}; using HARDWARE_BACKEND as the source of truth."
+  fi
+fi
+
+if [ "${HARDWARE_BACKEND}" != "mavros" ]; then
+  echo "HARDWARE_BACKEND=${HARDWARE_BACKEND}; MAVROS sidecar is not selected. Exiting."
   exit 0
 fi
 
