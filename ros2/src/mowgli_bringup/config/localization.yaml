@@ -77,10 +77,19 @@ fusioncore_node:
     encoder.yaw_noise: 0.04
 
     # GNSS: u-blox F9P RTK
-    # base_noise_xy scales the GPS covariance. At 1.0 the filter trusts GPS
-    # position tightly, causing heading flips from stationary position noise.
-    # At 5.0 the gyro/wheels dominate locally, GPS anchors loosely.
+    # base_noise_xy scales the GPS covariance. At 0.5 (tried on rtabmap)
+    # the filter chased Float jitter and heading flipped. At 5.0 the
+    # gyro/wheels dominate locally and GPS anchors loosely. FusionCore
+    # auto-scales by HDOP, so effective σ adapts per-fix.
     gnss.base_noise_xy: 5.0
+    # base_noise_z: 5m — let GPS softly pin altitude around the datum.
+    #   ground_constraint (body-frame VZ=0) + gravity removal were NOT
+    #   enough on their own: uncompensated accel-z bias integrated over
+    #   time, and with GPS altitude effectively ignored (σ=100), Z drifted
+    #   to 70m+ after a few minutes of idle on the dock. That pushed LiDAR
+    #   scans above obstacle_layer's max_obstacle_height filter → blank
+    #   global costmap → nav2 couldn't plan. σ=5m is loose enough to not
+    #   fight RTK horizontal accuracy but tight enough to bound drift.
     gnss.base_noise_z: 5.0
     gnss.heading_noise: 0.1
     gnss.max_hdop: 4.0
