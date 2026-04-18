@@ -27,7 +27,7 @@ mowgli:
         dock_max_retries: 3
         dock_pose_x: 0
         dock_pose_y: 0
-        dock_pose_yaw: 3.9794
+        dock_pose_yaw: 4.17134  # 239° compass — measured with phone compass
         dock_use_charger_detection: true
         # Lift/tilt emergency is handled by firmware (STM32), not ROS2
         gps_x: 0.3
@@ -41,7 +41,7 @@ mowgli:
         headland_width: 0.18
         imu_x: 0.191
         imu_y: -0.176
-        imu_yaw: 0
+        imu_yaw: -2.781  # IMU chip physical mounting rotation around base_link Z
         imu_z: 0.095
         lidar_enabled: true
         lidar_x: 0
