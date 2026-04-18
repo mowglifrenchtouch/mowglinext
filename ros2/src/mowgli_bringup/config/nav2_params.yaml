@@ -41,7 +41,10 @@ controller_server:
     # on ARM (local_costmap update gaps of 600ms+ at 5Hz, 2-3s under load).
     # 5s gives headroom while we run local_costmap at 10Hz.
     costmap_update_timeout: 5.0
-    min_x_velocity_threshold: 0.001
+    # Motor static-friction deadband: PWM_PER_MPS=300 in firmware → 0.10 m/s
+    # = PWM 30. Anything below ~0.12 m/s buzzes without moving. Zero
+    # sub-deadband commands so the motors don't sit in the buzz zone.
+    min_x_velocity_threshold: 0.08
     min_y_velocity_threshold: 0.5
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 1.0
@@ -92,7 +95,9 @@ controller_server:
       transform_tolerance: 2.0
       # Larger lookahead = smoother turns, less oscillation
       use_velocity_scaled_lookahead_dist: true
-      min_approach_linear_velocity: 0.1
+      # Above the ~0.12 m/s motor deadband, otherwise RPP slows to a buzz
+      # that never reaches the goal.
+      min_approach_linear_velocity: 0.15
       approach_velocity_scaling_dist: 0.6
       # RPP collision detection enabled: the local_costmap now carries an
       # obstacle_layer, so RPP can slow/stop when the path is about to hit
@@ -104,7 +109,11 @@ controller_server:
       curvature_lookahead_dist: 0.6
       use_cost_regulated_linear_velocity_scaling: false
       regulated_linear_scaling_min_radius: 0.9
-      regulated_linear_scaling_min_speed: 0.10
+      # Above motor deadband (PWM_PER_MPS=300 → 0.12 m/s ~ PWM 36).
+      regulated_linear_scaling_min_speed: 0.15
+      # false: use_rotate_to_heading=true caused pivot oscillation at the
+      # rotation_shim hysteresis edge (±0.25 rad/s) on slam-toolbox-tuned.
+      # Keep arcs-only — RotationShimController handles initial heading.
       use_rotate_to_heading: false
       allow_reversing: false
       max_angular_vel: 0.8
@@ -211,9 +220,15 @@ behavior_server:
     global_frame: odom
     robot_base_frame: base_footprint
     transform_tolerance: 0.5
-    simulate_ahead_time: 2.0
+    # 0.5s sim-ahead (at 0.15 m/s BackUp ≈ 7.5 cm) catches immediate
+    # collisions without aborting on phantom LETHAL cells 30-50 cm behind
+    # (often map→odom jump artefacts or dock residue). 2.0s refused every
+    # undock.
+    simulate_ahead_time: 0.5
     max_rotational_vel: 3.0
-    min_rotational_vel: 0.15
+    # 0.85 rad/s ≈ wheel vel 0.14 m/s per wheel (PWM 42 > deadband).
+    # Lower floor let Spin behavior dither at sub-deadband ω.
+    min_rotational_vel: 0.85
     rotational_acc_lim: 5.0
 
 # ---------------------------------------------------------------------------
@@ -248,11 +263,15 @@ velocity_smoother:
     min_velocity: [-0.3, 0.0, -1.0]
     # Higher acceleration to overcome grass resistance and static friction.
     # The robot needs a burst of power to start moving on thick terrain.
-    max_accel: [0.8, 0.0, 2.0]
-    max_decel: [-0.5, 0.0, -2.0]
+    # Angular accel 4.0 rad/s² — the smoother was a hidden ceiling that made
+    # short turns crawl even after bumping controller-side max_angular_accel.
+    max_accel: [0.8, 0.0, 4.0]
+    max_decel: [-0.5, 0.0, -4.0]
     odom_topic: /wheel_odom
     odom_duration: 0.1
-    deadband_velocity: [0.05, 0.0, 0.0]
+    # Match motor deadband (PWM ~40 of 300 → 0.13 m/s). Commanded vel below
+    # this is zeroed so the motors never sit in the buzz zone.
+    deadband_velocity: [0.13, 0.0, 0.0]
     velocity_timeout: 1.0
 
 # ---------------------------------------------------------------------------
