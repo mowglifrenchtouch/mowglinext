@@ -708,9 +708,14 @@ private:
     }
     msg.linear_acceleration_covariance[8] = 0.01;  // Z — uncalibrated default
 
-    // Gyro covariance: WT901 gyro z-axis severely under-reports yaw rate
-    // (~17% of actual). Set high yaw covariance so the EKF trusts wheel odom.
-    // Use calibrated values for roll/pitch rate if available.
+    // Gyro covariance: WT901 gyro_z is accurate to ~7% over-report on the
+    // ground-truth 90° CCW rotation test (2026-04-19). The legacy "17%
+    // under-report" claim predates the firmware scaling fixes
+    // (WT901_G_FACTOR float-correct, RAD_PER_DEG rename). We still keep a
+    // loose yaw floor because WT901 has ~0.01 rad/s bias drift that
+    // couples into heading if trusted too tightly. Calibrated values for
+    // roll/pitch rate are used directly (robot is planar, so those stay
+    // near zero and the calibration sum is a clean noise estimate).
     if (imu_cal_ready_)
     {
       msg.angular_velocity_covariance[0] = std::max(imu_cal_cov_gx_, 0.001);
@@ -840,17 +845,16 @@ private:
     msg.header.frame_id = "odom";
     msg.child_frame_id = "base_link";
 
-    // Force zero when the BT says the robot should not be moving. Covers:
-    //   NULL  (0) = emergency / transitional
-    //   IDLE  (1) = docked or between missions (motors commanded zero)
-    // AUTONOMOUS / RECORDING / MANUAL_MOWING let real motion through.
-    // Previously this was is_charging_ AND mode_NULL, which missed the
-    // common "IDLE on the dock" case — wheel encoder noise then leaked
-    // through into FusionCore, causing yaw random-walk and GPS-lever-arm
-    // position swings (seen as 2 m/s teleporting while physically still).
+    // Force zero only when the robot is MECHANICALLY LOCKED to the dock
+    // AND not in the middle of an undock/mission. `is_charging_` confirms
+    // dock contacts are live (so the robot cannot have physically moved),
+    // and mode ∈ {NULL, IDLE} confirms we're not in active motion. Off-dock
+    // IDLE states (manual calibration rotation, a drifted-off-dock robot)
+    // are NOT zeroed — the wheel aggregation window alone handles noise
+    // there, and real motion must still pass through for testing/recovery.
     const bool force_zero =
-        current_mode_ == HL_MODE_NULL ||
-        current_mode_ == HL_MODE_IDLE;
+        is_charging_ &&
+        (current_mode_ == HL_MODE_NULL || current_mode_ == HL_MODE_IDLE);
     if (force_zero)
     {
       vx = 0.0;

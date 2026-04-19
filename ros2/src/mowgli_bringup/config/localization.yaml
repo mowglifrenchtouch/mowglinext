@@ -68,10 +68,13 @@ fusioncore_node:
     # IMU: differential gyro + accel only — no magnetometer.
     # hardware_bridge publishes identity orientation (no real heading).
     # has_magnetometer must be false so FusionCore only uses gyro rates.
-    # gyro_noise raised 0.02 -> 0.05: WT901 gyro z-axis under-reports yaw
-    # rate by ~17% (hardware_bridge line 702) and has ~0.01 rad/s bias drift.
-    # Wheels are calibrated to 0.2% linear error — trust them more than gyro.
-    imu.gyro_noise: 0.05
+    # gyro_noise = 0.03: ground-truth 90° CCW rotation test (2026-04-19)
+    # showed WT901 gyro_z integrates to +96.31° for +90° actual — 7%
+    # over-report with correct sign. After the firmware scaling fixes
+    # (WT901_G_FACTOR float-correct + RAD_PER_DEG rename), the old
+    # "17% under-report" comment is stale. Bias drift ~0.01 rad/s while
+    # stationary is handled by ukf.q_gyro_bias.
+    imu.gyro_noise: 0.03
     imu.accel_noise: 0.1
     imu.has_magnetometer: false
     # Subtract earth's gravity (~9.81 m/s²) from IMU z-axis accel.
