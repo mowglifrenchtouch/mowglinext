@@ -418,6 +418,25 @@ void DRIVEMOTOR_App_Rx(void)
          * and restart the delta window so we don't register a massive phantom
          * jump.
          */
+        /*
+         * Direction-change fence: when `left_encoder_reset` is true the
+         * motor-controller PCB is in the middle of a direction/speed
+         * transient and its encoder register may or may not have been
+         * zeroed by the controller yet. Rather than GUESS (which the old
+         * `prev_left_encoder_val = 0` did, and failed catastrophically
+         * when the controller had NOT reset yet: delta_raw =
+         * current_encoder_val - 0 = tens of thousands of ticks
+         * mistakenly attributed to the new direction, producing
+         * ±1000 m/s bogus velocities downstream), we SYNC `prev` to
+         * whatever the current encoder value is. Delta for this one
+         * packet is then 0 — we concede up to ~21 ms of fine-grained
+         * odometry tracking during the transient, which at 0.5 m/s max
+         * is 10 mm — in exchange for never emitting a bogus tick-burst
+         * on direction change.
+         *
+         * Subsequent packets compute deltas against the post-transient
+         * baseline, so the rest of the trajectory is uncorrupted.
+         */
         left_wheel_speed_val = left_direction * drivemotor_psReceivedData.u8_left_speed;
         const uint8_t left_encoder_reset =
             (left_direction == 0) ||
@@ -425,7 +444,7 @@ void DRIVEMOTOR_App_Rx(void)
             (prev_left_wheel_speed_val == 0 && left_wheel_speed_val != 0);
         if (left_encoder_reset)
         {
-            prev_left_encoder_val = 0;
+            prev_left_encoder_val = left_encoder_val;  /* sync, not zero */
         }
 
         /* Encoder register wraps around 0xFFFF; the delta is computed as an
@@ -445,6 +464,9 @@ void DRIVEMOTOR_App_Rx(void)
         prev_left_wheel_speed_val = left_wheel_speed_val;
         prev_left_direction = left_direction;
 
+        /* Same fence for the right wheel — direction-change transient is
+         * per-wheel on a differential-drive platform (e.g. an in-place
+         * pivot has left and right transitions at different times). */
         right_wheel_speed_val = right_direction * drivemotor_psReceivedData.u8_right_speed;
         const uint8_t right_encoder_reset =
             (right_direction == 0) ||
@@ -452,7 +474,7 @@ void DRIVEMOTOR_App_Rx(void)
             (prev_right_wheel_speed_val == 0 && right_wheel_speed_val != 0);
         if (right_encoder_reset)
         {
-            prev_right_encoder_val = 0;
+            prev_right_encoder_val = right_encoder_val;  /* sync, not zero */
         }
         const uint16_t right_delta_raw = right_encoder_val - prev_right_encoder_val;
         right_encoder_ticks += (uint32_t)right_delta_raw;
