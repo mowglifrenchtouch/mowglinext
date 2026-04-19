@@ -36,6 +36,12 @@ NTRIP_MOUNTPOINT=$(parse_yaml ntrip_mountpoint)
 GPS_PORT="${GPS_PORT:-/dev/gps}"
 GPS_BAUD="${GPS_BAUD:-921600}"
 NTRIP_ENABLED="${NTRIP_ENABLED:-false}"
+HARDWARE_BACKEND="${HARDWARE_BACKEND:-mowgli}"
+
+if [ "$HARDWARE_BACKEND" = "mavros" ]; then
+  echo "[start_gps.sh] HARDWARE_BACKEND=mavros, disabling legacy GPS NTRIP/RTCM serial path"
+  NTRIP_ENABLED="false"
+fi
 
 echo "[start_gps.sh] GPS port: $GPS_PORT @ ${GPS_BAUD} baud"
 echo "[start_gps.sh] NTRIP enabled: $NTRIP_ENABLED"

@@ -5,6 +5,12 @@ log/
 __pycache__/
 *.egg-info/
 
+# ROS2 colcon install (workspace artifacts)
+install/*
+!install/compose/
+!install/lib/
+!install/config/
+
 # IDE
 .vscode/
 .idea/
@@ -16,6 +22,7 @@ __pycache__/
 *.bag
 *.db3
 ros2/install
+.colcon/
 
 # PlatformIO (firmware)
 .pio/
@@ -31,3 +38,9 @@ node_modules/
 *.key
 credentials.json
 .claude/worktrees
+
+#fusioncore submodule
+ros2/src/fusioncore/.vscode/
+ros2/src/fusioncore/build/
+ros2/src/fusioncore/install/
+ros2/src/fusioncore/log/
