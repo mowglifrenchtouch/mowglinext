@@ -657,7 +657,7 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                                                         step={1} precision={1} size="small"
                                                         style={{ width: "100%" }} addonAfter="°"
                                                     />
-                                                    <Tooltip title="Auto-calibrate IMU mounting yaw by driving forward">
+                                                    <Tooltip title="Auto-calibrate IMU mounting yaw (robot drives itself ~0.6 m forward then back)">
                                                         <Button
                                                             size="small"
                                                             icon={<CompassOutlined />}
@@ -765,16 +765,20 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                 destroyOnClose
             >
                 <Typography.Paragraph>
-                    Drive the robot forward roughly <strong>2 metres</strong> within{" "}
-                    <strong>{CALIB_DURATION_SEC} seconds</strong>, then stop.
-                    Keep the wheels as straight as possible (any rotation during the run is filtered out,
-                    but a clear acceleration and deceleration along the body X axis is required).
+                    The robot will <strong>drive itself</strong> ~<strong>0.6 m forward</strong>{" "}
+                    and then back to the start, taking roughly <strong>10 seconds</strong>.
+                    <ul style={{ marginTop: 8, marginBottom: 4 }}>
+                        <li>Make sure the robot is <strong>undocked</strong> (it refuses to run while charging).</li>
+                        <li>Leave <strong>at least 1 m</strong> of clear space in front and behind.</li>
+                        <li>Any active emergency must be cleared first.</li>
+                    </ul>
+                    Collision monitor stays armed — obstacles will stop the motion.
                 </Typography.Paragraph>
                 <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-                    This estimates the mounting yaw of the IMU chip relative to base_link by
+                    Estimates the mounting yaw of the IMU chip relative to base_link by
                     comparing the horizontal accelerometer vector to the wheel-odometry
-                    body-frame acceleration. Only samples with |wz| &lt; 0.05 rad/s and
-                    |a_body| &gt; 0.1 m/s² are used.
+                    body-frame acceleration during the forward and backward ramps.
+                    Only samples with |wz| &lt; 0.05 rad/s and |a_body| &gt; 0.1 m/s² are used.
                 </Typography.Paragraph>
 
                 {!calibResult && !calibRunning && (
@@ -792,8 +796,8 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                     <Alert
                         type="info"
                         showIcon
-                        message="Collecting samples…"
-                        description={`Drive the robot forward and stop within ${CALIB_DURATION_SEC} seconds.`}
+                        message="Calibration running — robot is driving itself"
+                        description="Forward leg, pause, backward leg. Stand clear. The motion will stop automatically."
                         style={{ marginTop: 8 }}
                     />
                 )}
