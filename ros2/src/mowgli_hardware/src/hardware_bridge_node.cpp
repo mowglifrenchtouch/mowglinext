@@ -770,64 +770,57 @@ private:
     std::memcpy(&pkt, data, sizeof(LlOdometry));
 
     const auto stamp = now();
-    const double dt_sec = static_cast<double>(pkt.dt_millis) / 1000.0;
 
-    // Debug: log raw tick values periodically
+    // Debug: log signed tick values + firmware-computed velocity periodically
     static int odom_debug_count = 0;
     if (++odom_debug_count % 50 == 0)
     {
       RCLCPP_INFO(get_logger(),
-                  "Odom raw: L=%d R=%d dt=%u spd_L=%d spd_R=%d dir_L=%u dir_R=%u",
+                  "Odom: L_ticks=%d R_ticks=%d dt=%u  L_v=%d R_v=%d mm/s",
                   pkt.left_ticks,
                   pkt.right_ticks,
                   pkt.dt_millis,
-                  pkt.left_speed,
-                  pkt.right_speed,
-                  pkt.left_direction,
-                  pkt.right_direction);
+                  pkt.left_velocity_mm_s,
+                  pkt.right_velocity_mm_s);
     }
 
-    // Compute tick deltas since last packet.
-    // Tick counters are cumulative absolute (always increasing).
-    // The direction fields indicate forward (1) or reverse (2).
-    // Apply sign based on direction so differential kinematics work.
-    int32_t d_left = pkt.left_ticks - prev_left_ticks_;
-    int32_t d_right = pkt.right_ticks - prev_right_ticks_;
-    if (pkt.left_direction == 2)
-      d_left = -d_left;  // reverse
-    if (pkt.right_direction == 2)
-      d_right = -d_right;  // reverse
-    prev_left_ticks_ = pkt.left_ticks;
+    // Signed tick deltas — polarity already encodes direction, no separate
+    // direction byte to re-sign.
+    const int32_t d_left  = pkt.left_ticks  - prev_left_ticks_;
+    const int32_t d_right = pkt.right_ticks - prev_right_ticks_;
+    prev_left_ticks_  = pkt.left_ticks;
     prev_right_ticks_ = pkt.right_ticks;
 
-    // Track whether wheels are stationary (for gyro bias compensation)
     wheels_stationary_ = (d_left == 0 && d_right == 0);
 
-    // Skip the first packet (no valid delta yet)
     if (!odom_initialized_)
     {
       odom_initialized_ = true;
       return;
     }
 
-    // Convert ticks to metres (TICKS_PER_M = 300.0)
-    constexpr double kTicksPerMetre = 300.0;
     constexpr double kWheelBase = 0.325;
+    constexpr double kTicksPerMetre = 300.0;
 
-    const double d_left_m = static_cast<double>(d_left) / kTicksPerMetre;
-    const double d_right_m = static_cast<double>(d_right) / kTicksPerMetre;
-
-    // Differential drive kinematics
-    const double d_centre = (d_left_m + d_right_m) / 2.0;
-    const double d_theta = (d_right_m - d_left_m) / kWheelBase;
-
-    // Velocity (m/s, rad/s)
-    double vx = 0.0;
+    // Prefer the firmware-computed per-wheel velocity (hardware-timer-accurate
+    // dt, no USB-arrival jitter). Fall back to tick-derived velocity only if
+    // the firmware reports dt=0 (would indicate a bug).
+    double vx   = 0.0;
     double vyaw = 0.0;
-    if (dt_sec > 0.001)
+    if (pkt.dt_millis > 0u)
     {
-      vx = d_centre / dt_sec;
-      vyaw = d_theta / dt_sec;
+      const double v_left_mps  = static_cast<double>(pkt.left_velocity_mm_s)  / 1000.0;
+      const double v_right_mps = static_cast<double>(pkt.right_velocity_mm_s) / 1000.0;
+      vx   = (v_left_mps + v_right_mps) * 0.5;
+      vyaw = (v_right_mps - v_left_mps) / kWheelBase;
+    }
+    else
+    {
+      const double dt_sec   = 0.02;  // assume nominal 20 ms if firmware reports 0
+      const double d_left_m  = static_cast<double>(d_left)  / kTicksPerMetre;
+      const double d_right_m = static_cast<double>(d_right) / kTicksPerMetre;
+      vx   = (d_left_m + d_right_m) * 0.5 / dt_sec;
+      vyaw = (d_right_m - d_left_m) / kWheelBase / dt_sec;
     }
 
     auto msg = nav_msgs::msg::Odometry{};
