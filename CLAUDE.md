@@ -1,6 +1,6 @@
 # MowgliNext
 
-Open-source autonomous robot mower monorepo. ROS2 Kilted, Nav2, SLAM Toolbox, BehaviorTree.CPP v4, cell-based strip coverage.
+Open-source autonomous robot mower monorepo. ROS2 Kilted, Nav2, Cartographer (drift-overlay on GPS-anchored FusionCore), BehaviorTree.CPP v4, cell-based strip coverage.
 
 **Website:** https://mowgli.garden | **Wiki:** https://github.com/cedbossneo/mowglinext/wiki
 
@@ -27,7 +27,7 @@ This robot has spinning blades. The STM32 firmware is the sole blade safety auth
 
 ## Architecture Invariants (DO NOT VIOLATE)
 
-1. **SLAM Toolbox is TF authority for map→odom** — `transform_publish_period: 0.05` (20 Hz). FusionCore owns `odom→base_footprint` (GPS+IMU+wheels fused in single UKF). No feedback loop: SLAM does not feed into FusionCore.
+1. **Cartographer is TF authority for map→odom**, in drift-overlay mode (`POSE_GRAPH.optimize_every_n_nodes = 0`, `use_imu_data = false`). FusionCore is the primary localizer (GPS-RTK anchor, ~5 mm σ); Cartographer's map→odom stays near identity. FusionCore owns `odom→base_footprint` (GPS+IMU+wheels fused in single UKF, 100 Hz). No feedback loop: Cartographer does not feed into FusionCore.
 2. **TF chain follows REP-105** — `map→odom→base_footprint→base_link→sensors`. All Nav2 nodes, FusionCore, and SLAM use `base_footprint` as the robot frame. `base_link` is at the rear wheel axis (OpenMower convention, do not move).
 3. **Cyclone DDS** — not FastRTPS (stale shm issues on ARM)
 4. **Map frame = GPS frame** — X=east, Y=north, no rotation transform
@@ -77,7 +77,7 @@ This robot has spinning blades. The STM32 firmware is the sole blade safety auth
 - Dedicated BT state with `COMMAND_MANUAL_MOW` (7) — does not hijack recording mode
 - Teleop via `/cmd_vel_teleop` (twist_mux priority)
 - Blade managed by GUI (fire-and-forget to firmware)
-- Collision_monitor, GPS, SLAM all remain active
+- Collision_monitor, GPS, Cartographer all remain active
 
 ## Code Style
 
@@ -105,16 +105,17 @@ No Co-Authored-By lines. Keep messages concise and focused on "why".
 - **DDS:** Cyclone DDS (all containers share `docker/config/cyclonedds.xml`)
 - **Topics:** Mowgli-specific topics under `/mowgli/` namespace
 - **Frames:** `map` (global), `odom` (local), `base_footprint` (robot frame for Nav2/FusionCore/SLAM), `base_link` (rear axle), `lidar_link`, `imu_link`
-- **TF chain:** `map→odom` (SLAM Toolbox), `odom→base_footprint` (FusionCore), `base_footprint→base_link` (static), `base_link→sensors` (static)
+- **TF chain:** `map→odom` (Cartographer, drift-overlay), `odom→base_footprint` (FusionCore), `base_footprint→base_link` (static), `base_link→sensors` (static — `base_link→imu_link` rotation = `imu_yaw/pitch/roll` from `mowgli_robot.yaml`, auto-calibratable via GUI button)
 - **Units:** SI throughout (metres, radians, seconds)
 - **Sensor fusion:** FusionCore (single UKF, 50Hz, GPS+IMU+wheels → odom→base_footprint TF + `/fusion/odom`). Source-built from `ros2/src/fusioncore/`. Lifecycle node auto-configured at launch.
 - **Navigation:** RPP for transit, FTCController (Follow-the-Carrot with 3-axis PID) for coverage paths (NOT MPPI — it jumps between adjacent swaths)
 - **Coverage:** Cell-based strip planner in `map_server_node`. Multi-area outer loop (`GetNextUnmowedArea`) iterates through all mowing areas. Inner strip loop fetches strips one at a time (`GetNextStrip` -> `TransitToStrip` -> `FollowStrip`). No full-path pre-planning. Progress persisted in `mow_progress` grid layer. All areas mowed sequentially, then robot docks.
 - **Area Recording:** `RecordArea` BT node records trajectory at 2 Hz, Douglas-Peucker simplification, saves polygon via `/map_server_node/add_area`. Live preview on `~/recording_trajectory`.
-- **Manual Mowing:** Dedicated BT state (COMMAND_MANUAL_MOW=7). Teleop via `/cmd_vel_teleop`, blade managed by GUI. Collision_monitor/GPS/SLAM remain active.
+- **Manual Mowing:** Dedicated BT state (COMMAND_MANUAL_MOW=7). Teleop via `/cmd_vel_teleop`, blade managed by GUI. Collision_monitor/GPS/Cartographer remain active.
 - **Emergency Auto-Reset:** BT auto-resets emergency when robot placed on dock (charging detected). Firmware is safety authority.
 - **GPS fusion:** FusionCore takes `/gps/fix` (NavSatFix) directly — no intermediate converter. `navsat_to_absolute_pose_node` still provides `/gps/absolute_pose` for GUI and BT.
-- **SLAM:** SLAM Toolbox publishes `map→odom` TF (20 Hz) and occupancy grid. No feedback into FusionCore.
+- **SLAM:** Cartographer publishes `map→odom` TF (20 Hz) and occupancy grid. Drift-overlay stance: `optimize_every_n_nodes=0` (global pose-graph optimization off), `use_imu_data=false` (imu_link not colocated with tracking_frame), trusts FusionCore's odom. No feedback into FusionCore. State saved via `/cartographer_node/write_state` → `.pbstream` (GUI button, no autosave).
+- **IMU mounting calibration:** `base_link→imu_link` rotation (imu_roll, imu_pitch, imu_yaw in mowgli_robot.yaml) is critical — if wrong, FusionCore's gravity-removal leaks into pitch, pitch drifts past ±π/2 during rotation, and yaw integration flips sign (process model at `ros2/src/fusioncore/fusioncore_core/src/ukf.cpp:101`). Use the GUI's "Auto-calibrate" button next to IMU Yaw — the robot drives itself ~0.6 m forward then back and solves `imu_yaw = atan2(-ay_chip, ax_chip)` from accel direction vs wheel-derived `a_body`.
 - **Nav2 tuning:** Global costmap 30m x 30m rolling window; keepout_filter disabled in global costmap (blocks transit/docking); collision_monitor PolygonStop min_points=8, PolygonSlow min_points=6; source_timeout 5.0s (ARM TF jitter); progress checker 0.15m required movement, 30s timeout; failure_tolerance 1.0; speeds: mowing 0.3/0.15 m/s, transit 0.2 m/s, max 0.3 m/s.
 - **Joystick:** Foxglove client passes `schemaName` in `clientAdvertise` for JSON-to-CDR conversion. GUI shows joystick during "RECORDING" state (not just "AREA_RECORDING").
 
@@ -187,6 +188,48 @@ When you modify `ros2/src/mowgli_interfaces/msg/*.msg` or `srv/*.srv`:
 
 Do NOT hand-edit `*_generated.go`, `ros_lib/mower_msgs/*.h`, or `gui/web/src/types/ros.ts` — re-run the scripts instead.
 
+## Mowing Session Monitoring
+
+**Whenever a mowing test is run (COMMAND_START, undock, autonomous motion, or any tuning session that involves the robot moving), also run the session monitor in parallel.** Output is a JSONL timeline that can be diffed/plotted across sessions to see how tuning changes affect behavior.
+
+```bash
+# Detached background from the host (writes to /ros2_ws/logs/mow_sessions/
+# inside the container, which is not mounted — better to bind-mount docker/logs/
+# or redirect via --output-dir):
+docker exec -d mowgli-ros2 bash -c '
+  source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && \
+  python3 /ros2_ws/scripts/mow_session_monitor.py \
+    --session 2026-04-19-cartographer-tuning-v3 \
+    --output-dir /ros2_ws/maps'
+
+# Interactively from inside the container (Ctrl-C to stop + write summary):
+docker exec -it mowgli-ros2 bash -c '
+  source /opt/ros/kilted/setup.bash && source /ros2_ws/install/setup.bash && \
+  python3 /ros2_ws/scripts/mow_session_monitor.py --session <name> \
+    --output-dir /ros2_ws/maps'
+```
+
+The `--output-dir /ros2_ws/maps` redirects to the bind-mounted `install_mowgli_maps` Docker volume so logs persist outside the container. Or bind-mount `docker/logs/mow_sessions/` explicitly in compose for a host-visible path.
+
+**What it records** (per-sample, 10 Hz default):
+- FusionCore pose + twist (x/y/z, yaw, vx/vy/wz)
+- TF snapshots: `map→base_footprint` (Cartographer composed), `map→odom` (Cartographer correction alone), `odom→base_footprint` (FusionCore alone)
+- Wheel twist + covariance + integrated distance and yaw
+- IMU gyro + accel + integrated gyro yaw
+- GPS NavSatFix (lat/lon/alt/status/covariance) + `/gps/absolute_pose` ENU
+- Dock heading (`/gnss/heading` while charging)
+- BT state (state_name, current_area, current_strip), hardware mode, emergency flags, battery
+- `cmd_vel_nav` (Nav2 output) + `cmd_vel` (post-safety, what reaches motors)
+- Nav2 `/plan` length, next pose, goal pose, distance-to-goal
+- LiDAR scan health (valid point count, min range)
+- **Cross-source consistency**: `fusion ↔ gps` distance, `fusion ↔ cartographer` distance + yaw diff, `wheel ↔ gyro` yaw drift
+
+**Metadata header** (first line of the JSONL): session name, UTC timestamp, git branch + commit + dirty flag, docker image tags from `.env`, SHA-256 truncated hashes of `mowgli_robot.yaml`, `localization.yaml`, `nav2_params.yaml`, `cartographer.lua` — so sessions from different tunings are grouped/comparable.
+
+**Summary record** (last line, written on Ctrl-C or clean shutdown): total duration, samples written, wheel-integrated distance, straight-line displacement, peak `fusion↔gps` error, peak `wheel↔gyro` yaw drift, final BT state.
+
+**Log directory:** `docker/logs/mow_sessions/<session_name>.jsonl`. Commit notable sessions (golden runs, failure cases) so they survive in git history.
+
 ## Recommended Skills and Agents
 
 When using Claude Code on this project:
@@ -210,7 +253,8 @@ When using Claude Code on this project:
 - Do NOT add ROS1 patterns (rosserial, roscore, catkin) — this is ROS2 only
 - Do NOT use FastRTPS — Cyclone DDS is required
 - Do NOT mock the database/firmware in integration tests — use real interfaces
-- Do NOT add a second TF publisher for `map→odom` — SLAM Toolbox is the sole authority
+- Do NOT add a second TF publisher for `map→odom` — Cartographer is the sole authority (falls back to static identity when `slam=false`)
+- Do NOT re-enable Cartographer global optimization (`optimize_every_n_nodes > 0`) or `use_imu_data` without explicit revisit — both introduced instability on this sparse-feature outdoor setup and were deliberately disabled
 - Do NOT feed SLAM output into FusionCore — causes feedback loops (SLAM reads FusionCore's TF)
 - Do NOT use robot_localization — replaced by FusionCore (single UKF)
 - Do NOT send blade commands without firmware safety checks

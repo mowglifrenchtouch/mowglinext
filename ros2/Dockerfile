@@ -254,6 +254,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY scripts/start_vnc.sh /ros2_ws/scripts/start_vnc.sh
 RUN chmod +x /ros2_ws/scripts/start_vnc.sh
 
+# Copy the mowing-session monitor so it can be launched inside the
+# container (`python3 /ros2_ws/scripts/mow_session_monitor.py --session <name>`).
+COPY scripts/mow_session_monitor.py /ros2_ws/scripts/mow_session_monitor.py
+RUN chmod +x /ros2_ws/scripts/mow_session_monitor.py
+
 # Copy Foxglove layout for easy import
 COPY foxglove/ /ros2_ws/foxglove/
 
