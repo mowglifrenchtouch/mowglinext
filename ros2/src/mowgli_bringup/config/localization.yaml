@@ -93,6 +93,15 @@ fusioncore_node:
     encoder.vel_noise: 0.15
     encoder.yaw_noise: 0.02
 
+    # Second encoder input (KISS-ICP LiDAR odometry via adapter).
+    # When /encoder2/odom is published (adapter running, gated on use_lidar),
+    # FusionCore fuses its twist as an independent vx/vy/wz source to bound
+    # yaw drift during GPS degradation (tree canopy, walls). If no adapter
+    # is running this is simply ignored — FusionCore keeps the subscription
+    # open but never receives messages. Set to "" to disable entirely when
+    # building a split lidar/no-lidar config folder layout later.
+    encoder2.topic: "/encoder2/odom"
+
     # GNSS: u-blox F9P RTK
     # base_noise_xy scales the GPS covariance. At 0.5 (tried on rtabmap)
     # the filter chased Float jitter and heading flipped. At 5.0 the
