@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Card, InputNumber, Space, Typography, Row, Col, Tooltip, Button, Tag } from "antd";
-import { AimOutlined, UndoOutlined } from "@ant-design/icons";
+import { Alert, Card, InputNumber, Modal, Space, Typography, Row, Col, Tooltip, Button, Tag, notification } from "antd";
+import { AimOutlined, CompassOutlined, UndoOutlined } from "@ant-design/icons";
 import { useThemeMode } from "../theme/ThemeContext.tsx";
 import { useIsMobile } from "../hooks/useIsMobile.ts";
 import { useRobotDescription } from "../hooks/useRobotDescription.ts";
@@ -95,6 +95,15 @@ type Props = {
     onChange: (name: string, value: any) => void;
 };
 
+type ImuYawCalibrationResult = {
+    success: boolean;
+    message: string;
+    imu_yaw_rad: number;
+    imu_yaw_deg: number;
+    samples_used: number;
+    std_dev_deg: number;
+};
+
 export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
     const { colors, mode } = useThemeMode();
     const isMobile = useIsMobile();
@@ -102,6 +111,59 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
     const [dragging, setDragging] = useState<SensorId | null>(null);
     const [rotating, setRotating] = useState<SensorId | null>(null);
     const [hoveredSensor, setHoveredSensor] = useState<SensorId | null>(null);
+
+    // IMU yaw auto-calibration modal state
+    const [calibOpen, setCalibOpen] = useState(false);
+    const [calibRunning, setCalibRunning] = useState(false);
+    const [calibResult, setCalibResult] = useState<ImuYawCalibrationResult | null>(null);
+    const CALIB_DURATION_SEC = 30;
+
+    const resetCalibration = useCallback(() => {
+        setCalibRunning(false);
+        setCalibResult(null);
+    }, []);
+
+    const closeCalibration = useCallback(() => {
+        if (calibRunning) return;
+        setCalibOpen(false);
+        resetCalibration();
+    }, [calibRunning, resetCalibration]);
+
+    const startCalibration = useCallback(async () => {
+        setCalibRunning(true);
+        setCalibResult(null);
+        try {
+            const res = await fetch("/api/calibration/imu-yaw", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ duration_sec: CALIB_DURATION_SEC }),
+            });
+            if (!res.ok) {
+                const errBody = await res.text();
+                throw new Error(`HTTP ${res.status}: ${errBody}`);
+            }
+            const data = (await res.json()) as ImuYawCalibrationResult;
+            setCalibResult(data);
+        } catch (e: any) {
+            notification.error({
+                message: "IMU yaw calibration failed",
+                description: e?.message || String(e),
+            });
+        } finally {
+            setCalibRunning(false);
+        }
+    }, []);
+
+    const applyCalibration = useCallback(() => {
+        if (!calibResult || !calibResult.success) return;
+        onChange("imu_yaw", roundTo(calibResult.imu_yaw_rad, 4));
+        notification.success({
+            message: "IMU yaw updated",
+            description: `imu_yaw = ${calibResult.imu_yaw_deg.toFixed(2)}° (${calibResult.imu_yaw_rad.toFixed(4)} rad). Remember to save the configuration.`,
+        });
+        setCalibOpen(false);
+        resetCalibration();
+    }, [calibResult, onChange, resetCalibration]);
 
     // Robot geometry from /robot_description URDF topic (falls back to defaults)
     const robot = useRobotDescription();
@@ -587,12 +649,30 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                                     {meta.yawKey && (
                                         <Col span={12}>
                                             <Text type="secondary" style={{ fontSize: 11 }}>Yaw</Text>
-                                            <InputNumber
-                                                value={roundTo(radToDeg(val.yaw), 1)}
-                                                onChange={(v) => onChange(meta.yawKey, roundTo(degToRad(v ?? 0), 4))}
-                                                step={1} precision={1} size="small"
-                                                style={{ width: "100%" }} addonAfter="°"
-                                            />
+                                            {meta.id === "imu" ? (
+                                                <Space.Compact style={{ width: "100%" }}>
+                                                    <InputNumber
+                                                        value={roundTo(radToDeg(val.yaw), 1)}
+                                                        onChange={(v) => onChange(meta.yawKey, roundTo(degToRad(v ?? 0), 4))}
+                                                        step={1} precision={1} size="small"
+                                                        style={{ width: "100%" }} addonAfter="°"
+                                                    />
+                                                    <Tooltip title="Auto-calibrate IMU mounting yaw by driving forward">
+                                                        <Button
+                                                            size="small"
+                                                            icon={<CompassOutlined />}
+                                                            onClick={() => { resetCalibration(); setCalibOpen(true); }}
+                                                        />
+                                                    </Tooltip>
+                                                </Space.Compact>
+                                            ) : (
+                                                <InputNumber
+                                                    value={roundTo(radToDeg(val.yaw), 1)}
+                                                    onChange={(v) => onChange(meta.yawKey, roundTo(degToRad(v ?? 0), 4))}
+                                                    step={1} precision={1} size="small"
+                                                    style={{ width: "100%" }} addonAfter="°"
+                                                />
+                                            )}
                                         </Col>
                                     )}
                                 </Row>
@@ -674,6 +754,99 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                     </Typography.Paragraph>
                 </Col>
             </Row>
+
+            <Modal
+                title={<Space><CompassOutlined />IMU yaw auto-calibration</Space>}
+                open={calibOpen}
+                onCancel={closeCalibration}
+                maskClosable={!calibRunning}
+                closable={!calibRunning}
+                footer={null}
+                destroyOnClose
+            >
+                <Typography.Paragraph>
+                    Drive the robot forward roughly <strong>2 metres</strong> within{" "}
+                    <strong>{CALIB_DURATION_SEC} seconds</strong>, then stop.
+                    Keep the wheels as straight as possible (any rotation during the run is filtered out,
+                    but a clear acceleration and deceleration along the body X axis is required).
+                </Typography.Paragraph>
+                <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+                    This estimates the mounting yaw of the IMU chip relative to base_link by
+                    comparing the horizontal accelerometer vector to the wheel-odometry
+                    body-frame acceleration. Only samples with |wz| &lt; 0.05 rad/s and
+                    |a_body| &gt; 0.1 m/s² are used.
+                </Typography.Paragraph>
+
+                {!calibResult && !calibRunning && (
+                    <div style={{ textAlign: "right", marginTop: 16 }}>
+                        <Space>
+                            <Button onClick={closeCalibration}>Cancel</Button>
+                            <Button type="primary" icon={<CompassOutlined />} onClick={startCalibration}>
+                                Start
+                            </Button>
+                        </Space>
+                    </div>
+                )}
+
+                {calibRunning && (
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="Collecting samples…"
+                        description={`Drive the robot forward and stop within ${CALIB_DURATION_SEC} seconds.`}
+                        style={{ marginTop: 8 }}
+                    />
+                )}
+
+                {calibResult && (
+                    <>
+                        {calibResult.success ? (
+                            <Alert
+                                type="success"
+                                showIcon
+                                message={`imu_yaw = ${calibResult.imu_yaw_deg.toFixed(2)}° (${calibResult.imu_yaw_rad.toFixed(4)} rad)`}
+                                description={
+                                    <>
+                                        Confidence ±{calibResult.std_dev_deg.toFixed(2)}° from{" "}
+                                        {calibResult.samples_used} valid samples.
+                                        <br />
+                                        <Typography.Text type="secondary">
+                                            Current value: {roundTo(radToDeg(values.imu_yaw ?? 0), 2)}°
+                                        </Typography.Text>
+                                    </>
+                                }
+                            />
+                        ) : (
+                            <Alert
+                                type="error"
+                                showIcon
+                                message="Calibration failed"
+                                description={
+                                    <>
+                                        {calibResult.message}
+                                        <br />
+                                        <Typography.Text type="secondary">
+                                            Hint: drive faster or longer so the accelerometer sees a
+                                            clear forward and backward impulse along the body X axis.
+                                        </Typography.Text>
+                                    </>
+                                }
+                            />
+                        )}
+                        <div style={{ textAlign: "right", marginTop: 16 }}>
+                            <Space>
+                                <Button onClick={() => { resetCalibration(); }}>Retry</Button>
+                                <Button onClick={closeCalibration}>Discard</Button>
+                                {calibResult.success && (
+                                    <Button type="primary" onClick={applyCalibration}>
+                                        Apply
+                                    </Button>
+                                )}
+                            </Space>
+                        </div>
+                    </>
+                )}
+            </Modal>
         </Card>
     );
 };
