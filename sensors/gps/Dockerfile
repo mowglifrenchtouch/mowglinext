@@ -20,6 +20,12 @@ FROM ros:kilted-ros-base AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG UBLOX_DGNSS_REF=main
+# privatedocs000 fork adds RTK-Fixed detection via UBX-NAV-STATUS.carr_soln:
+# status=2 (STATUS_GBAS_FIX) for RTK Fixed (phase-with-fixed-ambiguities),
+# status=1 (STATUS_SBAS_FIX) for RTK Float / RTCM-corrected,
+# status=0 (STATUS_FIX) for plain GPS. Lets FusionCore classify fixes
+# correctly instead of conflating all RTCM-corrected fixes into DGPS_FIX.
+ARG UBLOX_DGNSS_URL=https://github.com/privatedocs000/ublox_dgnss.git
 
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu|http://azure.archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true
 
@@ -43,7 +49,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-kilted-tf2-ros
 
 WORKDIR /ws/src
-RUN git clone --depth 1 --branch ${UBLOX_DGNSS_REF} https://github.com/aussierobots/ublox_dgnss.git
+RUN git clone --depth 1 --branch ${UBLOX_DGNSS_REF} ${UBLOX_DGNSS_URL}
 
 WORKDIR /ws
 RUN . /opt/ros/kilted/setup.sh \

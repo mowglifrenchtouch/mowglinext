@@ -20,36 +20,34 @@ mowgli:
         chassis_mass_kg: 8.76
         chassis_width: 0.4
         coverage_xy_tolerance: 0.5
+        datum_alt: 27
         datum_lat: 48.87965
         datum_lon: 2.1728173
-        datum_alt: 27.0
         dock_approach_distance: 1
         dock_max_retries: 3
         dock_pose_x: 0
         dock_pose_y: 0
-        dock_pose_yaw: 4.17134  # 239° compass — measured with phone compass
+        dock_pose_yaw: 4.17134
         dock_use_charger_detection: true
-        # Lift/tilt emergency is handled by firmware (STM32), not ROS2
-        gps_x: 0.3
-        gps_y: 0
-        gps_z: 0.2
+        emergency_stop_on_lift: true
+        emergency_stop_on_tilt: true
+        gps_antenna_x: 0.3
+        gps_antenna_y: 0
         gps_baudrate: 460800
         gps_port: /dev/gps
         gps_protocol: UBX
         gps_timeout_sec: 5
         gps_wait_after_undock_sec: 10
+        gps_x: 0.3
+        gps_y: 0
+        gps_z: 0.2
         headland_width: 0.18
-        imu_x: 0.191
-        imu_y: -0.176
+        imu_pitch: 0
+        imu_roll: 0
+        imu_x: 0.285
+        imu_y: -0.17
+        imu_yaw: -3.0718
         imu_z: 0.095
-        # IMU mounting rotation (rad). Full roll/pitch/yaw so an upside-down
-        # or side-mounted chip is representable — firmware passes the WT901's
-        # chip-native axes through unchanged, so URDF is the sole correction.
-        # Current install: chip Z aligned with robot Z (verified: accel_z≈+10
-        # at rest), so roll=pitch=0; only yaw is non-zero.
-        imu_roll: 0.0
-        imu_pitch: 0.0
-        imu_yaw: -2.781  # 239° compass-equivalent — user measured
         lidar_enabled: true
         lidar_x: 0
         lidar_y: 0.024

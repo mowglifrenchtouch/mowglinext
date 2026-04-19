@@ -79,6 +79,7 @@ static constexpr uint8_t HL_MODE_MANUAL_MOWING  = 4u;  ///< Manual teleop with b
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "std_msgs/msg/header.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 namespace mowgli_hardware
 {
@@ -154,6 +155,10 @@ private:
                                             {
                                               publish_dock_heading();
                                             });
+
+    // FusionCore reset client: called on is_charging false→true transition
+    // to clear stale filter state before the wide-σ dock_heading anchors yaw.
+    fusion_reset_client_ = create_client<std_srvs::srv::Trigger>("/fusioncore_node/reset");
   }
 
   void create_subscribers()
@@ -374,6 +379,30 @@ private:
       const bool was_charging = is_charging_;
       is_charging_ = (pkt.status_bitmask & STATUS_BIT_CHARGING) != 0u;
       msg.is_charging = is_charging_;
+
+      // Dock heading anchor trigger: on charging transition, reset FusionCore
+      // and start the wide-σ dock_heading window so the Mahalanobis gate
+      // accepts the first heading update (lever arm gated on heading_validated).
+      if (is_charging_ && !was_charging)
+      {
+        charging_anchor_start_ = now();
+        charging_anchor_active_ = true;
+        if (fusion_reset_client_ && fusion_reset_client_->service_is_ready())
+        {
+          auto req = std::make_shared<std_srvs::srv::Trigger::Request>();
+          fusion_reset_client_->async_send_request(req);
+          RCLCPP_INFO(get_logger(),
+                      "Charging transition: FusionCore reset + dock_heading "
+                      "anchor window (%.1fs) opened.",
+                      kChargingAnchorWindowSec);
+        }
+        else
+        {
+          RCLCPP_INFO(get_logger(),
+                      "Charging transition: anchor window opened (FusionCore "
+                      "reset service not ready; wide-σ heading alone).");
+        }
+      }
 
       // Start IMU calibration when charging and not already calibrating.
       // Triggers on: (1) dock transition, (2) first status packet if
@@ -743,15 +772,37 @@ private:
     // orientation quaternion as heading in ENU.
     // dock_yaw_ is compass heading; convert to ENU: yaw_enu = pi/2 - compass
     const double enu_yaw = M_PI / 2.0 - dock_yaw_;
+
+    // During the anchor window after a charging transition, publish with
+    // σ=π so FusionCore's Mahalanobis gate accepts the first heading update
+    // no matter how far the filter's initial yaw is from the dock. Without
+    // this, a filter that initialises at yaw≈0 would reject the true dock
+    // heading (~2.6 rad innovation ≫ 4σ at σ=0.1 rad) and heading_validated_
+    // would stay false, leaving the GPS lever arm disabled indefinitely.
+    double yaw_cov = 0.01;  // steady-state: σ ≈ 0.1 rad (~6°)
+    if (charging_anchor_active_)
+    {
+      const double elapsed = (now() - charging_anchor_start_).seconds();
+      if (elapsed < kChargingAnchorWindowSec)
+      {
+        yaw_cov = M_PI * M_PI;  // σ = π: any innovation passes
+      }
+      else
+      {
+        charging_anchor_active_ = false;
+        RCLCPP_INFO(get_logger(),
+                    "Dock heading anchor window closed; tightening σ to 0.1 rad.");
+      }
+    }
+
     auto msg = sensor_msgs::msg::Imu{};
     msg.header.stamp = now();
     msg.header.frame_id = "base_footprint";
     msg.orientation.z = std::sin(enu_yaw / 2.0);
     msg.orientation.w = std::cos(enu_yaw / 2.0);
-    // Tight yaw covariance — we know the dock heading from compass at install
     msg.orientation_covariance[0] = 0.01;  // roll
     msg.orientation_covariance[4] = 0.01;  // pitch
-    msg.orientation_covariance[8] = 0.01;  // yaw (~6° 1-sigma)
+    msg.orientation_covariance[8] = yaw_cov;
     pub_dock_heading_->publish(msg);
   }
 
@@ -1086,6 +1137,15 @@ private:
   bool is_charging_{false};
   uint8_t current_mode_{0};
   uint8_t gps_quality_{0};
+
+  // Dock heading anchor: on is_charging false→true transition, reset FusionCore
+  // and publish dock_heading with wide σ=π for a short window so the filter's
+  // Mahalanobis gate accepts the first heading update. After the window,
+  // dock_heading narrows to the steady-state tight covariance.
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr fusion_reset_client_;
+  rclcpp::Time charging_anchor_start_;
+  bool charging_anchor_active_{false};
+  static constexpr double kChargingAnchorWindowSec = 5.0;
 
   // Blade motor state (updated from LlBladeStatus packets)
   bool blade_active_{false};

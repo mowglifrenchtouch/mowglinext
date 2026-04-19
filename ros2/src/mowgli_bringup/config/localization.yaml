@@ -70,10 +70,10 @@ fusioncore_node:
     # has_magnetometer must be false so FusionCore only uses gyro rates.
     # gyro_noise = 0.03: ground-truth 90° CCW rotation test (2026-04-19)
     # showed WT901 gyro_z integrates to +96.31° for +90° actual — 7%
-    # over-report with correct sign. After the firmware scaling fixes
-    # (WT901_G_FACTOR float-correct + RAD_PER_DEG rename), the old
-    # "17% under-report" comment is stale. Bias drift ~0.01 rad/s while
-    # stationary is handled by ukf.q_gyro_bias.
+    # over-report with correct sign. Tightening this (tried 0.015 — 2026-04-19)
+    # caused FusionCore σxy to oscillate ±robot-size on dock because the
+    # WT901 has ~0.01 rad/s bias that q_gyro_bias couldn't track fast
+    # enough once wheel yaw was loosened. Keep 0.03 as stable baseline.
     imu.gyro_noise: 0.03
     imu.accel_noise: 0.1
     imu.has_magnetometer: false
@@ -85,10 +85,11 @@ fusioncore_node:
 
     # Wheel encoders: calibrated to 0.2% linear error (session notes 2026-04-18).
     # Fallback only — hardware_bridge publishes non-zero per-axis variance in
-    # /wheel_odom twist.covariance (vx=0.01, ωz=0.05), which FusionCore honors
+    # /wheel_odom twist.covariance (vx=0.01, ωz=9e-4), which FusionCore honors
     # directly. These config values apply when the message cov is zero/negative.
-    # yaw_noise lowered 0.04 -> 0.02: wheel-differential yaw rate is far more
-    # accurate than WT901 gyro on flat ground with calibrated wheels.
+    # yaw_noise = 0.02: wheel-differential yaw is the most reliable yaw source
+    # on flat ground; loosening this to "trust IMU more" (tried 0.05) caused
+    # FusionCore covariance to breathe by robot-size on dock.
     encoder.vel_noise: 0.15
     encoder.yaw_noise: 0.02
 
@@ -142,7 +143,16 @@ fusioncore_node:
     outlier_threshold_gnss: 16.27
     outlier_threshold_imu: 15.09    # chi2(6, 0.999)
     outlier_threshold_enc: 11.34    # chi2(3, 0.999)
-    outlier_threshold_hdg: 16.27    # chi2(3, 0.999)
+    # Heading outlier gate effectively disabled (1e6): dock_heading provides
+    # the ONLY yaw observation while stationary (no magnetometer, no distance
+    # traveled). A tight chi2 gate rejects large initial innovations (filter
+    # yaw starts at 0, dock yaw is ~-2.6 rad on this install → innovation ≫ 4σ)
+    # and heading_validated_ never flips, so the GPS lever arm stays off and
+    # fusion/odom shows the antenna position (30 cm x-bias). The only risk
+    # from disabling the gate is a single malformed dock_heading packet
+    # rotating the filter; dock_yaw is user-measured at install and published
+    # from a const, so in practice this is safe.
+    outlier_threshold_hdg: 1000000.0
 
     # Adaptive noise estimation — auto-tunes from innovation sequence
     adaptive.imu: true
@@ -154,18 +164,29 @@ fusioncore_node:
     adaptive.window: 50       # ~1s at 50 Hz publish rate
     adaptive.alpha: 0.01
 
-    # UKF process noise — q_position low so the filter stays smooth
-    # between GPS fixes and doesn't snap aggressively to each Float
-    # noise sample. Wheels+IMU dominate short-term, GPS is a slow anchor.
-    ukf.q_position: 0.05
-    # q_orientation very low: heading is stiff, resists GPS position-induced
-    # yaw flips.  Heading changes come from gyro (WZ) through process model,
-    # not from process noise spreading sigma points across yaw.
-    ukf.q_orientation: 0.0001
+    # UKF process noise — tuned for upstream 22D quaternion state (commit
+    # 9832955). In the new state representation q_orientation is a pure
+    # quaternion regularization term (see fusioncore_core/src/ukf.hpp),
+    # NOT the old Euler yaw process noise. Keep at 1e-9 like upstream —
+    # our prior 1e-4 bloated the orientation distribution by 5 orders of
+    # magnitude and leaked into position covariance.
+    ukf.q_position: 0.01
+    ukf.q_orientation: 1.0e-9
     ukf.q_velocity: 0.1
     ukf.q_angular_vel: 0.1
     ukf.q_acceleration: 1.0
-    # WT901 gyro has ~0.01 rad/s z-axis bias that drifts heading.
-    # Higher q_gyro_bias lets the estimator track it faster.
-    ukf.q_gyro_bias: 0.001
-    ukf.q_accel_bias: 0.001
+    # Gyro/accel bias process noise: match upstream defaults (1e-5).
+    # Our earlier 1e-3 let the bias wander freely every 100Hz step, so
+    # WT901 gyro bias was effectively re-estimated at every sample instead
+    # of being tracked slowly.
+    ukf.q_gyro_bias: 1.0e-5
+    ukf.q_accel_bias: 1.0e-5
+
+    # Zero-velocity updates (ZUPT): upstream-native replacement for our
+    # hardware_bridge force_zero trick. When |v| < velocity_threshold and
+    # |ω| < angular_threshold, fuse v=0 with σ=0.01 m/s. Keeps pose pinned
+    # while docked without relying on is_charging_ signal.
+    zupt.enabled: true
+    zupt.velocity_threshold: 0.05
+    zupt.angular_threshold: 0.05
+    zupt.noise_sigma: 0.01
