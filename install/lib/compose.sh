@@ -35,6 +35,7 @@ ensure_default_configs() {
   fi
 }
 
+
 build_compose_stack() {
   COMPOSE_FILES=()
 
@@ -43,6 +44,10 @@ build_compose_stack() {
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.mqtt.yml")
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.gps.yml")
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.watchtower.yml")
+
+  # Foxglove bridge is controlled via the ENABLE_FOXGLOVE env var passed
+  # to the ROS2 container (see docker-compose.base.yml).  No separate
+  # compose file is needed — the launch file starts/skips the node.
   if [[ "${LIDAR_ENABLED:-true}" == "true" && "${LIDAR_TYPE:-none}" != "none" ]]; then
     case "${LIDAR_TYPE:-}" in
       rplidar)
@@ -84,6 +89,9 @@ build_compose_stack() {
 # file defines its own single anchor.
 
 write_compose_merged() {
+# Generate a single self-contained docker-compose.yaml by merging all
+# selected compose templates. Users get one readable file instead of
+# needing to understand Docker Compose include/project mechanics.
   mkdir -p "$DOCKER_DIR"
 
   local compose_args=()
