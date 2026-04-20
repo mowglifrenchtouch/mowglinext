@@ -73,7 +73,7 @@ setup_env() {
   : "${MAVROS_BY_ID:=}"
   : "${MAVROS_PORT:=/dev/mavros}"
   : "${MAVROS_BAUD:=921600}"
-  : "${MAVROS_GCS_URL:=}"
+  : "${MAVROS_GCS_URL:=udp-b://@255.255.255.255:14550}" # udp-b = broadcast, udp = unicast, empty = disabled
   : "${MAVROS_TGT_SYSTEM:=1}"
   : "${MAVROS_TGT_COMPONENT:=1}"
 

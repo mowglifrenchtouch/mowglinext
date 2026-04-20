@@ -19,6 +19,7 @@ select_hardware_backend() {
       export HARDWARE_BACKEND="mavros"
       info "Selected backend: Pixhawk via MAVROS"
       select_mavros_autopilot || return 1
+      select_mavros_gcs_mode || return 1
 
       echo ""
       warn "Please connect the Pixhawk to a USB port before continuing."
@@ -162,4 +163,59 @@ select_mavros_autopilot() {
       return 1
       ;;
   esac
+}
+
+select_mavros_gcs_mode() {
+  echo ""
+  echo "Select MAVROS GCS forwarding mode:"
+  echo "  [1] Disabled"
+  echo "  [2] UDP broadcast (PC + mobile on local network)"
+  echo "  [3] UDP unicast (single remote PC)"
+  echo ""
+  printf "Choice [1-3]: "
+  read -r choice
+
+  case "$choice" in
+    1)
+      export MAVROS_GCS_URL=""
+      info "MAVROS GCS forwarding disabled"
+      ;;
+    2)
+      export MAVROS_GCS_URL="udp-b://@255.255.255.255:14550"
+      info "Selected MAVROS GCS forwarding: UDP broadcast on port 14550"
+      ;;
+    3)
+      select_mavros_gcs_ip || return 1
+      ;;
+    *)
+      error "Invalid choice"
+      return 1
+      ;;
+  esac
+}
+
+select_mavros_gcs_ip() {
+  local ip=""
+  local port="14550"
+
+  echo ""
+  printf "Remote GCS IP address (example: 192.168.10.100): "
+  read -r ip
+
+  if [ -z "$ip" ]; then
+    error "IP address cannot be empty"
+    return 1
+  fi
+
+  printf "Remote GCS UDP port [14550]: "
+  read -r port
+  port="${port:-14550}"
+
+  if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+    error "Invalid UDP port"
+    return 1
+  fi
+
+  export MAVROS_GCS_URL="udp://@${ip}:${port}"
+  info "Selected MAVROS GCS forwarding: ${MAVROS_GCS_URL}"
 }
