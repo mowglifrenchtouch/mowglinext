@@ -40,8 +40,8 @@
 #include "std_msgs/msg/string.hpp"
 
 // SLAM (Cartographer / slam_toolbox) subscription was removed with the
-// switch to the KISS-ICP drift-correction architecture. Localization mode
-// now reflects GPS quality only; LiDAR-based obstacle avoidance stays
+// switch to the Kinematic-ICP drift-correction architecture. Localization
+// mode now reflects GPS quality only; LiDAR-based obstacle avoidance stays
 // active via collision_monitor + obstacle_tracker independently.
 
 namespace mowgli_localization

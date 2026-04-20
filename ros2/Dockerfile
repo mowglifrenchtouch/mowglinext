@@ -49,8 +49,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtinyxml2-dev \
     # Topic tools (relay, throttle — used in simulation for topic remapping)
     ros-kilted-topic-tools \
-    # LaserScan <-> PointCloud2 conversion (feeds KISS-ICP from LD19 /scan)
-    ros-kilted-pointcloud-to-laserscan \
     # Docking (opennav_docking — dock/undock action server)
     # DockRobot/UndockRobot actions are in nav2_msgs (already installed).
     # The docking_server executable is in opennav_docking.
@@ -168,20 +166,18 @@ RUN ln -sf fusioncore/fusioncore_core src/fusioncore_core \
  && ln -sf fusioncore/fusioncore_ros  src/fusioncore_ros \
  && ln -sf fusioncore/compass_msgs    src/compass_msgs
 
-# KISS-ICP repo contains both a cpp library (cpp/) and a ROS2 package (ros/).
-# Colcon doesn't auto-discover the nested ros/package.xml, and the top-level
-# kiss_icp/ has no package.xml of its own. Symlink ros/ to the workspace root
-# so colcon finds kiss_icp directly. KISS-ICP's CMakeLists detects the symlink
-# (IS_SYMLINK branch) and fetches the cpp lib via FetchContent at build time,
-# avoiding the `../cpp/` relative path trap.
-RUN ln -sf kiss_icp/ros src/kiss_icp_ros
+# kinematic_icp is a cpp+ros monorepo (cpp/, ros/). Unlike KISS-ICP it has no
+# top-level CMakeLists.txt, so colcon's recursive scan finds
+# kinematic_icp/ros/package.xml directly — no symlink needed. The ros
+# CMakeLists uses `${CMAKE_CURRENT_SOURCE_DIR}/../cpp/kinematic_icp` which
+# resolves correctly when colcon cds into the real source path.
 
 # Build all packages (mowgli_interfaces is already built and cached)
 RUN /bin/bash -c "\
     source /opt/ros/kilted/setup.bash && \
     source install/setup.bash && \
     colcon build \
-      --packages-ignore fusioncore fusioncore_gazebo kiss-icp \
+      --packages-ignore fusioncore fusioncore_gazebo \
       --cmake-args -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTING=OFF \
       --parallel-workers \$(nproc) \
       --event-handlers console_cohesion+ \

@@ -85,7 +85,7 @@ def generate_launch_description() -> LaunchDescription:
     use_lidar_arg = DeclareLaunchArgument(
         "use_lidar",
         default_value="true",
-        description="Enable LiDAR-dependent nodes (obstacle tracker, KISS-ICP). Set to false for GPS-only.",
+        description="Enable LiDAR-dependent nodes (obstacle tracker, Kinematic-ICP). Set to false for GPS-only.",
     )
 
     # ------------------------------------------------------------------
@@ -146,9 +146,9 @@ def generate_launch_description() -> LaunchDescription:
     # ------------------------------------------------------------------
     # 2. Navigation stack — FusionCore, static map->odom, Nav2
     #    FusionCore publishes odom -> base_footprint; navigation.launch.py
-    #    publishes a static identity map -> odom. KISS-ICP drift correction
-    #    is real-robot only (requires LiDAR on ARM); sim runs open-loop
-    #    GPS-only for now.
+    #    publishes a static identity map -> odom. Kinematic-ICP drift
+    #    correction is real-robot only (requires LiDAR on ARM); sim runs
+    #    open-loop GPS-only for now.
     # ------------------------------------------------------------------
     navigation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(

@@ -3,23 +3,28 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-kiss_icp_encoder_adapter.py
+kinematic_icp_encoder_adapter.py
 
-Re-publishes KISS-ICP's LiDAR-odometry as a "second encoder" twist source
-that FusionCore can fuse alongside the wheel encoders.
+Re-publishes Kinematic-ICP's LiDAR-odometry as a "second encoder" twist
+source that FusionCore can fuse alongside the wheel encoders.
 
-    /kiss_icp/odometry  (nav_msgs/Odometry, pose-only)
+    /kinematic_icp/lidar_odometry (nav_msgs/Odometry, pose + twist)
         -> finite-difference twist (falls back to .twist if populated)
-        -> /encoder2/odom  (nav_msgs/Odometry with twist covariance)
+        -> /encoder2/odom              (nav_msgs/Odometry with twist covariance)
 
-FusionCore's UKF treats this topic as a body-frame twist measurement; the
-covariance we advertise here gates its influence. Baseline σ values make
-healthy-ICP twist tighter than wheel-encoder twist (especially on yaw);
+Kinematic-ICP's output is already kinematic-constrained: its pose is
+seeded by the wheel-odom TF delta and penalised for deviating from the
+non-holonomic motion model, so the finite-difference twist cannot
+hallucinate lateral motion the way KISS-ICP did on featureless grass.
+
+FusionCore's UKF treats this topic as a body-frame twist measurement;
+the covariance we advertise gates its influence. Baseline σ values make
+healthy ICP twist tighter than wheel-encoder twist (especially on yaw);
 degraded samples are inflated so FusionCore effectively ignores them.
 
-Safety: this node does not touch drive commands, TF, or any safety topic.
-It is purely a measurement re-packager and can be killed/added at runtime
-without affecting motor output.
+Safety: this node does not touch drive commands, TF, or any safety
+topic. It is purely a measurement re-packager and can be killed/added
+at runtime without affecting motor output.
 """
 
 import math
@@ -54,8 +59,8 @@ def _yaw_from_quat(qx: float, qy: float, qz: float, qw: float) -> float:
     return math.atan2(siny_cosp, cosy_cosp)
 
 
-class KissIcpEncoderAdapter(Node):
-    """Subscribes to KISS-ICP odometry, publishes twist-only encoder odom."""
+class KinematicIcpEncoderAdapter(Node):
+    """Subscribes to Kinematic-ICP odometry, publishes twist-only encoder odom."""
 
     # --- Covariance baselines ---
     # Healthy: σ_vx = σ_vy = 0.1 m/s (var 0.01), σ_wz = 0.05 rad/s (var 0.0025).
@@ -67,16 +72,16 @@ class KissIcpEncoderAdapter(Node):
     MAX_DT_SEC = 1.0
     MAX_POS_JUMP_M = 2.0
 
-    # Pose-covariance proxy for "match quality" (KISS-ICP has no status
-    # topic today — it fills pose.covariance[0] from the position_covariance
-    # launch param, default 0.1). If a supervisor cranks this above 1.0 we
-    # treat the sample as degraded.
+    # Pose-covariance proxy for "match quality" (Kinematic-ICP fills
+    # pose.covariance[0] from the position_covariance launch param,
+    # default 0.1). If a supervisor cranks this above 1.0 we treat the
+    # sample as degraded.
     POS_COV_DEGRADED = 1.0
 
     def __init__(self) -> None:
-        super().__init__("kiss_icp_encoder_adapter")
+        super().__init__("kinematic_icp_encoder_adapter")
 
-        self.declare_parameter("input_topic", "/kiss_icp/odometry")
+        self.declare_parameter("input_topic", "/kinematic_icp/lidar_odometry")
         self.declare_parameter("output_topic", "/encoder2/odom")
         input_topic = self.get_parameter("input_topic").value
         output_topic = self.get_parameter("output_topic").value
@@ -98,7 +103,7 @@ class KissIcpEncoderAdapter(Node):
         )
 
         self.get_logger().info(
-            f"kiss_icp_encoder_adapter ready: {input_topic} -> {output_topic}"
+            f"kinematic_icp_encoder_adapter ready: {input_topic} -> {output_topic}"
         )
 
     def _on_odom(self, msg: Odometry) -> None:
@@ -179,7 +184,7 @@ class KissIcpEncoderAdapter(Node):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = KissIcpEncoderAdapter()
+    node = KinematicIcpEncoderAdapter()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

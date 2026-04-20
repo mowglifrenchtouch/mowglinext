@@ -127,7 +127,7 @@ BT::NodeStatus SaveSlamMap::tick()
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
   RCLCPP_INFO_ONCE(ctx->node->get_logger(),
                    "SaveSlamMap: map save not implemented (SLAM removed, "
-                   "KISS-ICP drift correction has no map serialization); "
+                   "Kinematic-ICP drift correction has no map serialization); "
                    "returning SUCCESS.");
   return BT::NodeStatus::SUCCESS;
 }

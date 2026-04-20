@@ -147,7 +147,8 @@ install(
 install(
   PROGRAMS
     scripts/calibrate_imu_yaw_node.py
-    scripts/kiss_icp_encoder_adapter.py
+    scripts/kinematic_icp_encoder_adapter.py
+    scripts/wheel_odom_tf_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -82,7 +82,7 @@ def generate_launch_description() -> LaunchDescription:
     use_lidar_arg = DeclareLaunchArgument(
         "use_lidar",
         default_value="true",
-        description="When false, use nav2_params_no_lidar.yaml (no obstacle layer, collision monitor pass-through). Also skips KISS-ICP LiDAR odometry.",
+        description="When false, use nav2_params_no_lidar.yaml (no obstacle layer, collision monitor pass-through). Also skips Kinematic-ICP LiDAR odometry.",
     )
 
     # ------------------------------------------------------------------
@@ -225,8 +225,9 @@ def generate_launch_description() -> LaunchDescription:
     # 2. Static map→odom identity
     #    FusionCore's odom is GPS-RTK anchored (σ ~3mm when Fixed), so the
     #    map frame IS the GPS ENU frame. No SLAM correction needed when
-    #    GPS is healthy. During GPS degradation, KISS-ICP publishes
-    #    corrections to map→odom (see kiss_icp.launch.py, gated on use_lidar).
+    #    GPS is healthy. During GPS degradation, Kinematic-ICP shores up
+    #    dead-reckoning by feeding FusionCore's encoder2 slot (see
+    #    kinematic_icp.launch.py, gated on use_lidar).
     # ------------------------------------------------------------------
     static_map_odom_tf = Node(
         package="tf2_ros",
@@ -243,33 +244,22 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
-    # 3. KISS-ICP LiDAR odometry (scan -> PointCloud2 -> /kiss_icp/odometry)
-    #    Gated entirely on use_lidar. KISS-ICP does NOT publish TF;
-    #    an external adapter republishes /kiss_icp/odometry as /encoder2/odom
-    #    so FusionCore can fuse it as a wheel-odom-like source.
+    # 3. Kinematic-ICP LiDAR odometry
+    #    Launched by kinematic_icp.launch.py: wheel_odom_tf_node +
+    #    kinematic_icp_online_node + kinematic_icp_encoder_adapter.
+    #    Gated entirely on use_lidar. Kinematic-ICP does NOT publish the
+    #    odom TF; the adapter republishes /kinematic_icp/lidar_odometry as
+    #    /encoder2/odom so FusionCore can fuse it as a wheel-odom-like
+    #    source, with the kinematic prior enforcing non-holonomic motion.
     # ------------------------------------------------------------------
-    kiss_icp_group = IncludeLaunchDescription(
+    kinematic_icp_group = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(bringup_dir, "launch", "kiss_icp.launch.py")
+            os.path.join(bringup_dir, "launch", "kinematic_icp.launch.py")
         ),
         condition=IfCondition(use_lidar),
         launch_arguments={
             "use_sim_time": use_sim_time,
         }.items(),
-    )
-
-    # Adapter: /kiss_icp/odometry (pose-only) -> /encoder2/odom (twist-only).
-    # Finite-differences KISS-ICP pose into body-frame twist and advertises
-    # tight covariance when ICP is healthy / inflated covariance when the
-    # pose-covariance proxy indicates a bad match. FusionCore fuses this as
-    # a second encoder source. See scripts/kiss_icp_encoder_adapter.py.
-    kiss_icp_encoder_adapter = Node(
-        condition=IfCondition(use_lidar),
-        package="mowgli_localization",
-        executable="kiss_icp_encoder_adapter.py",
-        name="kiss_icp_encoder_adapter",
-        output="screen",
-        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     # ------------------------------------------------------------------
@@ -330,8 +320,7 @@ def generate_launch_description() -> LaunchDescription:
             fusioncore_node,
             fusioncore_configure,
             fusioncore_start,
-            kiss_icp_group,
-            kiss_icp_encoder_adapter,
+            kinematic_icp_group,
             wait_for_map_odom_tf,
             nav2_after_tf,
         ]

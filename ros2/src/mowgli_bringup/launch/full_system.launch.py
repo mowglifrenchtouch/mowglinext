@@ -92,7 +92,7 @@ def generate_launch_description() -> LaunchDescription:
     use_lidar_arg = DeclareLaunchArgument(
         "use_lidar",
         default_value="true",
-        description="Enable LiDAR-dependent nodes (KISS-ICP drift correction, obstacle layer, collision monitor scan). Set to false for GPS-only operation without a LiDAR.",
+        description="Enable LiDAR-dependent nodes (Kinematic-ICP drift correction, obstacle layer, collision monitor scan). Set to false for GPS-only operation without a LiDAR.",
     )
 
     # ------------------------------------------------------------------
@@ -139,7 +139,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
-    # 2. navigation.launch.py — FusionCore + Nav2 (+ optional KISS-ICP)
+    # 2. navigation.launch.py — FusionCore + Nav2 (+ optional Kinematic-ICP)
     # ------------------------------------------------------------------
     navigation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
