@@ -40,6 +40,7 @@ import {useIsMobile} from "../hooks/useIsMobile";
 import {AbsolutePoseConstants} from "../types/ros.ts";
 import {useMemo} from "react";
 import {useSettings} from "../hooks/useSettings.ts";
+import {computeBatteryPercent} from "../utils/battery.ts";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -100,17 +101,10 @@ export const DiagnosticsPage = () => {
 
     // ── derived values ───────────────────────────────────────────────────────
 
-    const batteryPercent = useMemo(() => {
-        if (highLevelStatus.battery_percent != null && highLevelStatus.battery_percent > 0) {
-            return highLevelStatus.battery_percent;
-        }
-        if (power.v_battery) {
-            const full = parseFloat(settings["battery_full_voltage"] ?? "28.5");
-            const empty = parseFloat(settings["battery_empty_voltage"] ?? "23.0");
-            return Math.max(0, Math.min(100, ((power.v_battery - empty) / (full - empty)) * 100));
-        }
-        return 0;
-    }, [highLevelStatus.battery_percent, power.v_battery, settings]);
+    const batteryPercent = useMemo(
+        () => computeBatteryPercent(highLevelStatus.battery_percent, power.v_battery, settings),
+        [highLevelStatus.battery_percent, power.v_battery, settings],
+    );
 
     const gpsFlags = gps.flags ?? 0;
     const gpsFixType = useMemo(() => {
