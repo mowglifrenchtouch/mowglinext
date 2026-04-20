@@ -86,8 +86,20 @@ class KinematicIcpEncoderAdapter(Node):
         input_topic = self.get_parameter("input_topic").value
         output_topic = self.get_parameter("output_topic").value
 
-        sensor_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+        # Input: /kinematic_icp/lidar_odometry is published with the ROS2
+        # default system QoS (RELIABLE, depth=1) by the K-ICP online node.
+        in_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        # Output: /encoder2/odom — FusionCore subscribes RELIABLE with depth
+        # 50, matching hardware_bridge's /wheel_odom publisher QoS. A
+        # BEST_EFFORT publisher here would be silently dropped ("incompatible
+        # QoS, last policy: RELIABILITY") — we saw this on first deploy.
+        out_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
             durability=DurabilityPolicy.VOLATILE,
@@ -97,9 +109,9 @@ class KinematicIcpEncoderAdapter(Node):
         self._prev_xy: Optional[Tuple[float, float]] = None
         self._prev_yaw: Optional[float] = None
 
-        self._pub = self.create_publisher(Odometry, output_topic, sensor_qos)
+        self._pub = self.create_publisher(Odometry, output_topic, out_qos)
         self._sub = self.create_subscription(
-            Odometry, input_topic, self._on_odom, sensor_qos
+            Odometry, input_topic, self._on_odom, in_qos
         )
 
         self.get_logger().info(
