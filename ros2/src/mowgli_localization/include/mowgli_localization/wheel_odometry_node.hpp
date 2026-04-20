@@ -29,7 +29,7 @@
  *   /wheel_odom    nav_msgs/msg/Odometry
  *
  * Optionally published TF:
- *   odom → base_link  (disabled by default; let the EKF own this transform)
+ *   odom → base_footprint  (disabled by default; FusionCore owns this transform)
  *
  * Parameters:
  *   wheel_distance   (double, default 0.35 m)   – lateral distance between
@@ -37,7 +37,7 @@
  *   ticks_per_meter  (double, default 300.0)   – encoder ticks per metre of
  *                    wheel travel.
  *   publish_tf       (bool,   default false)     – when true the node also
- *                    broadcasts the odom → base_link TF.
+ *                    broadcasts the odom → base_footprint TF.
  */
 
 #pragma once

@@ -16,7 +16,7 @@ bt_navigator:
     # Paths are injected by navigation.launch.py via RewrittenYaml — keep empty here.
     default_nav_to_pose_bt_xml: ""
     default_nav_through_poses_bt_xml: ""
-    # plugin_lib_names: auto-loaded in Jazzy — no manual list needed.
+    # plugin_lib_names: auto-loaded in Kilted — no manual list needed.
     enable_stamped_cmd_vel: true
 
 bt_navigator_navigate_through_poses_rclcpp_node:
@@ -310,17 +310,11 @@ global_costmap:
       rolling_window: true
       width: 30
       height: 30
-      # keepout_filter re-enabled: the keepout mask now includes a navigation
-      # margin (keepout_nav_margin param) so the robot can operate near the
-      # boundary edge without triggering "Start occupied".
-      # keepout_filter disabled: LETHAL outside mowing area blocks transit
-      # and docking routes. Boundary enforcement via coverage planner only.
+      # keepout_filter intentionally NOT loaded: marking the area outside
+      # the mowing polygon as LETHAL blocks transit and docking routes.
+      # Boundary enforcement is handled by the coverage planner via
+      # strip-level in-polygon clipping, not the costmap.
       plugins: ["obstacle_layer", "inflation_layer"]
-
-      keepout_filter:
-        plugin: "nav2_costmap_2d::KeepoutFilter"
-        enabled: true
-        filter_info_topic: "/costmap_filter_info"
 
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -474,10 +468,11 @@ docking_server:
       plugin: "opennav_docking::SimpleChargingDock"
       charging_threshold: 0.1
       # Geometric distance (m) from base_link to dock pose for isDocked().
-      # Must accommodate SLAM relocalization drift — lifelong SLAM can
-      # place the robot several metres from the configured dock pose
-      # after loading a saved map with heading mismatch.
-      docking_threshold: 0.5
+      # RTK-Fixed gives σ ~3 mm, so 0.05 m is a comfortable envelope
+      # covering antenna-lever-arm effects and short GPS glitches.
+      # (The earlier 0.5 m was a concession to lifelong-SLAM drift, which
+      # no longer applies — FusionCore is the sole localizer.)
+      docking_threshold: 0.05
       staging_x_offset: -1.0
       use_external_detection_pose: false
       use_battery_status: true

@@ -37,8 +37,8 @@
  *   theta += d_theta
  *
  * Covariance notes:
- *   The EKF in localization.yaml consumes only vx and vyaw from this source
- *   (odom0_config), so pose covariance is intentionally large (we do not claim
+ *   FusionCore (the UKF in localization.yaml) consumes only vx and vyaw from
+ *   this source, so pose covariance is intentionally large (we do not claim
  *   accurate absolute position from dead-reckoning alone).  Twist covariance
  *   uses moderate values reflecting real encoder noise.
  */
@@ -187,8 +187,11 @@ void WheelOdometryNode::on_wheel_tick(mowgli_interfaces::msg::WheelTick::ConstSh
 
   nav_msgs::msg::Odometry odom;
   odom.header.stamp = stamp;
+  // REP-105: body frame is base_footprint; FusionCore owns odom->base_footprint.
+  // This node is kept for twist-only consumers; publish_tf defaults to false so
+  // the pose branch never competes with FusionCore.
   odom.header.frame_id = "odom";
-  odom.child_frame_id = "base_link";
+  odom.child_frame_id = "base_footprint";
 
   // Pose
   odom.pose.pose.position.x = x_;
@@ -197,8 +200,8 @@ void WheelOdometryNode::on_wheel_tick(mowgli_interfaces::msg::WheelTick::ConstSh
   odom.pose.pose.orientation = yaw_to_quaternion(theta_);
 
   // Pose covariance (row-major 6×6: x y z roll pitch yaw).
-  // Large diagonal — we trust the EKF to own the absolute pose; we only
-  // contribute velocity information (odom0_config selects vx and vyaw).
+  // Large diagonal — we trust FusionCore to own the absolute pose; we only
+  // contribute velocity information (vx and vyaw) from the encoder stream.
   odom.pose.covariance[0] = 1e6;  // x  (untrusted — EKF uses velocity only)
   odom.pose.covariance[7] = 1e6;  // y  (untrusted — EKF uses velocity only)
   odom.pose.covariance[14] = 1e6;  // z  (irrelevant for 2D)
@@ -238,7 +241,7 @@ void WheelOdometryNode::on_wheel_tick(mowgli_interfaces::msg::WheelTick::ConstSh
     geometry_msgs::msg::TransformStamped tf;
     tf.header.stamp = stamp;
     tf.header.frame_id = "odom";
-    tf.child_frame_id = "base_link";
+    tf.child_frame_id = "base_footprint";
 
     tf.transform.translation.x = x_;
     tf.transform.translation.y = y_;

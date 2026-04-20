@@ -1,44 +1,47 @@
 # ---------------------------------------------------------------------------
-# FusionCore configuration — single UKF fusing GPS + IMU + wheels.
+# FusionCore configuration — single UKF fusing GPS + IMU + wheels (+ optional
+# Kinematic-ICP LiDAR twist on /encoder2/odom).
 #
-# ARCHITECTURE (Cartographer backend):
-#   FusionCore publishes odom → base_footprint TF (GPS-aided local odometry).
-#   Cartographer publishes map → odom TF (LiDAR scan matching).
-#   No GPS-SLAM corrector — GPS is fused directly in FusionCore.
-#   Full chain: map → odom → base_footprint.
+# ARCHITECTURE (FusionCore is the SOLE localizer — no SLAM):
+#   map → odom        static identity (published once at launch).
+#   odom → base_footprint FusionCore 22D quaternion UKF @ 100 Hz.
+#   base_footprint → base_link → sensors  static URDF.
 #
-#   GPS in FusionCore provides heading stability via position deltas and
-#   global anchoring. q_orientation=0.0001 prevents GPS heading flips.
+#   GPS is RTK-anchored (σ ~3 mm when Fixed); the odom frame IS the GPS ENU
+#   frame. Kinematic-ICP runs on a parallel TF tree and feeds FusionCore its
+#   LiDAR-derived twist through the encoder2 slot, never as a TF.
 #
 # INPUT TOPICS (remapped in launch file):
-#   /wheel_odom  (nav_msgs/Odometry)    — wheel encoder velocity
-#   /imu/data    (sensor_msgs/Imu)      — gyro + accel
-#   /gps/fix     (sensor_msgs/NavSatFix) — GPS position
-#   /gnss/heading (sensor_msgs/Imu)     — dock heading (from hardware_bridge ~/dock_heading)
+#   /wheel_odom      (nav_msgs/Odometry)    — wheel encoder velocity
+#   /imu/data        (sensor_msgs/Imu)      — gyro + accel
+#   /gps/fix         (sensor_msgs/NavSatFix) — GPS position
+#   /gnss/heading    (sensor_msgs/Imu)      — dock heading (hardware_bridge ~/dock_heading)
+#   /encoder2/odom   (nav_msgs/Odometry)    — optional Kinematic-ICP twist
 #
 # OUTPUT:
 #   /fusion/odom (nav_msgs/Odometry)    — fused state estimate
-#   TF: odom → base_footprint          — at publish_rate Hz
+#   TF: odom → base_footprint           — at publish_rate Hz
 # ---------------------------------------------------------------------------
 fusioncore_node:
   ros__parameters:
     base_frame: base_footprint
     odom_frame: odom
     # 100 Hz publish halves the TF gap (was 50 Hz → 20 ms max gap). Reduces
-    # Cartographer "No transform found for stamp" warnings and costmap/planner
-    # TF-staleness races during fast undocking transitions.
+    # costmap/planner TF-staleness races during fast undocking transitions.
     publish_rate: 100.0
     # Force 2D: zero Z in published odom + TF so the costmap rolling
     # window stays in the 2D navigation plane regardless of GPS altitude
     # noise or IMU-Z drift. We're a garden mower — altitude is irrelevant.
     publish.force_2d: true
 
-    # QoS overrides — hardware_bridge publishes /imu/data and /wheel_odom
-    # BEST_EFFORT, and ublox_dgnss publishes /gps/fix BEST_EFFORT (sensor
-    # data convention). FusionCore's default subscription QoS is RELIABLE,
-    # which refuses BEST_EFFORT publishers with "incompatible QoS policy".
-    # Without these overrides no IMU/wheel data reaches FusionCore → no
-    # odom → slam_toolbox starves.
+    # QoS overrides — ublox_dgnss publishes /gps/fix BEST_EFFORT (sensor-data
+    # convention). FusionCore's default subscription QoS is RELIABLE, which
+    # refuses BEST_EFFORT publishers. The overrides below also exist for
+    # /imu/data and /wheel_odom, though hardware_bridge intentionally
+    # publishes those RELIABLE today (see hardware_bridge_node.cpp:141).
+    # NOTE: FusionCore subscriptions are created without qos_overriding_options
+    # enabled, so these entries are effectively no-ops — present for parity
+    # with other Mowgli configs until fusioncore adopts them upstream.
     qos_overrides:
       /imu/data:
         subscription:

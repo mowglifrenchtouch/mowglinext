@@ -954,8 +954,8 @@ private:
     // still mode=AUTONOMOUS(2) but the robot has already re-docked and
     // is physically stationary. Without the zero constraint, gyro_z
     // bias (~0.01 rad/s on the WT901) integrates into fusion yaw at
-    // ~30°/min, which then corrupts Cartographer's scan-match pose and
-    // smears the occupancy grid ("SLAM map breaks" while stationary).
+    // ~30°/min, which then corrupts FusionCore's heading estimate and
+    // manifests as a slowly-rotating robot icon while on the dock.
     //
     // Edge case: the charger bit can briefly stay high during a BackUp
     // undock before the contacts separate. That moment is handled by

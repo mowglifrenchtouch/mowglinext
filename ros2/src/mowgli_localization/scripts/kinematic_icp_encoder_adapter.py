@@ -52,7 +52,7 @@ def _wrap_pi(a: float) -> float:
 
 def _yaw_from_quat(qx: float, qy: float, qz: float, qw: float) -> float:
     """Extract yaw (Z-axis rotation) from a quaternion. Avoids pulling in
-    tf_transformations as a hard dep — KISS-ICP yields a right-handed
+    tf_transformations as a hard dep — Kinematic-ICP yields a right-handed
     quaternion with yaw as the dominant rotation for a ground robot."""
     siny_cosp = 2.0 * (qw * qz + qx * qy)
     cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
@@ -149,8 +149,12 @@ class KinematicIcpEncoderAdapter(Node):
 
         dyaw = _wrap_pi(yaw - self._prev_yaw)
 
-        # Prefer KISS-ICP's twist if it's ever populated; otherwise finite-
-        # difference in the body frame (rotate dx/dy by -prev_yaw).
+        # Prefer Kinematic-ICP's twist when populated (the Odometry message
+        # it publishes already fills pose.twist.twist from the kinematic
+        # motion model). Fall back to finite-differencing the pose delta
+        # in the body frame (rotate dx/dy by -prev_yaw) when the incoming
+        # twist is exactly zero — which happens both for legitimate ZUPT
+        # and, historically, for the original KISS-ICP messages.
         in_tw = msg.twist.twist
         in_tw_populated = (
             abs(in_tw.linear.x) > 1e-9

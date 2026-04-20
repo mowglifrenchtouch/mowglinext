@@ -20,17 +20,21 @@ navigation.launch.py
 Navigation stack launch file for the Mowgli robot mower.
 
 Brings up:
-  1. Cartographer           – online SLAM, TF authority for map → odom.
-  2. FusionCore             – single UKF (GPS+IMU+wheels), TF authority for
-                              odom → base_footprint.
-  3. Nav2 bringup           – full navigation stack (controller, planner,
-                              recoveries, BT navigator, costmaps, lifecycle).
+  1. Static identity map -> odom (published once; the odom frame IS the
+     GPS-ENU frame so map and odom are literally the same).
+  2. FusionCore (UKF: GPS + IMU + wheels, optionally blended with Kinematic-ICP
+     on /encoder2/odom) owns odom -> base_footprint at 50 Hz.
+  3. Kinematic-ICP (optional, gated on use_lidar) runs on a decoupled parallel
+     TF tree (wheel_odom_raw -> base_footprint_wheels -> lidar_link_wheels)
+     and feeds FusionCore via the encoder2 adapter.
+  4. Nav2 bringup — full navigation stack (controllers, planners, recoveries,
+     BT navigator, costmaps, lifecycle).
 
-Architecture:
-  map → odom → base_footprint
-  Cartographer publishes map→odom from LiDAR scan matching.
-  FusionCore publishes odom→base_footprint from GPS+IMU+wheels.
-  No GPS-SLAM corrector needed — GPS is fused directly in FusionCore.
+Architecture (REP-105):
+  map == odom (static identity) → base_footprint (FusionCore) → base_link → sensors
+  There is no SLAM. GPS is fused directly by FusionCore; Kinematic-ICP provides
+  LiDAR-derived twist on encoder2 to shore up dead-reckoning during GPS
+  degradation.
 """
 
 import os
