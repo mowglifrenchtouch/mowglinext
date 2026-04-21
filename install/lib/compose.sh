@@ -39,23 +39,18 @@ ensure_default_configs() {
 build_compose_stack() {
   COMPOSE_FILES=()
 
-<<<<<<< HEAD
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.base.yml")
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.gui.yml")
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.mqtt.yml")
+
+  # In Mowgli mode, keep the direct GPS stack.
+  # In MAVROS mode, GPS is handled via Pixhawk/MAVROS + NTRIP sidecar,
+  # so the direct GPS compose fragment must not be included.
   if [[ "${HARDWARE_BACKEND:-mowgli}" != "mavros" ]]; then
     COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.gps.yml")
   fi
+
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.watchtower.yml")
-=======
-  COMPOSE_FILES+=("compose/docker-compose.base.yml")
-  COMPOSE_FILES+=("compose/docker-compose.gui.yml")
-  COMPOSE_FILES+=("compose/docker-compose.mqtt.yml")
-  # GNSS backend selection lives at the compose layer. For now the default
-  # stack keeps using docker-compose.gps.yml so existing compatibility behavior
-  # stays unchanged on feat/gps while backend-specific fragments converge later.
-  COMPOSE_FILES+=("compose/docker-compose.gps.yml")
->>>>>>> feat/gps
 
   # Foxglove bridge is controlled via the ENABLE_FOXGLOVE env var passed
   # to the ROS2 container (see docker-compose.base.yml).  No separate
