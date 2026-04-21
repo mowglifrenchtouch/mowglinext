@@ -20,12 +20,18 @@ FROM ros:kilted-ros-base AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG UBLOX_DGNSS_REF=main
-# privatedocs000 fork adds RTK-Fixed detection via UBX-NAV-STATUS.carr_soln:
-# status=2 (STATUS_GBAS_FIX) for RTK Fixed (phase-with-fixed-ambiguities),
-# status=1 (STATUS_SBAS_FIX) for RTK Float / RTCM-corrected,
-# status=0 (STATUS_FIX) for plain GPS. Lets FusionCore classify fixes
-# correctly instead of conflating all RTCM-corrected fixes into DGPS_FIX.
-ARG UBLOX_DGNSS_URL=https://github.com/privatedocs000/ublox_dgnss.git
+# cedbossneo fork (itself a fork of privatedocs000/ublox_dgnss). Layered
+# customisations over upstream:
+#   * privatedocs000 base — RTK-Fixed detection via UBX-NAV-STATUS.carr_soln:
+#     status=2 (STATUS_GBAS_FIX) for RTK Fixed, status=1 (STATUS_SBAS_FIX)
+#     for RTK Float / RTCM-corrected, status=0 (STATUS_FIX) for plain GPS.
+#     FusionCore uses this to classify fixes correctly instead of conflating
+#     every RTCM-corrected fix into DGPS_FIX.
+#   * ntrip_client_node exit-check cadence exposed as a ROS parameter
+#     (stream_exit_check_records, default 10000). Upstream's hardcoded 10
+#     forced a full TCP+HTTP reconnect every ~0.6 s at 17 Hz RTCM, which
+#     prevented the F9P from recovering RTK Fixed after sky obstructions.
+ARG UBLOX_DGNSS_URL=https://github.com/cedbossneo/ublox_dgnss.git
 
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu|http://azure.archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true
 
