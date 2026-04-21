@@ -46,20 +46,21 @@ add_library(mowgli_map_lib STATIC
 target_include_directories(mowgli_map_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
+  ${grid_map_ros_INCLUDE_DIRS}
 )
 
-target_link_libraries(mowgli_map_lib
-  ${rclcpp_TARGETS}
-  ${std_msgs_TARGETS}
-  ${std_srvs_TARGETS}
-  ${nav_msgs_TARGETS}
-  ${geometry_msgs_TARGETS}
-  ${grid_map_core_TARGETS}
-  ${grid_map_ros_TARGETS}
-  ${grid_map_msgs_TARGETS}
-  ${mowgli_interfaces_TARGETS}
-  ${nav2_msgs_TARGETS}
-  ${tf2_ros_TARGETS}
+ament_target_dependencies(mowgli_map_lib
+  rclcpp
+  std_msgs
+  std_srvs
+  nav_msgs
+  geometry_msgs
+  grid_map_core
+  grid_map_ros
+  grid_map_msgs
+  mowgli_interfaces
+  nav2_msgs
+  tf2_ros
 )
 
 # ---------------------------------------------------------------------------
