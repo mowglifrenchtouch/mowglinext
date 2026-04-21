@@ -21,6 +21,7 @@ setup_env() {
   : "${ROS_DOMAIN_ID:=0}"
   : "${MOWER_IP:=10.0.0.161}"
   : "${DISABLE_BLUETOOTH:=true}"
+  : "${ENABLE_FOXGLOVE:=true}"
 
   # GPS
   : "${GPS_CONNECTION:=uart}"
@@ -82,12 +83,14 @@ setup_env() {
   if [[ "$HARDWARE_BACKEND" == "mavros" ]]; then
     enable_mavros="true"
   fi
+  MAVROS_ENABLED="$enable_mavros"
 
   touch "$env_file"
 
   upsert_env_key "$env_file" "ROS_DOMAIN_ID" "$ROS_DOMAIN_ID"
   upsert_env_key "$env_file" "MOWER_IP" "$MOWER_IP"
   upsert_env_key "$env_file" "DISABLE_BLUETOOTH" "$DISABLE_BLUETOOTH"
+  upsert_env_key "$env_file" "ENABLE_FOXGLOVE" "$ENABLE_FOXGLOVE"
 
   upsert_env_key "$env_file" "GPS_CONNECTION" "$GPS_CONNECTION"
   upsert_env_key "$env_file" "GPS_PROTOCOL" "$GPS_PROTOCOL"
@@ -124,7 +127,7 @@ setup_env() {
   upsert_env_key "$env_file" "GUI_IMAGE" "$GUI_IMAGE"
 
   upsert_env_key "$env_file" "HARDWARE_BACKEND" "$HARDWARE_BACKEND"
-  upsert_env_key "$env_file" "MAVROS_ENABLED" "$enable_mavros"
+  upsert_env_key "$env_file" "MAVROS_ENABLED" "$MAVROS_ENABLED"
   upsert_env_key "$env_file" "MAVROS_BY_ID" "$MAVROS_BY_ID"
   upsert_env_key "$env_file" "MAVROS_PORT" "$MAVROS_PORT"
   upsert_env_key "$env_file" "MAVROS_BAUD" "$MAVROS_BAUD"
