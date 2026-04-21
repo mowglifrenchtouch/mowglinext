@@ -85,17 +85,17 @@ main() {
     progress_run_interactive 7 "$TOTAL_STEPS" "Configuring rangefinders" \
       run_range_configuration_step
 
-    progress_run 8 "$TOTAL_STEPS" "Installing udev rules" \
-      'install_udev_rules'
-
-    progress_run_interactive 9 "$TOTAL_STEPS" "Preparing repository" \
+    progress_run_interactive 8 "$TOTAL_STEPS" "Preparing repository" \
       setup_directory
 
-    progress_run 10 "$TOTAL_STEPS" "Migrating runtime files" \
+    progress_run 9 "$TOTAL_STEPS" "Migrating runtime files" \
       'migrate_runtime_paths'
 
-    progress_run 11 "$TOTAL_STEPS" "Writing environment" \
+    progress_run 10 "$TOTAL_STEPS" "Writing environment" \
       'setup_env'
+
+    progress_run 11 "$TOTAL_STEPS" "Installing udev rules" \
+      'install_udev_rules'
 
     progress_run_interactive 12 "$TOTAL_STEPS" "Configuring mower" \
       run_mower_configuration_step
