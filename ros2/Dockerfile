@@ -75,6 +75,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-kilted-rmw-cyclonedds-cpp \
     # Utilities
     python3-argcomplete \
+    libusb-1.0-0-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # =============================================================================
