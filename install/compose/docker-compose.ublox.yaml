@@ -9,8 +9,8 @@ services:
 
     volumes:
       - /dev:/dev
-      - ./config/mowgli:/config/mowgli
-      - ./config/cyclonedds.xml:/cyclonedds.xml:ro
+      - ./docker/config/mowgli:/config/mowgli:ro
+      - ./docker/config/cyclonedds.xml:/cyclonedds.xml:ro
 
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
@@ -18,7 +18,7 @@ services:
 
     command: >
       ros2 launch mowgli_bringup ublox_gnss.launch.py
-      ublox_device_family:=${GPS_PROTOCOL:-F9P}
+      ublox_device_family:=${UBLOX_DEVICE_FAMILY:-F9P}
       ublox_frame_id:=gps_link
       ublox_device_serial_string:=${GPS_DEBUG_ENABLED:-}
 

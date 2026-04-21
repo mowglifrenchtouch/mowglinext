@@ -43,11 +43,25 @@ build_compose_stack() {
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.gui.yml")
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.mqtt.yml")
 
-  # In Mowgli mode, keep the direct GPS stack.
+  # In Mowgli mode, select one direct GNSS stack.
   # In MAVROS mode, GPS is handled via Pixhawk/MAVROS + NTRIP sidecar,
-  # so the direct GPS compose fragment must not be included.
+  # so direct GNSS compose fragments must not be included.
   if [[ "${HARDWARE_BACKEND:-mowgli}" != "mavros" ]]; then
-    COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.gps.yml")
+    case "${GNSS_BACKEND:-gps}" in
+      gps)
+        COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.gps.yml")
+        ;;
+      ublox)
+        COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.ublox.yaml")
+        ;;
+      unicore)
+        COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.unicore.yaml")
+        ;;
+      *)
+        warn "Unknown GNSS_BACKEND: ${GNSS_BACKEND:-unset}; falling back to gps"
+        COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.gps.yml")
+        ;;
+    esac
   fi
 
   COMPOSE_FILES+=("$COMPOSE_SRC_DIR/docker-compose.watchtower.yml")

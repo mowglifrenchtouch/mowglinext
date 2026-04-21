@@ -24,6 +24,7 @@ setup_env() {
   : "${ENABLE_FOXGLOVE:=true}"
 
   # GPS
+  : "${GNSS_BACKEND:=gps}"
   : "${GPS_CONNECTION:=uart}"
   : "${GPS_PROTOCOL:=UBX}"
   : "${GPS_PORT:=/dev/gps}"
@@ -92,6 +93,7 @@ setup_env() {
   upsert_env_key "$env_file" "DISABLE_BLUETOOTH" "$DISABLE_BLUETOOTH"
   upsert_env_key "$env_file" "ENABLE_FOXGLOVE" "$ENABLE_FOXGLOVE"
 
+  upsert_env_key "$env_file" "GNSS_BACKEND" "$GNSS_BACKEND"
   upsert_env_key "$env_file" "GPS_CONNECTION" "$GPS_CONNECTION"
   upsert_env_key "$env_file" "GPS_PROTOCOL" "$GPS_PROTOCOL"
   upsert_env_key "$env_file" "GPS_PORT" "$GPS_PORT"

@@ -10,18 +10,16 @@ services:
       - ${GPS_UART_DEVICE:-/dev/ttyUSB0}:${GPS_PORT:-/dev/gps}
 
     volumes:
-      - ./config/mowgli:/config/mowgli
+      - ./docker/config/mowgli:/config/mowgli:ro
+      - ./docker/config/cyclonedds.xml:/cyclonedds.xml:ro
 
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
 
     command: >
-      ros2 run mowgli_unicore_gnss um982_node
-      --ros-args
-      --params-file /config/mowgli/gnss_unicore.yaml
-      --ros-args
-      -p port:=${GPS_PORT:-/dev/gps}
-      -p baudrate:=${GPS_BAUD:-921600}
+      ros2 launch mowgli_bringup unicore_gnss.launch.py
+      unicore_serial_port:=${GPS_PORT:-/dev/gps}
+      unicore_baudrate:=${GPS_BAUD:-921600}
 
     restart: unless-stopped
