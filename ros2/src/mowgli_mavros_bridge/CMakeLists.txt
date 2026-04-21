@@ -27,18 +27,18 @@ target_include_directories(mavros_hardware_bridge_node PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(mavros_hardware_bridge_node
-  rclcpp
-  geometry_msgs
-  nav_msgs
-  sensor_msgs
-  std_msgs
-  std_srvs
-  tf2
-  tf2_geometry_msgs
-  mowgli_interfaces
-  mavros
-  mavros_msgs
+target_link_libraries(mavros_hardware_bridge_node
+  ${rclcpp_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${nav_msgs_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${std_msgs_TARGETS}
+  ${std_srvs_TARGETS}
+  ${tf2_TARGETS}
+  ${tf2_geometry_msgs_TARGETS}
+  ${mowgli_interfaces_TARGETS}
+  ${mavros_TARGETS}
+  ${mavros_msgs_TARGETS}
 )
 
 install(

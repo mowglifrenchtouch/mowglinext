@@ -48,14 +48,14 @@ add_executable(wheel_odometry_node
 
 target_include_directories(wheel_odometry_node PUBLIC ${INCLUDE_DIR})
 
-ament_target_dependencies(wheel_odometry_node
-  rclcpp
-  nav_msgs
-  geometry_msgs
-  tf2
-  tf2_ros
-  tf2_geometry_msgs
-  mowgli_interfaces
+target_link_libraries(wheel_odometry_node
+  ${rclcpp_TARGETS}
+  ${nav_msgs_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${tf2_TARGETS}
+  ${tf2_ros_TARGETS}
+  ${tf2_geometry_msgs_TARGETS}
+  ${mowgli_interfaces_TARGETS}
 )
 
 # ---------------------------------------------------------------------------
@@ -68,12 +68,12 @@ add_executable(navsat_to_absolute_pose_node
 
 target_include_directories(navsat_to_absolute_pose_node PUBLIC ${INCLUDE_DIR})
 
-ament_target_dependencies(navsat_to_absolute_pose_node
-  rclcpp
-  sensor_msgs
-  geometry_msgs
-  std_srvs
-  mowgli_interfaces
+target_link_libraries(navsat_to_absolute_pose_node
+  ${rclcpp_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${std_srvs_TARGETS}
+  ${mowgli_interfaces_TARGETS}
 )
 
 # ---------------------------------------------------------------------------
@@ -86,12 +86,12 @@ add_executable(localization_monitor_node
 
 target_include_directories(localization_monitor_node PUBLIC ${INCLUDE_DIR})
 
-ament_target_dependencies(localization_monitor_node
-  rclcpp
-  nav_msgs
-  geometry_msgs
-  std_msgs
-  mowgli_interfaces
+target_link_libraries(localization_monitor_node
+  ${rclcpp_TARGETS}
+  ${nav_msgs_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${std_msgs_TARGETS}
+  ${mowgli_interfaces_TARGETS}
 )
 
 # ---------------------------------------------------------------------------

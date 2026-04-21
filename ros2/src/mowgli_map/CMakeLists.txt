@@ -48,18 +48,18 @@ target_include_directories(mowgli_map_lib PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(mowgli_map_lib
-  rclcpp
-  std_msgs
-  std_srvs
-  nav_msgs
-  geometry_msgs
-  grid_map_core
-  grid_map_ros
-  grid_map_msgs
-  mowgli_interfaces
-  nav2_msgs
-  tf2_ros
+target_link_libraries(mowgli_map_lib
+  ${rclcpp_TARGETS}
+  ${std_msgs_TARGETS}
+  ${std_srvs_TARGETS}
+  ${nav_msgs_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${grid_map_core_TARGETS}
+  ${grid_map_ros_TARGETS}
+  ${grid_map_msgs_TARGETS}
+  ${mowgli_interfaces_TARGETS}
+  ${nav2_msgs_TARGETS}
+  ${tf2_ros_TARGETS}
 )
 
 # ---------------------------------------------------------------------------
@@ -77,16 +77,16 @@ target_include_directories(mowgli_obstacle_tracker_lib PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(mowgli_obstacle_tracker_lib
-  rclcpp
-  std_srvs
-  nav_msgs
-  geometry_msgs
-  sensor_msgs
-  visualization_msgs
-  mowgli_interfaces
-  tf2_ros
-  tf2_geometry_msgs
+target_link_libraries(mowgli_obstacle_tracker_lib
+  ${rclcpp_TARGETS}
+  ${std_srvs_TARGETS}
+  ${nav_msgs_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${visualization_msgs_TARGETS}
+  ${mowgli_interfaces_TARGETS}
+  ${tf2_ros_TARGETS}
+  ${tf2_geometry_msgs_TARGETS}
 )
 
 # ---------------------------------------------------------------------------

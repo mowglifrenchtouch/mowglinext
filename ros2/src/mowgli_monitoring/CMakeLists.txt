@@ -70,13 +70,13 @@ target_include_directories(mowgli_monitoring_core
     $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(mowgli_monitoring_core
-  rclcpp
-  diagnostic_msgs
-  sensor_msgs
-  nav_msgs
-  geometry_msgs
-  mowgli_interfaces
+target_link_libraries(mowgli_monitoring_core
+  ${rclcpp_TARGETS}
+  ${diagnostic_msgs_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${nav_msgs_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${mowgli_interfaces_TARGETS}
 )
 
 if(MOSQUITTO_FOUND)
