@@ -16,6 +16,7 @@ services:
       - /dev:/dev
     environment:
       <<: *ros2-env
+      HARDWARE_BACKEND: ${HARDWARE_BACKEND:-mavros}
       MAVROS_ENABLED: ${MAVROS_ENABLED:-true}
       MAVROS_PORT: ${MAVROS_PORT:-/dev/mavros}
       MAVROS_BAUD: ${MAVROS_BAUD:-921600}
@@ -36,8 +37,8 @@ services:
     command: >
       ros2 launch mowgli_ntrip_client mowgli_ntrip_client.launch.py
     volumes:
-      - ./config/mowgli:/ros2_ws/config:ro
-      - ./config/cyclonedds.xml:/cyclonedds.xml:ro
+      - ./docker/config/mowgli:/ros2_ws/config:ro
+      - ./docker/config/cyclonedds.xml:/cyclonedds.xml:ro
     restart: unless-stopped
     logging:
       driver: json-file

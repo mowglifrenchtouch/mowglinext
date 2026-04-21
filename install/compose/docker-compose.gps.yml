@@ -22,8 +22,8 @@ services:
       <<: *ros2-env
     volumes:
       - /dev:/dev
-      - ./config/mowgli:/config:ro
-      - ./config/cyclonedds.xml:/cyclonedds.xml:ro
+      - ./docker/config/mowgli:/config:ro
+      - ./docker/config/cyclonedds.xml:/cyclonedds.xml:ro
 
     restart: unless-stopped
     logging:
