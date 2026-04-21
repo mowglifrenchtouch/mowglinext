@@ -58,19 +58,19 @@ public:
 private:
   using tcp = boost::asio::ip::tcp;
 
-  void post_state(bool connected, const std::string & state, const std::string & error = "");
-  void schedule_resolve(const std::string & reason, bool count_reconnect);
+  void post_state(bool connected, const std::string &state, const std::string &error = "");
+  void schedule_resolve(const std::string &reason, bool count_reconnect);
   void do_resolve();
   void start_connect_timeout();
-  void do_connect(const tcp::resolver::results_type & endpoints);
+  void do_connect(const tcp::resolver::results_type &endpoints);
   void do_handshake();
   void start_read_watchdog();
   void do_read_stream();
   void close_socket();
 
-  static std::string build_request(const ConnectionOptions & options);
-  static std::string normalize_mountpoint(const std::string & mountpoint);
-  static std::string base64_encode(const std::string & input);
+  static std::string build_request(const ConnectionOptions &options);
+  static std::string normalize_mountpoint(const std::string &mountpoint);
+  static std::string base64_encode(const std::string &input);
 
   ConnectionOptions options_;
 

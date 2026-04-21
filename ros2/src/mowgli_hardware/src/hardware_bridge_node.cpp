@@ -122,16 +122,24 @@ private:
 
   void create_publishers()
   {
-    pub_status_ = create_publisher<mowgli_interfaces::msg::Status>("~/status", 10);
-    pub_emergency_ = create_publisher<mowgli_interfaces::msg::Emergency>("~/emergency", 10);
-    pub_power_ = create_publisher<mowgli_interfaces::msg::Power>("~/power", 10);
-    pub_imu_ = create_publisher<sensor_msgs::msg::Imu>("~/imu/data_raw", 10);
-    pub_wheel_odom_ = create_publisher<nav_msgs::msg::Odometry>("~/wheel_odom", 10);
-    pub_battery_state_ = create_publisher<sensor_msgs::msg::BatteryState>("/battery_state", 10);
+    pub_status_ =
+        create_publisher<mowgli_interfaces::msg::Status>("~/status", rclcpp::SystemDefaultsQoS());
+    pub_emergency_ =
+        create_publisher<mowgli_interfaces::msg::Emergency>("~/emergency",
+                                                            rclcpp::SystemDefaultsQoS());
+    pub_power_ =
+        create_publisher<mowgli_interfaces::msg::Power>("~/power", rclcpp::SystemDefaultsQoS());
+    pub_imu_ = create_publisher<sensor_msgs::msg::Imu>("~/imu/data_raw", rclcpp::SensorDataQoS());
+    pub_wheel_odom_ =
+        create_publisher<nav_msgs::msg::Odometry>("~/wheel_odom", rclcpp::SystemDefaultsQoS());
+    pub_battery_state_ =
+        create_publisher<sensor_msgs::msg::BatteryState>("/battery_state",
+                                                         rclcpp::SystemDefaultsQoS());
     // Dock heading for FusionCore: while charging, publish dock yaw on
     // /gnss/heading at 1 Hz so FusionCore has a heading anchor.
     // Stops automatically when robot undocks (GPS velocity takes over).
-    pub_dock_heading_ = create_publisher<sensor_msgs::msg::Imu>("/gnss/heading", 10);
+    pub_dock_heading_ =
+        create_publisher<sensor_msgs::msg::Imu>("/gnss/heading", rclcpp::SystemDefaultsQoS());
     timer_dock_heading_ = create_wall_timer(std::chrono::seconds(1),
                                             [this]()
                                             {

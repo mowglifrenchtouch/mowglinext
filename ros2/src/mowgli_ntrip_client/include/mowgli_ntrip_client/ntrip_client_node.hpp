@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-#include <mavros_msgs/msg/rtcm.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 #include "mowgli_ntrip_client/ntrip_connection.hpp"
+#include <mavros_msgs/msg/rtcm.hpp>
 
 namespace mowgli_ntrip_client
 {
@@ -15,15 +15,15 @@ namespace mowgli_ntrip_client
 class NtripClientNode : public rclcpp::Node
 {
 public:
-  explicit NtripClientNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit NtripClientNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
   ~NtripClientNode() override;
 
 private:
   void declare_parameters();
   ConnectionOptions load_connection_options() const;
   void setup_connection();
-  void publish_rtcm(const std::vector<std::uint8_t> & data);
-  void handle_connection_state(bool connected, const std::string & state);
+  void publish_rtcm(const std::vector<std::uint8_t>& data);
+  void handle_connection_state(bool connected, const std::string& state);
   void log_status();
 
   std::shared_ptr<NtripConnection> connection_;

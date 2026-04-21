@@ -1,8 +1,8 @@
 #include "mavros_hardware_bridge_node.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <chrono>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -36,9 +36,9 @@ MavrosHardwareBridgeNode::MavrosHardwareBridgeNode(const rclcpp::NodeOptions& op
 
   if (!manual_control_enabled_)
   {
-    RCLCPP_WARN(
-        get_logger(),
-        "manual_control_enabled=false: /cmd_vel commands will be ignored until MAVROS manual control mapping is validated.");
+    RCLCPP_WARN(get_logger(),
+                "manual_control_enabled=false: /cmd_vel commands will be ignored until MAVROS "
+                "manual control mapping is validated.");
   }
   if (!blade_control_enabled_)
   {
@@ -48,9 +48,9 @@ MavrosHardwareBridgeNode::MavrosHardwareBridgeNode(const rclcpp::NodeOptions& op
   }
   if (!charging_feedback_enabled_)
   {
-    RCLCPP_WARN(
-        get_logger(),
-        "charging_feedback_enabled=false: charging-related status/power fields will remain conservative.");
+    RCLCPP_WARN(get_logger(),
+                "charging_feedback_enabled=false: charging-related status/power fields will remain "
+                "conservative.");
   }
 
   RCLCPP_INFO(get_logger(), "MAVROS hardware bridge started.");
@@ -146,9 +146,10 @@ void MavrosHardwareBridgeNode::on_cmd_vel(const geometry_msgs::msg::TwistStamped
 {
   if (!manual_control_enabled_)
   {
-    RCLCPP_WARN_THROTTLE(
-        get_logger(), *get_clock(), 5000,
-        "Ignoring /cmd_vel because manual_control_enabled=false.");
+    RCLCPP_WARN_THROTTLE(get_logger(),
+                         *get_clock(),
+                         5000,
+                         "Ignoring /cmd_vel because manual_control_enabled=false.");
     return;
   }
 
@@ -199,7 +200,8 @@ void MavrosHardwareBridgeNode::on_mavros_battery(
       is_charging_ = status == sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_CHARGING ||
                      status == sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_FULL;
       charger_enabled_ = is_charging_;
-      charge_current_ = (is_charging_ && std::isfinite(msg->current)) ? std::abs(msg->current) : 0.0;
+      charge_current_ =
+          (is_charging_ && std::isfinite(msg->current)) ? std::abs(msg->current) : 0.0;
       charger_status_ = is_charging_ ? "charging" : "not_charging";
     }
     else
@@ -228,9 +230,9 @@ void MavrosHardwareBridgeNode::on_mower_control(
 {
   if (!blade_control_enabled_)
   {
-    RCLCPP_WARN(
-        get_logger(),
-        "Mower control requested, but blade_control_enabled=false because the Pixhawk blade path is still provisional.");
+    RCLCPP_WARN(get_logger(),
+                "Mower control requested, but blade_control_enabled=false because the Pixhawk "
+                "blade path is still provisional.");
     response->success = false;
     return;
   }
@@ -241,11 +243,11 @@ void MavrosHardwareBridgeNode::on_mower_control(
     mow_direction_ = request->mow_direction;
   }
 
-  RCLCPP_WARN(
-      get_logger(),
-      "Mower control requested (enabled=%d, direction=%d) but cutting motor mapping on the Pixhawk/ArduPilot is not implemented yet.",
-      request->mow_enabled,
-      request->mow_direction);
+  RCLCPP_WARN(get_logger(),
+              "Mower control requested (enabled=%d, direction=%d) but cutting motor mapping on the "
+              "Pixhawk/ArduPilot is not implemented yet.",
+              request->mow_enabled,
+              request->mow_direction);
 
   response->success = false;
 }
@@ -297,19 +299,18 @@ void MavrosHardwareBridgeNode::on_emergency_stop(
 
   if (request_sent)
   {
-    RCLCPP_WARN(
-        get_logger(),
-        "Emergency stop request sent to MAVROS (mode='%s', disarm=%s). Autopilot confirmation will be logged asynchronously.",
-        emergency_mode_.c_str(),
-        emergency_disarm_ ? "true" : "false");
+    RCLCPP_WARN(get_logger(),
+                "Emergency stop request sent to MAVROS (mode='%s', disarm=%s). Autopilot "
+                "confirmation will be logged asynchronously.",
+                emergency_mode_.c_str(),
+                emergency_disarm_ ? "true" : "false");
   }
   else
   {
-    RCLCPP_ERROR(
-        get_logger(),
-        "Emergency stop request could not be fully sent to MAVROS (mode='%s', disarm=%s).",
-        emergency_mode_.c_str(),
-        emergency_disarm_ ? "true" : "false");
+    RCLCPP_ERROR(get_logger(),
+                 "Emergency stop request could not be fully sent to MAVROS (mode='%s', disarm=%s).",
+                 emergency_mode_.c_str(),
+                 emergency_disarm_ ? "true" : "false");
   }
 }
 
@@ -406,17 +407,15 @@ bool MavrosHardwareBridgeNode::send_arm_command(bool arm)
 
           if (!response->success)
           {
-            RCLCPP_ERROR(
-                get_logger(),
-                "Autopilot rejected arming request: %s",
-                arm ? "ARM" : "DISARM");
+            RCLCPP_ERROR(get_logger(),
+                         "Autopilot rejected arming request: %s",
+                         arm ? "ARM" : "DISARM");
             return;
           }
 
-          RCLCPP_INFO(
-              get_logger(),
-              "Autopilot confirmed arming request: %s",
-              arm ? "ARM" : "DISARM");
+          RCLCPP_INFO(get_logger(),
+                      "Autopilot confirmed arming request: %s",
+                      arm ? "ARM" : "DISARM");
         }
         catch (const std::exception& e)
         {
@@ -459,10 +458,7 @@ bool MavrosHardwareBridgeNode::send_mode_command(const std::string& mode)
 
           if (!response->mode_sent)
           {
-            RCLCPP_ERROR(
-                get_logger(),
-                "Autopilot rejected mode request '%s'",
-                mode.c_str());
+            RCLCPP_ERROR(get_logger(), "Autopilot rejected mode request '%s'", mode.c_str());
             return;
           }
 
@@ -470,8 +466,10 @@ bool MavrosHardwareBridgeNode::send_mode_command(const std::string& mode)
         }
         catch (const std::exception& e)
         {
-          RCLCPP_ERROR(get_logger(), "Set mode request failed asynchronously for '%s': %s",
-                       mode.c_str(), e.what());
+          RCLCPP_ERROR(get_logger(),
+                       "Set mode request failed asynchronously for '%s': %s",
+                       mode.c_str(),
+                       e.what());
         }
       });
 

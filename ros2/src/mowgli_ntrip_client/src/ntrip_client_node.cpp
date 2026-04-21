@@ -6,8 +6,8 @@
 namespace mowgli_ntrip_client
 {
 
-NtripClientNode::NtripClientNode(const rclcpp::NodeOptions & options)
-: rclcpp::Node("mowgli_ntrip_client", options)
+NtripClientNode::NtripClientNode(const rclcpp::NodeOptions& options)
+    : rclcpp::Node("mowgli_ntrip_client", options)
 {
   declare_parameters();
 
@@ -17,24 +17,24 @@ NtripClientNode::NtripClientNode(const rclcpp::NodeOptions & options)
   setup_connection();
 
   const auto status_period_ms = this->get_parameter("status_log_period_ms").as_int();
-  if (status_period_ms > 0) {
-    status_timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(status_period_ms),
-      std::bind(&NtripClientNode::log_status, this));
+  if (status_period_ms > 0)
+  {
+    status_timer_ = this->create_wall_timer(std::chrono::milliseconds(status_period_ms),
+                                            std::bind(&NtripClientNode::log_status, this));
   }
 
   const auto port = this->get_parameter("port").as_int();
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Configured NTRIP client for %s:%ld/%s",
-    this->get_parameter("host").as_string().c_str(),
-    port,
-    this->get_parameter("mountpoint").as_string().c_str());
+  RCLCPP_INFO(this->get_logger(),
+              "Configured NTRIP client for %s:%ld/%s",
+              this->get_parameter("host").as_string().c_str(),
+              port,
+              this->get_parameter("mountpoint").as_string().c_str());
 }
 
 NtripClientNode::~NtripClientNode()
 {
-  if (connection_) {
+  if (connection_)
+  {
     connection_->stop();
   }
 }
@@ -64,36 +64,45 @@ ConnectionOptions NtripClientNode::load_connection_options() const
   options.password = this->get_parameter("password").as_string();
   options.user_agent = this->get_parameter("user_agent").as_string();
   options.reconnect_delay_ms =
-    static_cast<std::size_t>(this->get_parameter("reconnect_delay_ms").as_int());
+      static_cast<std::size_t>(this->get_parameter("reconnect_delay_ms").as_int());
   options.connect_timeout_ms =
-    static_cast<std::size_t>(this->get_parameter("connect_timeout_ms").as_int());
+      static_cast<std::size_t>(this->get_parameter("connect_timeout_ms").as_int());
   options.read_timeout_ms =
-    static_cast<std::size_t>(this->get_parameter("read_timeout_ms").as_int());
+      static_cast<std::size_t>(this->get_parameter("read_timeout_ms").as_int());
   return options;
 }
 
 void NtripClientNode::setup_connection()
 {
   auto options = load_connection_options();
-  if (options.host.empty()) {
+  if (options.host.empty())
+  {
     throw std::runtime_error("Parameter 'host' must not be empty");
   }
 
-  if (options.mountpoint.empty()) {
+  if (options.mountpoint.empty())
+  {
     throw std::runtime_error("Parameter 'mountpoint' must not be empty");
   }
 
   connection_ = std::make_shared<NtripConnection>(std::move(options));
   connection_->set_data_callback(
-    [this](const std::vector<std::uint8_t> & data) { publish_rtcm(data); });
+      [this](const std::vector<std::uint8_t>& data)
+      {
+        publish_rtcm(data);
+      });
   connection_->set_state_callback(
-    [this](bool connected, const std::string & state) { handle_connection_state(connected, state); });
+      [this](bool connected, const std::string& state)
+      {
+        handle_connection_state(connected, state);
+      });
   connection_->start();
 }
 
-void NtripClientNode::publish_rtcm(const std::vector<std::uint8_t> & data)
+void NtripClientNode::publish_rtcm(const std::vector<std::uint8_t>& data)
 {
-  if (data.empty()) {
+  if (data.empty())
+  {
     return;
   }
 
@@ -104,18 +113,18 @@ void NtripClientNode::publish_rtcm(const std::vector<std::uint8_t> & data)
   rtcm_publisher_->publish(msg);
 }
 
-void NtripClientNode::handle_connection_state(bool connected, const std::string & state)
+void NtripClientNode::handle_connection_state(bool connected, const std::string& state)
 {
-  if (connected) {
+  if (connected)
+  {
     RCLCPP_INFO(this->get_logger(), "NTRIP stream state: %s", state.c_str());
     return;
   }
 
-  if (
-    state == "reconnecting" || state == "resolve_failed" || state == "connect_failed" ||
-    state == "handshake_write_failed" || state == "handshake_read_failed" ||
-    state == "caster_rejected" || state == "stream_failed" || state == "read_timeout" ||
-    state == "connect_timeout")
+  if (state == "reconnecting" || state == "resolve_failed" || state == "connect_failed" ||
+      state == "handshake_write_failed" || state == "handshake_read_failed" ||
+      state == "caster_rejected" || state == "stream_failed" || state == "read_timeout" ||
+      state == "connect_timeout")
   {
     RCLCPP_WARN(this->get_logger(), "NTRIP stream state: %s", state.c_str());
     return;
@@ -126,19 +135,20 @@ void NtripClientNode::handle_connection_state(bool connected, const std::string 
 
 void NtripClientNode::log_status()
 {
-  if (!connection_) {
+  if (!connection_)
+  {
     return;
   }
 
   const auto stats = connection_->stats();
   RCLCPP_INFO(
-    this->get_logger(),
-    "NTRIP status connected=%s state=%s bytes_received=%llu reconnects=%llu last_error=%s",
-    stats.connected ? "true" : "false",
-    stats.last_state.c_str(),
-    static_cast<unsigned long long>(stats.bytes_received),
-    static_cast<unsigned long long>(stats.reconnect_count),
-    stats.last_error.empty() ? "<none>" : stats.last_error.c_str());
+      this->get_logger(),
+      "NTRIP status connected=%s state=%s bytes_received=%llu reconnects=%llu last_error=%s",
+      stats.connected ? "true" : "false",
+      stats.last_state.c_str(),
+      static_cast<unsigned long long>(stats.bytes_received),
+      static_cast<unsigned long long>(stats.reconnect_count),
+      stats.last_error.empty() ? "<none>" : stats.last_error.c_str());
 }
 
 }  // namespace mowgli_ntrip_client
