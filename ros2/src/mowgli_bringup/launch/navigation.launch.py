@@ -37,6 +37,7 @@ Architecture (REP-105):
   degradation.
 """
 
+import math
 import os
 
 import yaml
@@ -126,10 +127,13 @@ def generate_launch_description() -> LaunchDescription:
             f"[{fp_r:.3f}, {fp_hw:.3f}]]"
         )
 
-    # Read GPS + IMU lever arms and the dock pose from runtime config.
-    # Lever arms act as explicit overrides for FusionCore; when zero, it
-    # auto-resolves them from TF (base_footprint -> sensor frame).
-    # Dock pose is fed into docking_server's home_dock.pose below.
+    # Read GPS + IMU lever arms, dock pose, and the WGS84 datum from the
+    # runtime config. Lever arms act as explicit overrides for FusionCore;
+    # when zero, it auto-resolves them from TF (base_footprint -> sensor
+    # frame). Dock pose feeds docking_server's home_dock.pose below. The
+    # datum is converted to ECEF and pinned as the FusionCore reference so
+    # the ENU origin survives restarts (instead of drifting with the first
+    # post-boot GPS fix).
     gps_x = 0.0
     gps_y = 0.0
     gps_z = 0.0
@@ -139,6 +143,9 @@ def generate_launch_description() -> LaunchDescription:
     dock_pose_x = 0.0
     dock_pose_y = 0.0
     dock_pose_yaw = 0.0
+    datum_lat_deg = 0.0
+    datum_lon_deg = 0.0
+    datum_alt_m = 0.0
     runtime_robot_config = "/ros2_ws/config/mowgli_robot.yaml"
     if os.path.isfile(runtime_robot_config):
         with open(runtime_robot_config, "r") as f:
@@ -153,6 +160,36 @@ def generate_launch_description() -> LaunchDescription:
         dock_pose_x = float(rt_rp.get("dock_pose_x", 0.0))
         dock_pose_y = float(rt_rp.get("dock_pose_y", 0.0))
         dock_pose_yaw = float(rt_rp.get("dock_pose_yaw", 0.0))
+        datum_lat_deg = float(rt_rp.get("datum_lat", 0.0))
+        datum_lon_deg = float(rt_rp.get("datum_lon", 0.0))
+        datum_alt_m = float(rt_rp.get("datum_alt", 0.0))
+
+    # WGS84 lat/lon/alt -> ECEF (EPSG:4978). FusionCore's `output.crs` is
+    # EPSG:4978, so `reference.x/y/z` must be in ECEF. Inline math (no
+    # pyproj dep) — the formulas are trivial and don't belong in a helper
+    # file for a single callsite.
+    def _wgs84_to_ecef(lat_deg: float, lon_deg: float, alt_m: float):
+        a = 6378137.0                         # semi-major axis (m)
+        e2 = 6.69437999014e-3                 # first eccentricity squared
+        lat = math.radians(lat_deg)
+        lon = math.radians(lon_deg)
+        sin_lat = math.sin(lat)
+        cos_lat = math.cos(lat)
+        n = a / math.sqrt(1.0 - e2 * sin_lat * sin_lat)
+        x = (n + alt_m) * cos_lat * math.cos(lon)
+        y = (n + alt_m) * cos_lat * math.sin(lon)
+        z = (n * (1.0 - e2) + alt_m) * sin_lat
+        return x, y, z
+
+    # Only pin the reference when the datum is actually configured.
+    # A zero/zero datum would place the ENU origin in the Gulf of Guinea;
+    # fall back to use_first_fix=true so the filter still works in that
+    # case (e.g. bench testing without a configured garden).
+    use_fixed_datum = abs(datum_lat_deg) > 1e-6 or abs(datum_lon_deg) > 1e-6
+    if use_fixed_datum:
+        datum_ecef = _wgs84_to_ecef(datum_lat_deg, datum_lon_deg, datum_alt_m)
+    else:
+        datum_ecef = (0.0, 0.0, 0.0)
 
     # Compute BT XML paths from installed package shares (not hardcoded).
     bt_nav_to_pose_xml = os.path.join(
@@ -239,6 +276,17 @@ def generate_launch_description() -> LaunchDescription:
             {"imu.lever_arm_x": imu_lever_x},
             {"imu.lever_arm_y": imu_lever_y},
             {"imu.lever_arm_z": imu_lever_z},
+            # Pin the ENU reference to the WGS84 datum from
+            # mowgli_robot.yaml. Without this, use_first_fix=true made the
+            # origin jump to wherever the first post-boot GPS fix landed —
+            # so saved dock_pose_x/y and every area polygon drifted 20-30 cm
+            # between restarts, and BT goals landed meters off physical
+            # positions. A pinned ECEF reference keeps (0,0) fixed so
+            # persisted world coords stay valid across reboots.
+            {"reference.use_first_fix": not use_fixed_datum},
+            {"reference.x": datum_ecef[0]},
+            {"reference.y": datum_ecef[1]},
+            {"reference.z": datum_ecef[2]},
         ],
         remappings=[
             ("/odom/wheels", "/wheel_odom"),

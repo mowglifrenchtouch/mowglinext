@@ -130,15 +130,18 @@ fusioncore_node:
     gnss.heading_noise: 0.1
     gnss.max_hdop: 4.0
     gnss.min_satellites: 4
-    # Accept Float + Fixed. Strict Fixed (4) starved the filter whenever
-    # the receiver was at Float, so FusionCore ran on encoder/IMU only
-    # and the unbounded position uncertainty showed up as RTAB-Map
-    # map→odom jumps (fast-moving icon on the map). DGPS (2) maps from
-    # NavSatFix STATUS_SBAS_FIX which the HP converter emits for
-    # carrSoln=1 (Float); ≥2 means "Float or Fixed".
+    # Accept ANY fix (plain GPS, SBAS, Fixed). Strict Fixed (4) starves
+    # the filter during RTK drops — and the F9P often drops to NavSatFix
+    # STATUS_FIX=0 (plain GPS, σ≈0.25 m) for minutes under light tree
+    # cover. At min=2 (Float+) the UKF received zero GPS updates during
+    # those intervals and position variance exploded unbounded
+    # (0.2 m → 10+ m in a few minutes). At min=1 the UKF keeps absorbing
+    # GPS updates even at plain-GPS quality — base_noise_xy=5.0 scales
+    # the reported cov so a loose fix can't over-pull, but it DOES keep
+    # pose bounded. That's strictly better than drifting into the void.
     # FusionCore enum: 0=NO_FIX, 1=GPS, 2=DGPS, 3=RTK_FLOAT, 4=RTK_FIXED.
-    # The ROS NavSatFix mapping in fusion_node skips 3, so use 2 or 4.
-    gnss.min_fix_type: 2
+    # NavSatFix mapping in fusion_node skips 3, so accept 1/2/4.
+    gnss.min_fix_type: 1
 
     # GPS antenna offset from base_link in body frame.
     # Leaving these at 0 lets FusionCore auto-resolve the lever arm from
