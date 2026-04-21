@@ -9,9 +9,20 @@ set -euo pipefail
 OWNER="${OWNER:-mowglifrenchtouch}"
 REPO="${REPO:-mowglinext}"
 REGISTRY="ghcr.io/${OWNER}/${REPO}"
+# Affichage buildx: auto | plain
+BUILD_PROGRESS="${BUILD_PROGRESS:-plain}"
+
+# Logs détaillés shell
+VERBOSE="${VERBOSE:-false}"
+
+# Sauvegarde des logs
+LOG_DIR="${LOG_DIR:-./build-logs}"
+
+# Push ou non
+PUSH="${PUSH:-true}"
 
 # Tag principal
-TAG="${TAG:-mavros}"
+TAG="${TAG:-mavrosdev}"
 
 # Tags additionnels optionnels
 # Exemple:
@@ -111,39 +122,66 @@ build_and_push() {
   [[ -n "${target}" ]] && echo "       target: ${target}"
   echo "       git branch: ${GIT_BRANCH}"
   echo "       git sha: ${GIT_SHA}"
+  echo "       progress: ${BUILD_PROGRESS}"
+  echo "       push: ${PUSH}"
 
   mapfile -t tag_args < <(make_tag_args "${image}")
 
+  local build_args=(
+    --platform "${PLATFORMS}"
+    -f "${dockerfile}"
+    "${tag_args[@]}"
+    --label "org.opencontainers.image.created=${BUILD_DATE}"
+    --label "org.opencontainers.image.revision=${GIT_SHA}"
+    --label "org.opencontainers.image.source=https://github.com/${OWNER}/${REPO}"
+  )
+
   if [[ -n "${target}" ]]; then
-    docker buildx build \
-      --platform "${PLATFORMS}" \
-      -f "${dockerfile}" \
-      --target "${target}" \
-      "${tag_args[@]}" \
-      --label org.opencontainers.image.created="${BUILD_DATE}" \
-      --label org.opencontainers.image.revision="${GIT_SHA}" \
-      --label org.opencontainers.image.source="https://github.com/${OWNER}/${REPO}" \
-      --push \
-      "${context}"
-  else
-    docker buildx build \
-      --platform "${PLATFORMS}" \
-      -f "${dockerfile}" \
-      "${tag_args[@]}" \
-      --label org.opencontainers.image.created="${BUILD_DATE}" \
-      --label org.opencontainers.image.revision="${GIT_SHA}" \
-      --label org.opencontainers.image.source="https://github.com/${OWNER}/${REPO}" \
-      --push \
-      "${context}"
+    build_args+=(--target "${target}")
+  fi
+
+  if [[ "${PUSH}" == "true" ]]; then
+    build_args+=(--push)
+  fi
+
+  build_args+=("${context}")
+
+  run_buildx "${name}" "${build_args[@]}"
+}
+
+setup_logging() {
+  mkdir -p "${LOG_DIR}"
+  if [[ "${VERBOSE}" == "true" ]]; then
+    set -x
   fi
 }
 
+run_buildx() {
+  local name="$1"
+  shift
+
+  local log_file="${LOG_DIR}/${name}.log"
+
+  info "Build logs: ${log_file}"
+
+  if [[ "${PUSH}" == "true" ]]; then
+    docker buildx build \
+      --progress "${BUILD_PROGRESS}" \
+      "$@" 2>&1 | tee "${log_file}"
+  else
+    docker buildx build \
+      --progress "${BUILD_PROGRESS}" \
+      --load \
+      "$@" 2>&1 | tee "${log_file}"
+  fi
+}
 # ---- Main ----
 require_cmd git
 require_cmd docker
 ensure_repo_root
 ensure_builder
 ensure_fusioncore
+setup_logging
 
 for img in "${IMAGES[@]}"; do
   case "${img}" in
@@ -209,3 +247,4 @@ done
 info "All images pushed successfully"
 info "Primary tag: ${TAG}"
 [[ -n "${EXTRA_TAGS}" ]] && info "Extra tags: ${EXTRA_TAGS}"
+
