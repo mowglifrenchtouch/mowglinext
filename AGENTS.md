@@ -1,18 +1,80 @@
-## Architecture notes
+## Install system model
 
-- `mowgli_mavros_bridge` is not an additional helper node. It is intended to be a second hardware backend, functionally replacing `mowgli_hardware` when selected by configuration.
-- Backend selection is controlled by environment/configuration. When the backend is switched in `.env`, the system should behave as a full replacement, not as a partial overlay.
-- Reviews must check whether the MAVROS backend preserves the externally expected ROS graph, topic names, remaps, message types, and semantic behavior currently provided by `mowgli_hardware`.
-- Do not assume hardware behavior is finalized yet. Hardware-specific mappings may remain provisional until bench and Pixhawk validation are complete.
-- Prefer coherent software-side fixes that improve compatibility and reduce regression risk without hard-coding assumptions that require final hardware validation.
+The installation system is currently in a transitional state.
 
-## Review guidelines
+### Configuration flow (intended design)
 
-- Treat `mowgli_mavros_bridge` as an alternative backend to `mowgli_hardware`, not as an extra node.
-- Flag anything that would prevent a full backend swap through configuration.
-- Compare bringup integration, remaps, published topics, subscribed topics, status/power semantics, and failure behavior against `mowgli_hardware`.
-- Distinguish between:
-  - software integration issues that should be fixed now
-  - hardware-dependent behavior that must be left configurable or explicitly marked provisional
-- Prefer minimal patches.
-- Do not recommend merge-ready claims for behavior that still depends on unvalidated hardware wiring or Pixhawk feedback paths.
+The intended installation workflow is:
+
+1. `install/config/*` contains editable template files
+2. The installer will:
+   - read and modify these templates
+   - generate a `.env`
+   - copy and adapt files into `docker/config/*`
+3. The Docker stack is launched using the generated `docker/config/*` and `.env`
+
+Important:
+- `install/config/*` is NOT the runtime configuration
+- `docker/config/*` is the runtime configuration used by Docker Compose
+
+### Current state
+
+- The template → runtime copy/adaptation is NOT fully implemented yet
+- Some configuration is still done manually
+- The system must still be installable in its current form
+
+### Review rules for install system
+
+When reviewing installation and Docker-related code:
+
+- Validate only the **current nominal install path**
+- Do NOT treat the following as blocking issues:
+  - differences between `install/config/*` and `docker/config/*`
+  - unused or partially integrated template files
+- Do NOT assume template processing is complete
+
+Instead, focus on:
+- whether the installer can run to completion
+- whether `.env` contains required variables
+- whether `docker compose config` is valid
+- whether bind mounts point to existing runtime files
+- whether the selected backend can start correctly
+
+---
+
+## Optional / future features (do not flag as critical)
+
+The following are intentionally incomplete and should not be treated as blocking bugs:
+
+- Foxglove activation is not yet automated (manual setup currently required)
+- VESC support is not yet implemented (placeholders exist)
+- TF-Luna / range sensor support is not yet implemented (placeholders exist)
+
+These components:
+- may appear in Docker Compose fragments
+- may define variables not yet used
+- should only be flagged if they break the default installation path
+
+---
+
+## Backend-specific install notes
+
+- `HARDWARE_BACKEND` is the source of truth for runtime behavior
+- All services that depend on backend selection should receive it explicitly
+- Backend switching must not require manual patching of Compose files
+
+Reviews must check:
+- that backend-specific services receive the correct environment variables
+- that enabling MAVROS does not leave services in inconsistent states
+
+## Critical definition
+
+A blocking issue is defined as:
+- something that prevents the installer from completing
+- something that prevents `docker compose config` from succeeding
+- something that prevents the stack from starting
+
+Everything else must be classified as:
+- improvement
+- future work
+- or placeholder
