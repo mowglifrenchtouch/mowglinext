@@ -58,11 +58,16 @@ MavrosHardwareBridgeNode::MavrosHardwareBridgeNode(const rclcpp::NodeOptions& op
 
 void MavrosHardwareBridgeNode::create_publishers()
 {
-  pub_status_ = create_publisher<mowgli_interfaces::msg::Status>("~/status", 10);
-  pub_emergency_ = create_publisher<mowgli_interfaces::msg::Emergency>("~/emergency", 10);
-  pub_power_ = create_publisher<mowgli_interfaces::msg::Power>("~/power", 10);
-  pub_imu_ = create_publisher<sensor_msgs::msg::Imu>("~/imu/data_raw", 10);
-  pub_wheel_odom_ = create_publisher<nav_msgs::msg::Odometry>("~/wheel_odom", 10);
+  pub_status_ = create_publisher<mowgli_interfaces::msg::Status>(
+      "~/status", rclcpp::SystemDefaultsQoS());
+  pub_emergency_ = create_publisher<mowgli_interfaces::msg::Emergency>(
+      "~/emergency", rclcpp::SystemDefaultsQoS());
+  pub_power_ = create_publisher<mowgli_interfaces::msg::Power>(
+      "~/power", rclcpp::SystemDefaultsQoS());
+  pub_imu_ = create_publisher<sensor_msgs::msg::Imu>(
+      "~/imu/data_raw", rclcpp::SensorDataQoS());
+  pub_wheel_odom_ = create_publisher<nav_msgs::msg::Odometry>(
+      "~/wheel_odom", rclcpp::SystemDefaultsQoS());
   pub_battery_state_ =
       create_publisher<sensor_msgs::msg::BatteryState>("/battery_state", rclcpp::SensorDataQoS());
 
@@ -76,7 +81,7 @@ void MavrosHardwareBridgeNode::create_subscriptions()
   auto sensor_qos = rclcpp::SensorDataQoS();
 
   sub_cmd_vel_ = create_subscription<geometry_msgs::msg::TwistStamped>(
-      "/cmd_vel",
+      "~/cmd_vel",
       default_qos,
       std::bind(&MavrosHardwareBridgeNode::on_cmd_vel, this, std::placeholders::_1));
 
