@@ -206,6 +206,11 @@ check_firmware() {
 check_gps() {
   step "Check: GPS"
 
+  if [[ "${HARDWARE_BACKEND:-mowgli}" == "mavros" ]]; then
+    info "MAVROS backend: direct GPS container check skipped; GPS is handled through Pixhawk/NTRIP"
+    return
+  fi
+
   if ! docker inspect -f '{{.State.Status}}' mowgli-gps 2>/dev/null | grep -q running; then
     warn "mowgli-gps not running — skipping GPS check"
     return

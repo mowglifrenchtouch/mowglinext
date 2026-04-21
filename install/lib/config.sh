@@ -403,7 +403,7 @@ auto_detect_position() {
   fi
 
   if [[ "${HARDWARE_BACKEND:-mowgli}" == "mavros" ]]; then
-    warn "GPS datum auto-detect via mowgli-gps is not available for MAVROS on this branch"
+    warn "GPS datum auto-detect is not available for MAVROS on this branch"
     add_issue "Set datum_lat and datum_lon manually in docker/config/mowgli/mowgli_robot.yaml"
     return
   fi
