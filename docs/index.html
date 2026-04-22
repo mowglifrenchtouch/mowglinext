@@ -169,8 +169,8 @@
 
       <div class="feature-card">
         <div class="icon">🗺️</div>
-        <h3>LiDAR SLAM &amp; Map Management</h3>
-        <p>Real-time mapping with SLAM Toolbox, optimized for outdoor environments. Save, load, and delete maps from the web UI. No pre-built maps needed.</p>
+        <h3>Kinematic-ICP &amp; RTK Localization</h3>
+        <p>No SLAM needed. FusionCore UKF fuses RTK-GPS + IMU + wheel odometry at 100 Hz. Optional Kinematic-ICP provides LiDAR drift correction under tree cover. Centimeter-accurate positioning without map-building overhead.</p>
       </div>
 
       <div class="feature-card">
@@ -200,7 +200,7 @@
       <div class="feature-card">
         <div class="icon">🌐</div>
         <h3>Web GUI &amp; Diagnostics</h3>
-        <p>React + Go web interface for configuration, map editing, area management. Real-time health dashboard shows GPS, LiDAR, battery, and motion status from any device.</p>
+        <p>State-adaptive dashboard with hero card, live sparkline telemetry, radial gauges, and health checks. Weekly schedule grid, statistics with bar charts, and full map editor. Dark &amp; light themes, responsive mobile layout. React + Go + WebSocket.</p>
       </div>
 
       <div class="feature-card">
@@ -242,9 +242,9 @@
 │  <span class="highlight">ROS2 Kilted Stack</span>                                     │
 │                                                      │
 │  ┌─────────────┐  ┌──────────┐  ┌─────────────────┐ │
-│  │  <span class="highlight">Nav2</span>        │  │  <span class="highlight">SLAM</span>    │  │  <span class="highlight">Behavior Tree</span>  │ │
-│  │  navigate    │  │  Toolbox  │  │  main_tree.xml  │ │
-│  │  dock/undock │  │          │  │  10 Hz tick     │ │
+│  │  <span class="highlight">Nav2</span>        │  │<span class="highlight">Kinematic</span> │  │  <span class="highlight">Behavior Tree</span>  │ │
+│  │  navigate    │  │  <span class="highlight">ICP</span>     │  │  main_tree.xml  │ │
+│  │  dock/undock │  │ (LiDAR)  │  │  10 Hz tick     │ │
 │  │  coverage    │  │          │  │                 │ │
 │  └─────────────┘  └──────────┘  └─────────────────┘ │
 │  ┌─────────────┐  ┌──────────┐  ┌─────────────────┐ │
