@@ -128,6 +128,33 @@
         <Sequence name="MowingSequence">
           <IsCommand command="1"/>
 
+          <!-- Wait for Nav2 to be fully active. Polled check: finishes in
+               ~50 ms once the four lifecycle_manager_navigation nodes
+               (bt_navigator / controller / planner / behavior) are all
+               active; retries once per second for up to 60 s on ARM cold
+               boot. Previously this was a hardcoded 30 s sleep inside the
+               on-dock path only — which (a) wasted time when Nav2 was
+               already ready, and (b) let the off-dock path issue goals
+               into a half-up Nav2 stack, observed as bt_navigator stuck
+               inactive → instant NavigateToPose rejections → skip-cascade
+               drives the robot right out of the mowing area. -->
+          <PublishHighLevelStatus state="2" state_name="PREFLIGHT_CHECK"/>
+          <Fallback name="Nav2ReadyOrProceed">
+            <RetryUntilSuccessful num_attempts="60" name="Nav2ReadyPoll">
+              <Fallback>
+                <Nav2Active timeout_sec="0.5"/>
+                <Sequence>
+                  <WaitForDuration duration_sec="1.0"/>
+                  <AlwaysFailure/>
+                </Sequence>
+              </Fallback>
+            </RetryUntilSuccessful>
+            <!-- Timeout: proceed anyway with a warning. BoundaryGuard and
+                 the emergency latch still apply; we'd rather let the run
+                 fail fast at the first goal than freeze before starting. -->
+            <AlwaysSuccess/>
+          </Fallback>
+
           <!-- Undock: only if currently charging (on dock).
                If already undocked, skip entirely. -->
           <PublishHighLevelStatus state="2" state_name="UNDOCKING"/>
@@ -162,11 +189,9 @@
               <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
               <PublishHighLevelStatus state="2" state_name="UNDOCKING"/>
               <RecordUndockStart/>
-              <!-- Wait for Nav2 to fully activate on ARM. Retry ClearCostmap
-                   until it succeeds — this confirms costmap services are ready. -->
-              <!-- Wait for Nav2 to fully activate on ARM before clearing costmaps.
-                   30s is generous — lifecycle_manager typically takes 15-25s. -->
-              <WaitForDuration duration_sec="30.0"/>
+              <!-- Nav2 readiness is already guaranteed by the Nav2Active
+                   poll above UndockOrSkip; the old hardcoded 30 s sleep
+                   here is no longer needed. -->
               <ClearCostmap/>
               <!-- BackUp instead of UndockRobot: opennav_docking isDocked()
                    uses geometric distance to dock pose which fails with

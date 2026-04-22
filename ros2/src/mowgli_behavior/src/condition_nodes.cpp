@@ -402,4 +402,62 @@ BT::NodeStatus PreFlightCheck::tick()
   return BT::NodeStatus::FAILURE;
 }
 
+// ---------------------------------------------------------------------------
+// Nav2Active
+// ---------------------------------------------------------------------------
+
+BT::NodeStatus Nav2Active::tick()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  double timeout_sec = 0.5;
+  if (auto res = getInput<double>("timeout_sec"))
+  {
+    timeout_sec = res.value();
+  }
+
+  if (!client_)
+  {
+    client_ = ctx->helper_node->create_client<std_srvs::srv::Trigger>(
+        "/lifecycle_manager_navigation/is_active");
+  }
+
+  // Don't block if lifecycle_manager_navigation hasn't come up yet — treat
+  // that the same as "not active". The retry loop above this node is
+  // responsible for waiting, not us.
+  if (!client_->service_is_ready())
+  {
+    RCLCPP_DEBUG(ctx->node->get_logger(),
+                 "Nav2Active: is_active service not available yet");
+    return BT::NodeStatus::FAILURE;
+  }
+
+  auto req = std::make_shared<std_srvs::srv::Trigger::Request>();
+  auto future = client_->async_send_request(req);
+
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::duration<double>(timeout_sec);
+  while (std::chrono::steady_clock::now() < deadline)
+  {
+    if (future.wait_for(std::chrono::milliseconds(20)) == std::future_status::ready)
+    {
+      auto resp = future.get();
+      if (resp && resp->success)
+      {
+        return BT::NodeStatus::SUCCESS;
+      }
+      RCLCPP_WARN_THROTTLE(ctx->node->get_logger(), *ctx->node->get_clock(), 3000,
+                           "Nav2Active: lifecycle_manager reports not-active "
+                           "(msg=%s)",
+                           resp ? resp->message.c_str() : "(null)");
+      return BT::NodeStatus::FAILURE;
+    }
+  }
+
+  RCLCPP_WARN_THROTTLE(ctx->node->get_logger(), *ctx->node->get_clock(), 3000,
+                       "Nav2Active: is_active call timed out after %.2fs",
+                       timeout_sec);
+  return BT::NodeStatus::FAILURE;
+}
+
 }  // namespace mowgli_behavior

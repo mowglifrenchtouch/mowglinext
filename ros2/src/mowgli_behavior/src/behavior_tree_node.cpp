@@ -134,8 +134,13 @@ private:
                                                    context_->replan_needed = msg->data;
                                                  });
 
+    // Must match the publisher in mowgli_map/map_server_node.cpp, which uses
+    // ~/boundary_violation → resolves to /map_server_node/boundary_violation.
+    // An earlier version of this subscription used /map_server/… which had
+    // zero publishers, so the BoundaryGuard silently never tripped and the
+    // robot was free to drive outside the defined mowing area.
     boundary_violation_sub_ =
-        create_subscription<std_msgs::msg::Bool>("/map_server/boundary_violation",
+        create_subscription<std_msgs::msg::Bool>("/map_server_node/boundary_violation",
                                                  10,
                                                  [this](std_msgs::msg::Bool::ConstSharedPtr msg)
                                                  {

@@ -21,6 +21,7 @@
 #include "mowgli_behavior/bt_context.hpp"
 #include "mowgli_interfaces/srv/get_coverage_status.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 namespace mowgli_behavior
 {
@@ -381,6 +382,45 @@ public:
 
 private:
   rclcpp::Client<mowgli_interfaces::srv::GetCoverageStatus>::SharedPtr coverage_client_;
+};
+
+// ---------------------------------------------------------------------------
+// Nav2Active
+// ---------------------------------------------------------------------------
+
+/// Returns SUCCESS when Nav2's lifecycle_manager reports all managed nodes
+/// as active (bt_navigator, controller_server, planner_server,
+/// behavior_server). Used as a pre-undock / pre-transit gate so the BT
+/// doesn't issue goals into a half-activated Nav2 stack — one observed
+/// failure mode had bt_navigator stuck in inactive state while the rest of
+/// Nav2 was up, causing every NavigateToPose to be instantly rejected and
+/// the strip loop to skip-cascade through the area.
+///
+/// Calls /lifecycle_manager_navigation/is_active (std_srvs/srv/Trigger).
+///
+/// Input ports:
+///   timeout_sec (double, default 0.5) – max time to wait for the service
+///                                       call; on timeout returns FAILURE.
+class Nav2Active : public BT::ConditionNode
+{
+public:
+  Nav2Active(const std::string& name, const BT::NodeConfig& config)
+      : BT::ConditionNode(name, config)
+  {
+  }
+
+  static BT::PortsList providedPorts()
+  {
+    return {
+        BT::InputPort<double>("timeout_sec", 0.5,
+                              "Max service call wait in seconds"),
+    };
+  }
+
+  BT::NodeStatus tick() override;
+
+private:
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client_;
 };
 
 }  // namespace mowgli_behavior
