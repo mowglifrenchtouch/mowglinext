@@ -146,6 +146,18 @@ def generate_launch_description() -> LaunchDescription:
     datum_lat_deg = 0.0
     datum_lon_deg = 0.0
     datum_alt_m = 0.0
+    # Speeds are operator-facing knobs in mowgli_robot.yaml. Nothing read
+    # them before — they were orphan params — so editing them looked like
+    # it should do something but didn't. Load here and inject into the
+    # Nav2 YAMLs (controller + docking) alongside the dock pose.
+    #   transit_speed    → FollowPath.desired_linear_vel + max_speed_xy
+    #   mowing_speed     → FollowCoveragePath.max_speed_xy
+    #   undock_speed     → BackUp backup_speed attribute in main_tree.xml
+    #                      (hardcoded in the XML so not injected here, but
+    #                      the comment keeps the three values together
+    #                      for discoverability).
+    transit_speed = 0.3
+    mowing_speed = 0.25
     runtime_robot_config = "/ros2_ws/config/mowgli_robot.yaml"
     if os.path.isfile(runtime_robot_config):
         with open(runtime_robot_config, "r") as f:
@@ -163,6 +175,8 @@ def generate_launch_description() -> LaunchDescription:
         datum_lat_deg = float(rt_rp.get("datum_lat", 0.0))
         datum_lon_deg = float(rt_rp.get("datum_lon", 0.0))
         datum_alt_m = float(rt_rp.get("datum_alt", 0.0))
+        transit_speed = float(rt_rp.get("transit_speed", transit_speed))
+        mowing_speed = float(rt_rp.get("mowing_speed", mowing_speed))
 
     # WGS84 lat/lon/alt -> ECEF (EPSG:4978). FusionCore's `output.crs` is
     # EPSG:4978, so `reference.x/y/z` must be in ECEF. Inline math (no
@@ -212,21 +226,55 @@ def generate_launch_description() -> LaunchDescription:
     # those tmp files to RewrittenYaml as its sources. RewrittenYaml then
     # handles the remaining scalar rewrites (use_sim_time, footprint, BT XML
     # paths) without touching the pose list.
-    def _inject_dock_pose(src_path: str) -> str:
+    def _inject_dock_pose_and_speeds(src_path: str) -> str:
+        """Write mowgli_robot.yaml-derived values into the Nav2 params YAML
+        and return the temp file path.
+
+        RewrittenYaml only handles scalar substitutions, so we use this
+        path for anything that needs the YAML parser (lists, or when we'd
+        have to guess at the dotted-path root key). Speed params are
+        scalars and could technically go through RewrittenYaml, but
+        doing them here keeps all robot-yaml → nav2-yaml wiring in one
+        place — easier to find when tuning later.
+        """
         import tempfile
         with open(src_path, "r") as fh:
             doc = yaml.safe_load(fh) or {}
+        # home_dock.pose must be a YAML list (PARAMETER_DOUBLE_ARRAY).
         (doc.setdefault("docking_server", {})
             .setdefault("ros__parameters", {})
-            .setdefault("home_dock", {}))["pose"] = [dock_pose_x, dock_pose_y, dock_pose_yaw]
+            .setdefault("home_dock", {}))["pose"] = [
+                dock_pose_x, dock_pose_y, dock_pose_yaw]
+
+        # FollowPath (transit controller = RPP via RotationShim).
+        fp = (doc.setdefault("controller_server", {})
+                 .setdefault("ros__parameters", {})
+                 .setdefault("FollowPath", {}))
+        fp["desired_linear_vel"] = transit_speed
+        # RPP has no max_speed_xy knob itself, but velocity_smoother
+        # clamps downstream — set it here so both match the robot-yaml
+        # value.
+        vs = (doc.setdefault("velocity_smoother", {})
+                 .setdefault("ros__parameters", {}))
+        max_vels = vs.get("max_velocity", [0.5, 0.0, 2.0])
+        max_vels[0] = max(transit_speed, mowing_speed)
+        vs["max_velocity"] = max_vels
+
+        # FollowCoveragePath (FTC: coverage strip controller). Its speed
+        # knob is desired_linear_vel; mowing_speed overrides it.
+        fcp = (doc.setdefault("controller_server", {})
+                  .setdefault("ros__parameters", {})
+                  .setdefault("FollowCoveragePath", {}))
+        fcp["desired_linear_vel"] = mowing_speed
+
         tmp = tempfile.NamedTemporaryFile(
             mode="w", prefix="mowgli_nav2_", suffix=".yaml", delete=False)
         yaml.safe_dump(doc, tmp, default_flow_style=False, sort_keys=False)
         tmp.close()
         return tmp.name
 
-    nav2_params_lidar = _inject_dock_pose(nav2_params_lidar)
-    nav2_params_no_lidar = _inject_dock_pose(nav2_params_no_lidar)
+    nav2_params_lidar = _inject_dock_pose_and_speeds(nav2_params_lidar)
+    nav2_params_no_lidar = _inject_dock_pose_and_speeds(nav2_params_no_lidar)
     nav2_params_file = PythonExpression([
         "'", nav2_params_lidar, "' if '",
         use_lidar, "'.lower() in ('true', '1') else '",
