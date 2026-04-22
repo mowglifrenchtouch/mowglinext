@@ -45,6 +45,7 @@
 #include <mowgli_interfaces/srv/get_coverage_status.hpp>
 #include <mowgli_interfaces/srv/get_mowing_area.hpp>
 #include <mowgli_interfaces/srv/get_next_strip.hpp>
+#include <mowgli_interfaces/srv/get_recovery_point.hpp>
 #include <mowgli_interfaces/srv/set_docking_point.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
@@ -175,6 +176,17 @@ private:
       const mowgli_interfaces::srv::GetCoverageStatus::Request::SharedPtr req,
       mowgli_interfaces::srv::GetCoverageStatus::Response::SharedPtr res);
 
+  /// Compute a recovery pose inside the nearest mowing area.
+  ///
+  /// Called by the BT SoftBoundaryHandler when the robot has drifted past a
+  /// polygon edge but is still inside the lethal margin. Finds the closest
+  /// point on the nearest polygon edge, offsets `boundary_recovery_offset_m_`
+  /// further along the inward direction (robot → edge), and returns a Pose
+  /// facing into the area.
+  void on_get_recovery_point(
+      const mowgli_interfaces::srv::GetRecoveryPoint::Request::SharedPtr req,
+      mowgli_interfaces::srv::GetRecoveryPoint::Response::SharedPtr res);
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   /// Initialise the grid_map with all four layers and correct geometry.
@@ -304,6 +316,11 @@ private:
   /// just "soft" (attempt recovery back inside).
   double lethal_boundary_margin_m_{0.5};
 
+  /// How far inside the polygon the soft-recovery pose should sit, measured
+  /// along the robot → edge direction. Large enough that subsequent controller
+  /// jitter doesn't immediately cross the boundary again.
+  double boundary_recovery_offset_m_{0.8};
+
   // ── State ─────────────────────────────────────────────────────────────────
   grid_map::GridMap map_;
   mutable std::mutex map_mutex_;
@@ -390,6 +407,7 @@ private:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr load_areas_srv_;
   rclcpp::Service<mowgli_interfaces::srv::GetNextStrip>::SharedPtr get_next_strip_srv_;
   rclcpp::Service<mowgli_interfaces::srv::GetCoverageStatus>::SharedPtr get_coverage_status_srv_;
+  rclcpp::Service<mowgli_interfaces::srv::GetRecoveryPoint>::SharedPtr get_recovery_point_srv_;
 
   // ── TF ────────────────────────────────────────────────────────────────────
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;

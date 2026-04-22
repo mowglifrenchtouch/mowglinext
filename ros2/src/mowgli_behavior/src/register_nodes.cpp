@@ -54,6 +54,7 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<WaitForDuration>("WaitForDuration");
   factory.registerNodeType<WaitForGpsFix>("WaitForGpsFix");
   factory.registerNodeType<NavigateToPose>("NavigateToPose");
+  factory.registerNodeType<NavigateInsideBoundary>("NavigateInsideBoundary");
   factory.registerNodeType<SaveSlamMap>("SaveSlamMap");
   factory.registerNodeType<BackUp>("BackUp");
   factory.registerNodeType<ClearCommand>("ClearCommand");

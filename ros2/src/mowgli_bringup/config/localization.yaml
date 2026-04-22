@@ -26,9 +26,10 @@ fusioncore_node:
   ros__parameters:
     base_frame: base_footprint
     odom_frame: odom
-    # 100 Hz publish halves the TF gap (was 50 Hz → 20 ms max gap). Reduces
-    # costmap/planner TF-staleness races during fast undocking transitions.
-    publish_rate: 100.0
+    # 50 Hz matches the IMU/hardware_bridge publish rate; the robot mows at
+    # 0.3 m/s so a 20 ms TF tick = 6 mm per step, more than Nav2/RPP needs.
+    # Tried 100 Hz briefly — only multiplied TF traffic + DDS load on ARM.
+    publish_rate: 50.0
     # Force 2D: zero Z in published odom + TF so the costmap rolling
     # window stays in the 2D navigation plane regardless of GPS altitude
     # noise or IMU-Z drift. We're a garden mower — altitude is irrelevant.

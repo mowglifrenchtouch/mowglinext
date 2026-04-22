@@ -87,14 +87,17 @@
           <StopMoving/>
           <PublishHighLevelStatus state="2" state_name="BOUNDARY_RECOVERY"/>
           <Fallback name="RecoverOrEscalate">
-            <!-- Navigate back to the dock (guaranteed inside the area
-                 if operator configured dock_pose correctly). Two tries
-                 before escalating to lethal behaviour. -->
+            <!-- Navigate back to the nearest in-area pose. map_server_node's
+                 /get_recovery_point picks the closest polygon edge, offsets
+                 ~0.8m inward, and faces the robot toward the area. This
+                 stays at the mowing location instead of driving all the
+                 way home, and avoids the RPP-plans-a-reverse-leg behaviour
+                 of DockRobot-based recovery. Two tries before escalating. -->
             <RetryUntilSuccessful num_attempts="2" name="RecoveryRetry">
               <Sequence name="NavigateBackInside">
-                <DockRobot dock_id="home_dock" dock_type="simple_charging_dock"/>
-                <!-- Succeed only if the DockRobot action actually put us
-                     back inside a defined area. -->
+                <NavigateInsideBoundary/>
+                <!-- Succeed only if Nav2 actually put us back inside a
+                     defined area. -->
                 <Inverter><IsBoundaryViolation/></Inverter>
               </Sequence>
             </RetryUntilSuccessful>

@@ -63,6 +63,8 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
   // emergency-stop because blade/motors outside the authorised zone
   // can do real damage.
   lethal_boundary_margin_m_ = declare_parameter<double>("lethal_boundary_margin_m", 0.5);
+  boundary_recovery_offset_m_ =
+      declare_parameter<double>("boundary_recovery_offset_m", 0.8);
 
   RCLCPP_INFO(get_logger(),
               "MapServerNode: resolution=%.3f m, size=%.1f×%.1f m, frame='%s'",
@@ -210,6 +212,14 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
              mowgli_interfaces::srv::GetCoverageStatus::Response::SharedPtr res)
       {
         on_get_coverage_status(req, res);
+      });
+
+  get_recovery_point_srv_ = create_service<mowgli_interfaces::srv::GetRecoveryPoint>(
+      "~/get_recovery_point",
+      [this](const mowgli_interfaces::srv::GetRecoveryPoint::Request::SharedPtr req,
+             mowgli_interfaces::srv::GetRecoveryPoint::Response::SharedPtr res)
+      {
+        on_get_recovery_point(req, res);
       });
 
   // ── Replanning parameters ────────────────────────────────────────────────
@@ -1182,17 +1192,25 @@ bool MapServerNode::point_in_polygon(const geometry_msgs::msg::Point32& pt,
 // Costmap filter mask helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Minimum distance from point (px, py) to the edges of a polygon.
-static double point_to_polygon_distance(double px,
-                                        double py,
-                                        const geometry_msgs::msg::Polygon& polygon)
+/// Closest point on the polygon perimeter to (px, py), plus its distance.
+struct ClosestEdge
 {
+  double x{0.0};
+  double y{0.0};
+  double distance{std::numeric_limits<double>::max()};
+};
+
+static ClosestEdge closest_edge_point(double px, double py,
+                                      const geometry_msgs::msg::Polygon& polygon)
+{
+  ClosestEdge best;
   const auto& pts = polygon.points;
   const std::size_t n = pts.size();
   if (n < 2)
-    return std::numeric_limits<double>::max();
+  {
+    return best;
+  }
 
-  double min_dist = std::numeric_limits<double>::max();
   for (std::size_t i = 0, j = n - 1; i < n; j = i++)
   {
     const double ax = static_cast<double>(pts[j].x);
@@ -1213,9 +1231,20 @@ static double point_to_polygon_distance(double px,
     const double cx = ax + t * dx;
     const double cy = ay + t * dy;
     const double dist = std::hypot(px - cx, py - cy);
-    min_dist = std::min(min_dist, dist);
+    if (dist < best.distance)
+    {
+      best = {cx, cy, dist};
+    }
   }
-  return min_dist;
+  return best;
+}
+
+/// Minimum distance from point (px, py) to the edges of a polygon.
+static double point_to_polygon_distance(double px,
+                                        double py,
+                                        const geometry_msgs::msg::Polygon& polygon)
+{
+  return closest_edge_point(px, py, polygon).distance;
 }
 
 void MapServerNode::publish_keepout_mask()
@@ -1534,6 +1563,115 @@ void MapServerNode::check_boundary_violation(double x, double y)
           x, y, min_edge_dist, lethal_boundary_margin_m_);
     }
   }
+}
+
+void MapServerNode::on_get_recovery_point(
+    const mowgli_interfaces::srv::GetRecoveryPoint::Request::SharedPtr /*req*/,
+    mowgli_interfaces::srv::GetRecoveryPoint::Response::SharedPtr res)
+{
+  res->success = false;
+  res->distance_outside = 0.0;
+
+  if (areas_.empty())
+  {
+    res->message = "no areas defined";
+    return;
+  }
+
+  // Look up current robot pose in the map frame. Same path as
+  // check_boundary_violation — the BT only invokes this service when a
+  // violation is latched, so TF should be fresh.
+  double rx = 0.0;
+  double ry = 0.0;
+  if (!tf_buffer_)
+  {
+    res->message = "tf buffer unavailable";
+    return;
+  }
+  try
+  {
+    auto tf = tf_buffer_->lookupTransform(map_frame_, "base_link", tf2::TimePointZero);
+    rx = tf.transform.translation.x;
+    ry = tf.transform.translation.y;
+  }
+  catch (const tf2::TransformException& ex)
+  {
+    res->message = std::string("tf lookup failed: ") + ex.what();
+    return;
+  }
+
+  // Already inside an area? No recovery needed.
+  geometry_msgs::msg::Point32 robot_pt;
+  robot_pt.x = static_cast<float>(rx);
+  robot_pt.y = static_cast<float>(ry);
+  robot_pt.z = 0.0F;
+  for (const auto& area : areas_)
+  {
+    if (point_in_polygon(robot_pt, area.polygon))
+    {
+      res->message = "already inside a mowing area";
+      // Still return the current pose as a safe recovery — callers can
+      // ignore if success=false.
+      res->recovery_pose.position.x = rx;
+      res->recovery_pose.position.y = ry;
+      res->recovery_pose.orientation.w = 1.0;
+      return;
+    }
+  }
+
+  // Find the globally-closest edge point across all area polygons.
+  ClosestEdge best;
+  for (const auto& area : areas_)
+  {
+    auto cand = closest_edge_point(rx, ry, area.polygon);
+    if (cand.distance < best.distance)
+    {
+      best = cand;
+    }
+  }
+
+  if (best.distance == std::numeric_limits<double>::max())
+  {
+    res->message = "no polygon edges found";
+    return;
+  }
+
+  // Inward direction: from robot toward the closest edge, continuing past
+  // the edge into the polygon interior.
+  const double vx = best.x - rx;
+  const double vy = best.y - ry;
+  const double vlen = std::hypot(vx, vy);
+  double nx = 0.0;
+  double ny = 0.0;
+  if (vlen > 1e-6)
+  {
+    nx = vx / vlen;
+    ny = vy / vlen;
+  }
+
+  const double tx = best.x + boundary_recovery_offset_m_ * nx;
+  const double ty = best.y + boundary_recovery_offset_m_ * ny;
+
+  // Yaw facing inward — same direction as the offset.
+  const double yaw = std::atan2(ny, nx);
+  const double cy = std::cos(yaw * 0.5);
+  const double sy = std::sin(yaw * 0.5);
+
+  res->recovery_pose.position.x = tx;
+  res->recovery_pose.position.y = ty;
+  res->recovery_pose.position.z = 0.0;
+  res->recovery_pose.orientation.x = 0.0;
+  res->recovery_pose.orientation.y = 0.0;
+  res->recovery_pose.orientation.z = sy;
+  res->recovery_pose.orientation.w = cy;
+  res->distance_outside = best.distance;
+  res->success = true;
+  res->message = "recovery pose computed";
+
+  RCLCPP_INFO(get_logger(),
+              "GetRecoveryPoint: robot=(%.2f, %.2f) outside by %.2fm → "
+              "target=(%.2f, %.2f) yaw=%.2f",
+              rx, ry, best.distance, tx, ty, yaw);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

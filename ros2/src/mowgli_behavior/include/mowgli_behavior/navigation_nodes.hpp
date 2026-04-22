@@ -23,6 +23,7 @@
 #include "behaviortree_cpp/bt_factory.h"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "mowgli_behavior/bt_context.hpp"
+#include "mowgli_interfaces/srv/get_recovery_point.hpp"
 #include "nav2_msgs/action/back_up.hpp"
 #include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -193,6 +194,61 @@ public:
   }
 
   BT::NodeStatus tick() override;
+};
+
+// ---------------------------------------------------------------------------
+// NavigateInsideBoundary
+// ---------------------------------------------------------------------------
+
+/// Recovery node used when the robot has drifted past a polygon edge.
+///
+/// Two-phase action:
+///   1. Call `/map_server_node/get_recovery_point` to ask the map server for
+///      a pose ~boundary_recovery_offset_m inside the nearest polygon, facing
+///      inward.
+///   2. Hand that pose to the Nav2 `/navigate_to_pose` action and wait for
+///      completion.
+///
+/// Returns FAILURE if the service is unreachable, returns no success, or if
+/// Nav2 aborts/cancels the recovery goal. In that case the BT escalates to
+/// the lethal-boundary emergency path.
+class NavigateInsideBoundary : public BT::StatefulActionNode
+{
+public:
+  using Nav2Goal = nav2_msgs::action::NavigateToPose;
+  using GoalHandle = rclcpp_action::ClientGoalHandle<Nav2Goal>;
+  using RecoverySrv = mowgli_interfaces::srv::GetRecoveryPoint;
+
+  NavigateInsideBoundary(const std::string& name, const BT::NodeConfig& config)
+      : BT::StatefulActionNode(name, config)
+  {
+  }
+
+  static BT::PortsList providedPorts()
+  {
+    return {};
+  }
+
+  BT::NodeStatus onStart() override;
+  BT::NodeStatus onRunning() override;
+  void onHalted() override;
+
+private:
+  enum class Phase
+  {
+    WaitingForService,
+    WaitingForGoalHandle,
+    WaitingForResult,
+  };
+
+  rclcpp::Client<RecoverySrv>::SharedPtr service_client_;
+  rclcpp_action::Client<Nav2Goal>::SharedPtr action_client_;
+
+  std::shared_future<RecoverySrv::Response::SharedPtr> service_future_;
+  std::shared_future<GoalHandle::SharedPtr> goal_handle_future_;
+  GoalHandle::SharedPtr goal_handle_;
+
+  Phase phase_{Phase::WaitingForService};
 };
 
 }  // namespace mowgli_behavior

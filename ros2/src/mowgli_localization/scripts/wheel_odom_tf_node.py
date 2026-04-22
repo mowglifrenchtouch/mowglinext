@@ -58,13 +58,12 @@ class WheelOdomTfNode(Node):
         self.declare_parameter("input_topic", "/wheel_odom")
         self.declare_parameter("parent_frame", "wheel_odom_raw")
         self.declare_parameter("child_frame", "base_footprint_wheels")
-        # 100 Hz: K-ICP looks up the wheel TF at scan timestamps that can land
-        # 5-20 ms ahead of the latest rebroadcast. At 50 Hz (20 ms) and a
-        # single-threaded executor contended with /wheel_odom callbacks, the
-        # rebroadcast occasionally fell behind — K-ICP dropped every scan and
-        # eventually aborted (SIGABRT). 100 Hz keeps the gap <10 ms and plays
-        # well with the MultiThreadedExecutor below.
-        self.declare_parameter("rebroadcast_hz", 100.0)
+        # 50 Hz rebroadcast: matches FusionCore/hardware_bridge publish rate,
+        # enough to cover K-ICP scan-end lookups. The MultiThreadedExecutor
+        # below is what actually prevented K-ICP SIGABRT (subscription was
+        # starving the timer in a single-threaded executor); the rate itself
+        # is not load-bearing beyond ~25 Hz.
+        self.declare_parameter("rebroadcast_hz", 50.0)
 
         input_topic = self.get_parameter("input_topic").value
         self._parent = self.get_parameter("parent_frame").value

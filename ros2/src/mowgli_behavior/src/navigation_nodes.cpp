@@ -251,6 +251,129 @@ void NavigateToPose::onHalted()
 }
 
 // ---------------------------------------------------------------------------
+// NavigateInsideBoundary
+// ---------------------------------------------------------------------------
+
+BT::NodeStatus NavigateInsideBoundary::onStart()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  if (!service_client_)
+  {
+    service_client_ = ctx->node->create_client<RecoverySrv>(
+        "/map_server_node/get_recovery_point");
+  }
+  if (!action_client_)
+  {
+    action_client_ = rclcpp_action::create_client<Nav2Goal>(ctx->node, "/navigate_to_pose");
+  }
+
+  if (!service_client_->wait_for_service(std::chrono::seconds(2)))
+  {
+    RCLCPP_ERROR(ctx->node->get_logger(),
+                 "NavigateInsideBoundary: /map_server_node/get_recovery_point unavailable");
+    return BT::NodeStatus::FAILURE;
+  }
+
+  service_future_ = service_client_->async_send_request(
+                                     std::make_shared<RecoverySrv::Request>())
+                        .share();
+  goal_handle_.reset();
+  phase_ = Phase::WaitingForService;
+
+  RCLCPP_INFO(ctx->node->get_logger(),
+              "NavigateInsideBoundary: requesting recovery pose from map server");
+  return BT::NodeStatus::RUNNING;
+}
+
+BT::NodeStatus NavigateInsideBoundary::onRunning()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  if (phase_ == Phase::WaitingForService)
+  {
+    if (service_future_.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+    {
+      return BT::NodeStatus::RUNNING;
+    }
+    auto resp = service_future_.get();
+    if (!resp || !resp->success)
+    {
+      RCLCPP_WARN(ctx->node->get_logger(),
+                  "NavigateInsideBoundary: recovery pose request failed: %s",
+                  resp ? resp->message.c_str() : "null response");
+      return BT::NodeStatus::FAILURE;
+    }
+
+    if (!action_client_->wait_for_action_server(std::chrono::seconds(5)))
+    {
+      RCLCPP_WARN(ctx->node->get_logger(),
+                  "NavigateInsideBoundary: /navigate_to_pose unavailable");
+      return BT::NodeStatus::FAILURE;
+    }
+
+    Nav2Goal::Goal goal_msg;
+    goal_msg.pose.header.stamp = ctx->node->now();
+    goal_msg.pose.header.frame_id = "map";
+    goal_msg.pose.pose = resp->recovery_pose;
+
+    goal_handle_future_ = action_client_->async_send_goal(goal_msg);
+
+    RCLCPP_INFO(ctx->node->get_logger(),
+                "NavigateInsideBoundary: nav2 goal sent (x=%.2f y=%.2f, %.2fm outside)",
+                resp->recovery_pose.position.x,
+                resp->recovery_pose.position.y,
+                resp->distance_outside);
+    phase_ = Phase::WaitingForGoalHandle;
+    return BT::NodeStatus::RUNNING;
+  }
+
+  if (phase_ == Phase::WaitingForGoalHandle)
+  {
+    if (goal_handle_future_.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+    {
+      return BT::NodeStatus::RUNNING;
+    }
+    goal_handle_ = goal_handle_future_.get();
+    if (!goal_handle_)
+    {
+      RCLCPP_ERROR(ctx->node->get_logger(),
+                   "NavigateInsideBoundary: nav2 rejected recovery goal");
+      return BT::NodeStatus::FAILURE;
+    }
+    phase_ = Phase::WaitingForResult;
+  }
+
+  const auto status = goal_handle_->get_status();
+  switch (status)
+  {
+    case action_msgs::msg::GoalStatus::STATUS_SUCCEEDED:
+      RCLCPP_INFO(ctx->node->get_logger(), "NavigateInsideBoundary: recovery complete");
+      return BT::NodeStatus::SUCCESS;
+    case action_msgs::msg::GoalStatus::STATUS_ABORTED:
+      RCLCPP_WARN(ctx->node->get_logger(), "NavigateInsideBoundary: nav2 aborted");
+      return BT::NodeStatus::FAILURE;
+    case action_msgs::msg::GoalStatus::STATUS_CANCELED:
+      RCLCPP_WARN(ctx->node->get_logger(), "NavigateInsideBoundary: nav2 canceled");
+      return BT::NodeStatus::FAILURE;
+    default:
+      return BT::NodeStatus::RUNNING;
+  }
+}
+
+void NavigateInsideBoundary::onHalted()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  if (goal_handle_)
+  {
+    RCLCPP_INFO(ctx->node->get_logger(), "NavigateInsideBoundary: canceling goal");
+    action_client_->async_cancel_goal(goal_handle_);
+    goal_handle_.reset();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // BackUp
 // ---------------------------------------------------------------------------
 
