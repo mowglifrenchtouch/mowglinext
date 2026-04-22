@@ -169,8 +169,8 @@
 
       <div class="feature-card">
         <div class="icon">🗺️</div>
-        <h3>LiDAR SLAM &amp; Map Management</h3>
-        <p>Real-time mapping with SLAM Toolbox, optimized for outdoor environments. Save, load, and delete maps from the web UI. No pre-built maps needed.</p>
+        <h3>Kinematic-ICP &amp; RTK Localization</h3>
+        <p>No SLAM needed. FusionCore UKF fuses RTK-GPS + IMU + wheel odometry at 100 Hz. Optional Kinematic-ICP provides LiDAR drift correction under tree cover. Centimeter-accurate positioning without map-building overhead.</p>
       </div>
 
       <div class="feature-card">
@@ -200,7 +200,7 @@
       <div class="feature-card">
         <div class="icon">🌐</div>
         <h3>Web GUI &amp; Diagnostics</h3>
-        <p>React + Go web interface for configuration, map editing, area management. Real-time health dashboard shows GPS, LiDAR, battery, and motion status from any device.</p>
+        <p>State-adaptive dashboard with hero card, live sparkline telemetry, radial gauges, and health checks. Weekly schedule grid, statistics with bar charts, and full map editor. Dark &amp; light themes, responsive mobile layout. React + Go + WebSocket.</p>
       </div>
 
       <div class="feature-card">
@@ -231,6 +231,21 @@
   </div>
 </section>
 
+<!-- ─── Dashboard Preview ──────────────────────────── -->
+<section class="dashboard-preview" id="dashboard">
+  <div class="container">
+    <h2>Dashboard</h2>
+    <p class="section-subtitle">State-adaptive hero card, live sparkline telemetry, and contextual actions — from any device.</p>
+    <div style="display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; margin-top: 32px;">
+      <img src="screenshots/dashboard-mowing.png" alt="Dashboard — mowing" style="border-radius: 12px; max-width: 720px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+    </div>
+    <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-top: 24px;">
+      <img src="screenshots/schedule.png" alt="Schedule" style="border-radius: 10px; max-width: 350px; width: 48%; box-shadow: 0 4px 16px rgba(0,0,0,0.2);">
+      <img src="screenshots/stats.png" alt="Statistics" style="border-radius: 10px; max-width: 350px; width: 48%; box-shadow: 0 4px 16px rgba(0,0,0,0.2);">
+    </div>
+  </div>
+</section>
+
 <!-- ─── Architecture ────────────────────────────────── -->
 <section class="architecture" id="architecture">
   <div class="container">
@@ -242,9 +257,9 @@
 │  <span class="highlight">ROS2 Kilted Stack</span>                                     │
 │                                                      │
 │  ┌─────────────┐  ┌──────────┐  ┌─────────────────┐ │
-│  │  <span class="highlight">Nav2</span>        │  │  <span class="highlight">SLAM</span>    │  │  <span class="highlight">Behavior Tree</span>  │ │
-│  │  navigate    │  │  Toolbox  │  │  main_tree.xml  │ │
-│  │  dock/undock │  │          │  │  10 Hz tick     │ │
+│  │  <span class="highlight">Nav2</span>        │  │<span class="highlight">Kinematic</span> │  │  <span class="highlight">Behavior Tree</span>  │ │
+│  │  navigate    │  │  <span class="highlight">ICP</span>     │  │  main_tree.xml  │ │
+│  │  dock/undock │  │ (LiDAR)  │  │  10 Hz tick     │ │
 │  │  coverage    │  │          │  │                 │ │
 │  └─────────────┘  └──────────┘  └─────────────────┘ │
 │  ┌─────────────┐  ┌──────────┐  ┌─────────────────┐ │

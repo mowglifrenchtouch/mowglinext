@@ -1,28 +1,73 @@
 # GUI
 
-OpenMower GUI — React frontend + Go backend for mower configuration and monitoring.
+MowgliNext web interface -- React frontend + Go backend for mower monitoring and control.
 
 ## Access
 
 Default: `http://<mower-ip>:4006`
 
-## Features
+## Dashboard
 
-- Map editor — define mowing areas, navigation areas, dock position
-- Robot footprint visualization on map
-- Per-model chassis dimensions
-- Real-time status monitoring (HighLevelStatus with coverage progress)
-- Configuration editor (writes `mowgli_robot.yaml`)
-- Firmware flashing via web UI
-- **Area recording** — start recording (cmd 3), drive boundary, finish (cmd 5) or cancel (cmd 6). Live trajectory preview on map.
-- **Manual mowing** — dedicated mode (cmd 7) with joystick teleop via `/cmd_vel_teleop`. Blade control is fire-and-forget to firmware. Collision_monitor, GPS, SLAM remain active.
-- **Emergency management** — auto-reset when robot placed on dock (charging detected)
+![Dashboard — mowing state](https://raw.githubusercontent.com/cedbossneo/mowglinext/dev/docs/screenshots/dashboard-mowing.png)
+
+The dashboard adapts to the mower's current state with a **hero card** that shows contextual information and actions:
+
+| State | Hero card | Actions |
+|-------|-----------|---------|
+| **Mowing** | Zone name, progress bar, elapsed time, GPS quality | Pause, Send home, Emergency |
+| **Idle / Docked** | Battery level, mower icon, next scheduled run | Start mowing, Emergency |
+| **Charging** | Radial gauge with battery %, charge current, ETA | Mow anyway |
+| **Emergency** | Alert with description and instructions | Reset emergency |
+| **Boundary violation** | Warning with map context | Send home, Resume |
+| **Rain detected** | Weather pause notice | Mow anyway |
+| **Low battery docking** | Battery warning, auto-resume notice | Keep mowing |
+
+Below the hero card, four **telemetry tiles** show live sparklines:
+- **Battery** -- percentage + voltage, charging indicator
+- **GPS** -- quality percentage, RTK status (Fixed/Float/GPS)
+- **Blades** -- RPM + current draw
+- **Motor** -- temperature + ESC temperature
+
+The bottom row shows **Today's work** (zone progress, active zones), **Next up** (schedule link), and **Health check** (GPS, rain, emergency, motor temp status dots).
+
+### Mobile
+
+![Dashboard — mobile](https://raw.githubusercontent.com/cedbossneo/mowglinext/dev/docs/screenshots/dashboard-mobile.png)
+
+On mobile, the dashboard stacks vertically: compact hero card, 2x2 tile grid, and collapsible sensor/system panels. All buttons expand to full width. The bottom tab bar provides quick access to Home, Map, Stats, and Settings.
+
+## Pages
+
+| | |
+|---|---|
+| ![Map](https://raw.githubusercontent.com/cedbossneo/mowglinext/dev/docs/screenshots/map.png) | ![Schedule](https://raw.githubusercontent.com/cedbossneo/mowglinext/dev/docs/screenshots/schedule.png) |
+| ![Statistics](https://raw.githubusercontent.com/cedbossneo/mowglinext/dev/docs/screenshots/stats.png) | ![Dashboard idle](https://raw.githubusercontent.com/cedbossneo/mowglinext/dev/docs/screenshots/dashboard-idle.png) |
+
+| Page | Description |
+|------|-------------|
+| **Dashboard** | State-adaptive hero + live telemetry tiles + health check |
+| **Map** | Mapbox GL map editor -- define mowing areas, navigation zones, dock position, live robot position |
+| **Schedule** | Weekly grid view with color-coded schedule blocks, schedule cards with day toggles and time picker |
+| **Statistics** | Hero stat cards (distance, hours, completion rate, runs), weekly bar chart, zone coverage bars, session history table |
+| **Settings** | Grouped configuration editor (battery, mowing, positioning, hardware, safety, rain, navigation, sensors, advanced) |
+| **Onboarding** | First-time setup wizard |
+| **Diagnostics** | System health, IMU, GPS, wheel ticks, detailed hardware status |
+| **Logs** | Live ROS2 log viewer |
+
+## Design System
+
+- **Font:** Manrope (headings/body), JetBrains Mono (telemetry values)
+- **Color palette:** Green-tinted dark theme (`#0F1210` base, `#3EE084` accent, `#7BC6FF` sky, `#FFC567` amber), light theme available
+- **Cards:** 18px border-radius, 1px subtle border, panel surface color
+- **Icons:** Custom stroke-1.6 SVG icon set (mower, battery, signal, blades, thermometer, etc.)
+- **Animations:** State pill pulse, boundary violation glow (respects `prefers-reduced-motion`)
 
 ## Architecture
 
-- **Frontend:** React (TypeScript), served from `/app/web`
-- **Backend:** Go, connects to ROS2 via rosbridge (ws://localhost:9090)
-- **MQTT:** Publishes/subscribes to status topics via Mosquitto
+- **Frontend:** React (TypeScript) + Ant Design + styled-components
+- **Backend:** Go, connects to ROS2 via rosbridge (`ws://localhost:9090`)
+- **Real-time data:** WebSocket streams for status, power, GPS, emergency, map updates
+- **State management:** Custom hooks (`useHighLevelStatus`, `usePower`, `useStatus`, `useGPS`, `useEmergency`, `useSettings`)
 
 ## Development
 
@@ -36,7 +81,7 @@ go build -o openmower-gui
 # Frontend
 cd web
 yarn install
-yarn dev
+yarn dev    # http://localhost:5173 with hot reload
 ```
 
 ## Docker
