@@ -78,6 +78,17 @@ check_devices() {
     fi
   fi
 
+  if [[ "${HARDWARE_BACKEND:-mowgli}" != "mavros" && "${GPS_CONNECTION:-}" == "usb" && -L "${GPS_PORT}" && -n "${GPS_BY_ID:-}" && -e "${GPS_BY_ID}" ]]; then
+    local gps_target
+    local gps_expected
+    gps_target="$(readlink -f "$GPS_PORT")"
+    gps_expected="$(readlink -f "$GPS_BY_ID")"
+    if [[ "$gps_target" != "$gps_expected" ]]; then
+      warn "GPS symlink mismatch: $GPS_PORT -> $gps_target (expected $gps_expected from $GPS_BY_ID)"
+      add_issue "GPS symlink $GPS_PORT points to $gps_target instead of the selected USB device $GPS_BY_ID. Re-run installer or fix udev rules."
+    fi
+  fi
+
   if [[ "${LIDAR_CONNECTION:-}" == "uart" && -L "${LIDAR_PORT}" && -n "${LIDAR_UART_DEVICE:-}" ]]; then
     local lidar_target
     lidar_target="$(readlink -f "$LIDAR_PORT")"
@@ -93,13 +104,22 @@ check_containers() {
 
   : "${LIDAR_ENABLED:=true}"
   : "${LIDAR_TYPE:=unknown}"
+  : "${GNSS_BACKEND:=gps}"
 
   local services=(mowgli gui mosquitto)
 
   if [[ "${HARDWARE_BACKEND:-mowgli}" == "mavros" ]]; then
     services+=(mavros ntrip)
   else
-    services+=(gps)
+    case "${GNSS_BACKEND}" in
+      gps)     services+=(gps) ;;
+      ublox)   services+=(gnss_ublox) ;;
+      unicore) services+=(gnss_unicore) ;;
+      *)
+        fail "Unknown GNSS_BACKEND=${GNSS_BACKEND}"
+        add_issue "Unknown GNSS_BACKEND=${GNSS_BACKEND}. Re-run installer."
+        ;;
+    esac
   fi
 
   if [[ "${LIDAR_ENABLED}" == "true" && "${LIDAR_TYPE}" != "none" ]]; then
@@ -119,6 +139,8 @@ check_containers() {
     case "$svc" in
       mowgli)       container="mowgli-ros2" ;;
       gps)          container="mowgli-gps" ;;
+      gnss_ublox)   container="gnss_ublox" ;;
+      gnss_unicore) container="gnss_unicore" ;;
       lidar)        container="mowgli-lidar" ;;
       gui)          container="mowgli-gui" ;;
       mosquitto)    container="mowgli-mqtt" ;;
@@ -206,6 +228,8 @@ check_firmware() {
 check_gps() {
   step "Check: GPS"
 
+  : "${GNSS_BACKEND:=gps}"
+
   if [[ "${HARDWARE_BACKEND:-mowgli}" == "mavros" ]]; then
     info "MAVROS backend: GPS is handled through Pixhawk/MAVROS"
 
@@ -268,8 +292,20 @@ check_gps() {
     return
   fi
 
-  if ! docker inspect -f '{{.State.Status}}' mowgli-gps 2>/dev/null | grep -q running; then
-    warn "mowgli-gps not running — skipping GPS check"
+  local gps_container=""
+  case "${GNSS_BACKEND}" in
+    gps)     gps_container="mowgli-gps" ;;
+    ublox)   gps_container="gnss_ublox" ;;
+    unicore) gps_container="gnss_unicore" ;;
+    *)
+      fail "Unknown GNSS_BACKEND=${GNSS_BACKEND}"
+      add_issue "Unknown GNSS_BACKEND=${GNSS_BACKEND}. Re-run installer."
+      return
+      ;;
+  esac
+
+  if ! docker inspect -f '{{.State.Status}}' "$gps_container" 2>/dev/null | grep -q running; then
+    warn "$gps_container not running — skipping GPS check"
     return
   fi
 
@@ -282,7 +318,7 @@ check_gps() {
 
   if [[ -z "$fix_data" ]]; then
     fail "No GPS fix data on /gps/fix"
-    add_issue "GPS not publishing. Check: docker logs mowgli-gps --tail 30"
+    add_issue "GPS not publishing. Check: docker logs $gps_container --tail 30"
     return
   fi
 
@@ -310,8 +346,12 @@ check_gps() {
     fail "GPS: No fix (status=$status_val)"
   fi
 
+  if [[ "${GNSS_BACKEND}" != "gps" ]]; then
+    info "GNSS backend ${GNSS_BACKEND}: direct /gps/fix check passed"
+  fi
+
   local ntrip_logs
-  ntrip_logs="$(docker logs mowgli-gps --tail 80 2>&1 || true)"
+  ntrip_logs="$(docker logs "$gps_container" --tail 80 2>&1 || true)"
 
   if echo "$ntrip_logs" | grep -q "Connected to http"; then
     local ntrip_url
