@@ -1,5 +1,55 @@
 #!/usr/bin/env bash
 
+pick_serial_by_id() {
+  local default_device="${1:-}"
+  local by_id_dir="${SERIAL_BY_ID_DIR:-/dev/serial/by-id}"
+  local candidates=()
+  local choice
+  local i=1
+
+  if [ -d "$by_id_dir" ]; then
+    while IFS= read -r path; do
+      candidates+=("$path")
+    done < <(find "$by_id_dir" -maxdepth 1 -type l | sort)
+  fi
+
+  if [ "${#candidates[@]}" -eq 0 ]; then
+    error "No USB serial device found in $by_id_dir"
+    return 1
+  fi
+
+  echo ""
+  info "Detected USB serial device(s):"
+  for path in "${candidates[@]}"; do
+    if [ -L "$path" ]; then
+      echo "  ${i}) $path -> $(readlink -f "$path")"
+    else
+      echo "  ${i}) $path"
+    fi
+    i=$((i + 1))
+  done
+
+  local default_idx=""
+  if [ -n "$default_device" ]; then
+    for i in "${!candidates[@]}"; do
+      if [ "${candidates[$i]}" = "$default_device" ]; then
+        default_idx="$((i + 1))"
+        break
+      fi
+    done
+  fi
+
+  prompt "$MSG_CHOICE" "${default_idx:-1}"
+  choice="$REPLY"
+
+  if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#candidates[@]}" ]; then
+    error "Invalid USB serial device selection"
+    return 1
+  fi
+
+  REPLY="${candidates[$((choice - 1))]}"
+}
+
 configure_gps() {
   step "GPS configuration"
 
@@ -19,9 +69,15 @@ configure_gps() {
     esac
 
     : "${GPS_PORT:=/dev/gps}"
+    : "${GPS_BY_ID:=}"
     : "${GPS_DEBUG_ENABLED:=false}"
     : "${GPS_DEBUG_PORT:=/dev/gps_debug}"
     : "${GPS_DEBUG_BAUD:=115200}"
+
+    if [[ "${GNSS_BACKEND}" == "unicore" && "${GPS_CONNECTION}" == "usb" && -z "${GPS_BY_ID:-}" ]]; then
+      error "GPS_BY_ID is required for GNSS_BACKEND=unicore with GPS_CONNECTION=usb"
+      return 1
+    fi
 
     info "GNSS backend pre-configured: ${GNSS_BACKEND}"
     info "GPS pre-configured (skipping prompts)"
@@ -84,9 +140,14 @@ configure_gps() {
       1)
         GPS_CONNECTION="usb"
         GPS_UART_DEVICE=""
+        if [ "$GNSS_BACKEND" = "unicore" ]; then
+          pick_serial_by_id "${GPS_BY_ID:-}" || return 1
+          GPS_BY_ID="$REPLY"
+        fi
         ;;
       2)
         GPS_CONNECTION="uart"
+        GPS_BY_ID=""
         pick_uart_port "/dev/ttyAMA4"
         GPS_UART_DEVICE="$REPLY"
         ;;
@@ -145,6 +206,7 @@ configure_gps() {
 
   echo ""
   info "$MSG_GPS_MAIN : backend=$GNSS_BACKEND connection=$GPS_CONNECTION protocol=$GPS_PROTOCOL port=$GPS_PORT uart=${GPS_UART_DEVICE:-none} baud=$GPS_BAUD"
+  [ -n "${GPS_BY_ID:-}" ] && info "GPS USB by-id  : $GPS_BY_ID"
   info "GPS debug     : enabled=$GPS_DEBUG_ENABLED port=$GPS_DEBUG_PORT uart=${GPS_DEBUG_UART_DEVICE:-none} baud=$GPS_DEBUG_BAUD"
 }
 

@@ -28,6 +28,7 @@ setup_env() {
   : "${GPS_CONNECTION:=uart}"
   : "${GPS_PROTOCOL:=UBX}"
   : "${GPS_PORT:=/dev/gps}"
+  : "${GPS_BY_ID:=}"
   : "${GPS_UART_DEVICE:=/dev/ttyAMA4}"
   : "${GPS_BAUD:=460800}"
 
@@ -102,6 +103,7 @@ setup_env() {
   upsert_env_key "$env_file" "GPS_CONNECTION" "$GPS_CONNECTION"
   upsert_env_key "$env_file" "GPS_PROTOCOL" "$GPS_PROTOCOL"
   upsert_env_key "$env_file" "GPS_PORT" "$GPS_PORT"
+  upsert_env_key "$env_file" "GPS_BY_ID" "$GPS_BY_ID"
   upsert_env_key "$env_file" "GPS_UART_DEVICE" "$GPS_UART_DEVICE"
   upsert_env_key "$env_file" "GPS_BAUD" "$GPS_BAUD"
   upsert_env_key "$env_file" "GPS_DEBUG_ENABLED" "$GPS_DEBUG_ENABLED"

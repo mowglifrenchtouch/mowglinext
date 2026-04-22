@@ -137,7 +137,7 @@ pick_uart_port() {
 }
 
 # Test: GPS UBX-UART preset
-unset GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE 2>/dev/null || true
+unset GPS_BY_ID GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE 2>/dev/null || true
 PRESET_LOADED=true
 GPS_CONNECTION=uart
 GPS_PROTOCOL=UBX
@@ -151,7 +151,7 @@ assert_eq "GPS preset uart: GPS_UART_RULE set" \
 assert_eq "GPS preset uart: no debug rule" "" "${GPS_DEBUG_UART_RULE:-}"
 
 # Test: GPS UBX-USB preset (no udev rule needed)
-unset GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE 2>/dev/null || true
+unset GPS_BY_ID GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE 2>/dev/null || true
 PRESET_LOADED=true
 GPS_CONNECTION=usb
 GPS_PROTOCOL=UBX
@@ -162,7 +162,7 @@ configure_gps >/dev/null 2>&1
 assert_eq "GPS preset usb: no uart rule" "" "${GPS_UART_RULE:-}"
 
 # Test: GPS with debug enabled
-unset GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE 2>/dev/null || true
+unset GPS_BY_ID GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE 2>/dev/null || true
 PRESET_LOADED=true
 GPS_CONNECTION=uart
 GPS_PROTOCOL=UBX
@@ -188,6 +188,20 @@ else
   pass "GPS preset invalid GNSS_BACKEND rejected"
 fi
 
+# Test: Unicore USB preset requires an explicit by-id selection
+unset GPS_BY_ID GNSS_BACKEND GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE 2>/dev/null || true
+PRESET_LOADED=true
+GNSS_BACKEND=unicore
+GPS_CONNECTION=usb
+GPS_PROTOCOL=UBX
+GPS_BAUD=921600
+GPS_DEBUG_ENABLED=false
+if configure_gps >/dev/null 2>&1; then
+  fail "GPS preset unicore USB requires GPS_BY_ID" "configure_gps unexpectedly succeeded"
+else
+  pass "GPS preset unicore USB requires GPS_BY_ID"
+fi
+
 # Test: invalid GNSS backend does not fall back to gps compose
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 INSTALL_DIR="$SCRIPT_DIR"
@@ -199,6 +213,63 @@ if build_compose_stack >/dev/null 2>&1; then
 else
   pass "Compose invalid GNSS_BACKEND rejected"
 fi
+
+# Test: USB serial udev rules are generated from /dev/serial/by-id
+source "$SCRIPT_DIR/lib/udev.sh"
+SERIAL_BY_ID_DIR="$SANDBOX/serial/by-id"
+mkdir -p "$SERIAL_BY_ID_DIR" "$SANDBOX/dev"
+touch "$SANDBOX/dev/ttyACM0" "$SANDBOX/dev/ttyACM1" "$SANDBOX/dev/ttyACM2"
+touch "$SANDBOX/dev/ttyUSB0"
+ln -sf "$SANDBOX/dev/ttyACM0" "$SERIAL_BY_ID_DIR/usb-Mowgli-if00"
+ln -sf "$SANDBOX/dev/ttyACM1" "$SERIAL_BY_ID_DIR/usb-u-blox_GNSS_receiver-if00"
+ln -sf "$SANDBOX/dev/ttyACM2" "$SERIAL_BY_ID_DIR/usb-Pixhawk-if00"
+ln -sf "$SANDBOX/dev/ttyUSB0" "$SERIAL_BY_ID_DIR/usb-1a86_USB_Serial-if00-port0"
+HARDWARE_BACKEND=mavros
+MAVROS_BY_ID="$SERIAL_BY_ID_DIR/usb-Pixhawk-if00"
+GPS_CONNECTION=usb
+GNSS_BACKEND=ublox
+GPS_BY_ID=""
+udev_rules="$(build_dynamic_udev_rules)"
+case "$udev_rules" in
+  *'KERNEL=="ttyACM0", SYMLINK+="mowgli", MODE="0666"'*) pass "udev by-id: Mowgli symlink rule" ;;
+  *) fail "udev by-id: Mowgli symlink rule" "$udev_rules" ;;
+esac
+case "$udev_rules" in
+  *'KERNEL=="ttyACM2", SYMLINK+="mavros", MODE="0666"'*) pass "udev by-id: MAVROS explicit symlink rule" ;;
+  *) fail "udev by-id: MAVROS explicit symlink rule" "$udev_rules" ;;
+esac
+
+HARDWARE_BACKEND=mowgli
+MAVROS_BY_ID=""
+udev_rules="$(build_dynamic_udev_rules)"
+case "$udev_rules" in
+  *'KERNEL=="ttyACM1", SYMLINK+="gps", MODE="0666"'*) pass "udev by-id: u-blox GPS symlink rule" ;;
+  *) fail "udev by-id: u-blox GPS symlink rule" "$udev_rules" ;;
+esac
+
+GNSS_BACKEND=unicore
+GPS_BY_ID=""
+udev_rules="$(build_dynamic_udev_rules)"
+case "$udev_rules" in
+  *'SYMLINK+="gps"'*) fail "udev by-id: Unicore USB does not auto-detect generic adapter" "$udev_rules" ;;
+  *) pass "udev by-id: Unicore USB does not auto-detect generic adapter" ;;
+esac
+
+GPS_BY_ID="$SERIAL_BY_ID_DIR/usb-1a86_USB_Serial-if00-port0"
+udev_rules="$(build_dynamic_udev_rules)"
+case "$udev_rules" in
+  *'KERNEL=="ttyUSB0", SYMLINK+="gps", MODE="0666"'*) pass "udev by-id: explicit Unicore GPS_BY_ID symlink rule" ;;
+  *) fail "udev by-id: explicit Unicore GPS_BY_ID symlink rule" "$udev_rules" ;;
+esac
+
+GPS_CONNECTION=uart
+GPS_UART_DEVICE=/dev/ttyAMA4
+udev_rules="$(build_dynamic_udev_rules)"
+case "$udev_rules" in
+  *'KERNEL=="ttyAMA4", SYMLINK+="gps", MODE="0666"'*) pass "udev uart: GPS kernel symlink rule preserved" ;;
+  *) fail "udev uart: GPS kernel symlink rule preserved" "$udev_rules" ;;
+esac
+unset SERIAL_BY_ID_DIR MAVROS_BY_ID
 
 # =============================================================================
 # Test 3: configure_lidar — preset mode (skips prompts)
