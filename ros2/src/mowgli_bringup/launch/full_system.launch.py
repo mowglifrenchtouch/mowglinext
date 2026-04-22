@@ -30,6 +30,15 @@ Brings up all subsystems:
   8. Diagnostics               — mowgli_monitoring
   9. MQTT bridge (optional)   — mowgli_monitoring
   10. foxglove_bridge — WebSocket bridge for GUI and Foxglove Studio
+
+GNSS backend selection:
+  - gps      — legacy/direct GPS path
+  - ublox    — u-blox GNSS backend
+  - unicore  — Unicore GNSS backend
+
+Hardware backend selection:
+  - mowgli   — direct Mowgli hardware bridge
+  - mavros   — Pixhawk/MAVROS backend
 """
 
 import os
@@ -43,7 +52,7 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
