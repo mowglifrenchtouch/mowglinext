@@ -89,13 +89,16 @@ BT::NodeStatus StopMoving::tick()
 
   if (!pub_)
   {
-    pub_ = ctx->node->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
+    pub_ = ctx->node->create_publisher<geometry_msgs::msg::TwistStamped>(
+        "/cmd_vel_emergency", 10);
   }
 
-  geometry_msgs::msg::Twist zero{};
+  geometry_msgs::msg::TwistStamped zero{};
+  zero.header.stamp = ctx->node->now();
+  zero.header.frame_id = "base_footprint";
   pub_->publish(zero);
 
-  RCLCPP_DEBUG(ctx->node->get_logger(), "StopMoving: published zero velocity");
+  RCLCPP_DEBUG(ctx->node->get_logger(), "StopMoving: published zero velocity on /cmd_vel_emergency");
 
   return BT::NodeStatus::SUCCESS;
 }
@@ -121,28 +124,13 @@ BT::NodeStatus ClearCostmap::tick()
 
   auto request = std::make_shared<std_srvs::srv::Empty::Request>();
 
-  // Wait up to 2s for service discovery. On first call after Nav2 lifecycle
-  // activation, DDS needs time to discover the costmap services.
-  if (global_client_->wait_for_service(std::chrono::seconds(2)))
-  {
-    global_client_->async_send_request(request);
-    RCLCPP_INFO(ctx->node->get_logger(), "ClearCostmap: sent clear request to global costmap");
-  }
-  else
-  {
-    RCLCPP_WARN(ctx->node->get_logger(),
-                "ClearCostmap: global costmap service not ready, skipping");
-  }
-
-  if (local_client_->wait_for_service(std::chrono::seconds(2)))
-  {
-    local_client_->async_send_request(request);
-    RCLCPP_INFO(ctx->node->get_logger(), "ClearCostmap: sent clear request to local costmap");
-  }
-  else
-  {
-    RCLCPP_WARN(ctx->node->get_logger(), "ClearCostmap: local costmap service not ready, skipping");
-  }
+  // Just send the requests. If the service isn't ready, async_send_request
+  // will fail silently (no response). This avoids DDS discovery issues
+  // where service_is_ready() and wait_for_service() never return true
+  // even though the services exist (Cyclone DDS on ARM).
+  global_client_->async_send_request(request);
+  local_client_->async_send_request(request);
+  RCLCPP_INFO(ctx->node->get_logger(), "ClearCostmap: sent clear requests");
 
   return BT::NodeStatus::SUCCESS;
 }
@@ -291,7 +279,8 @@ BT::NodeStatus BackUp::onStart()
   goal_msg.target.x = -dist;
   goal_msg.target.y = 0.0;
   goal_msg.speed = speed;
-  goal_msg.time_allowance = rclcpp::Duration::from_seconds(dist / speed + 5.0);
+  // Generous timeout: slow motors need extra time. 3x nominal duration.
+  goal_msg.time_allowance = rclcpp::Duration::from_seconds(dist / speed * 3.0);
 
   RCLCPP_INFO(ctx->node->get_logger(), "BackUp: reversing %.2fm at %.2f m/s", dist, speed);
 

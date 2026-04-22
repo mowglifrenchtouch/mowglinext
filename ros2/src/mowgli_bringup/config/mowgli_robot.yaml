@@ -127,8 +127,7 @@ mowgli:
     # -----------------------------------------------------------------
     motor_temp_high_c: 80.0        # stop blade if motor exceeds
     motor_temp_low_c: 40.0         # resume blade below this
-    emergency_stop_on_tilt: true
-    emergency_stop_on_lift: true
+    # Lift/tilt emergency is handled by firmware (STM32), not ROS2
     max_obstacle_avoidance_distance: 2.0  # how far to deviate from path
 
     # -----------------------------------------------------------------

@@ -56,6 +56,13 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
   areas_file_path_ = declare_parameter<std::string>("areas_file_path", "");
   publish_rate_ = declare_parameter<double>("publish_rate", 1.0);
   keepout_nav_margin_ = declare_parameter<double>("keepout_nav_margin", 1.5);
+  // Two-tier boundary: if the robot is outside every defined area, we
+  // publish /boundary_violation (BT attempts a recovery back inside). If
+  // the robot is further than lethal_boundary_margin beyond any area
+  // edge, we also publish /lethal_boundary_violation — BT must
+  // emergency-stop because blade/motors outside the authorised zone
+  // can do real damage.
+  lethal_boundary_margin_m_ = declare_parameter<double>("lethal_boundary_margin_m", 0.5);
 
   RCLCPP_INFO(get_logger(),
               "MapServerNode: resolution=%.3f m, size=%.1f×%.1f m, frame='%s'",
@@ -213,6 +220,9 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
   replan_needed_pub_ = create_publisher<std_msgs::msg::Bool>("~/replan_needed", rclcpp::QoS(1));
   boundary_violation_pub_ =
       create_publisher<std_msgs::msg::Bool>("~/boundary_violation", rclcpp::QoS(1));
+  lethal_boundary_violation_pub_ =
+      create_publisher<std_msgs::msg::Bool>("~/lethal_boundary_violation",
+                                            rclcpp::QoS(1));
 
   docking_pose_pub_ =
       create_publisher<geometry_msgs::msg::PoseStamped>("~/docking_pose",
@@ -282,6 +292,38 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
     pose_msg.header.frame_id = map_frame_;
     pose_msg.pose = docking_pose_;
     docking_pose_pub_->publish(pose_msg);
+
+    // Store dock exclusion polygon — used to mark dock cells as NO_GO_ZONE
+    // in the classification layer so strips are not planned through the dock.
+    // The dock footprint is the robot chassis + 15cm margin on each side.
+    const double dock_half_length = 0.45;  // (0.60 chassis + 0.30 margin) / 2
+    const double dock_half_width = 0.35;   // (0.40 chassis + 0.30 margin) / 2
+    const double d_x = docking_pose_.position.x;
+    const double d_y = docking_pose_.position.y;
+    const double d_yaw = 2.0 * std::atan2(docking_pose_.orientation.z,
+                                           docking_pose_.orientation.w);
+    const double cy = std::cos(d_yaw);
+    const double sy = std::sin(d_yaw);
+    const double corners[][2] = {
+        {dock_half_length, dock_half_width},
+        {dock_half_length, -dock_half_width},
+        {-dock_half_length, -dock_half_width},
+        {-dock_half_length, dock_half_width},
+    };
+    for (const auto& c : corners)
+    {
+      geometry_msgs::msg::Point32 pt;
+      pt.x = static_cast<float>(d_x + cy * c[0] - sy * c[1]);
+      pt.y = static_cast<float>(d_y + sy * c[0] + cy * c[1]);
+      pt.z = 0.0f;
+      dock_exclusion_polygon_.points.push_back(pt);
+    }
+    dock_exclusion_polygon_.points.push_back(dock_exclusion_polygon_.points.front());
+    has_dock_exclusion_ = true;
+    RCLCPP_INFO(get_logger(),
+                "Dock exclusion zone: (%.2f, %.2f) yaw=%.2f, %.1fx%.1fm",
+                d_x, d_y, d_yaw,
+                dock_half_length * 2, dock_half_width * 2);
   }
 
   // ── Publish timer ────────────────────────────────────────────────────────
@@ -1447,6 +1489,7 @@ void MapServerNode::check_boundary_violation(double x, double y)
   pt.z = 0.0F;
 
   bool inside_any = false;
+  double min_edge_dist = std::numeric_limits<double>::max();
   for (const auto& area : areas_)
   {
     if (point_in_polygon(pt, area.polygon))
@@ -1454,20 +1497,42 @@ void MapServerNode::check_boundary_violation(double x, double y)
       inside_any = true;
       break;
     }
+    // Only track distance-to-edge for areas we're outside of; used to
+    // classify the violation as "soft" (still recoverable) vs "lethal"
+    // (blade/motor hazard — stop immediately).
+    const double d = point_to_polygon_distance(x, y, area.polygon);
+    if (d < min_edge_dist)
+    {
+      min_edge_dist = d;
+    }
   }
 
-  std_msgs::msg::Bool msg;
-  msg.data = !inside_any;
-  boundary_violation_pub_->publish(msg);
+  std_msgs::msg::Bool soft_msg;
+  soft_msg.data = !inside_any;
+  boundary_violation_pub_->publish(soft_msg);
+
+  std_msgs::msg::Bool lethal_msg;
+  lethal_msg.data = !inside_any && (min_edge_dist > lethal_boundary_margin_m_);
+  lethal_boundary_violation_pub_->publish(lethal_msg);
 
   if (!inside_any)
   {
-    RCLCPP_WARN_THROTTLE(get_logger(),
-                         *get_clock(),
-                         2000,
-                         "BOUNDARY VIOLATION: robot at (%.2f, %.2f) is outside all allowed areas!",
-                         x,
-                         y);
+    if (lethal_msg.data)
+    {
+      RCLCPP_ERROR_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "LETHAL BOUNDARY VIOLATION: robot at (%.2f, %.2f) — %.2fm outside "
+          "nearest allowed area (margin=%.2fm)",
+          x, y, min_edge_dist, lethal_boundary_margin_m_);
+    }
+    else
+    {
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "BOUNDARY VIOLATION: robot at (%.2f, %.2f) — %.2fm outside nearest "
+          "allowed area (lethal at %.2fm)",
+          x, y, min_edge_dist, lethal_boundary_margin_m_);
+    }
   }
 }
 
@@ -1897,6 +1962,20 @@ void MapServerNode::apply_area_classifications()
       {
         map_.at(std::string(layers::CLASSIFICATION), *it) = no_go_val;
       }
+    }
+  }
+
+  // Mark dock exclusion zone as NO_GO_ZONE — no mowing strips planned here.
+  if (has_dock_exclusion_ && dock_exclusion_polygon_.points.size() >= 3)
+  {
+    grid_map::Polygon dock_gm;
+    for (const auto& pt : dock_exclusion_polygon_.points)
+    {
+      dock_gm.addVertex(grid_map::Position(static_cast<double>(pt.x), static_cast<double>(pt.y)));
+    }
+    for (grid_map::PolygonIterator it(map_, dock_gm); !it.isPastEnd(); ++it)
+    {
+      map_.at(std::string(layers::CLASSIFICATION), *it) = no_go_val;
     }
   }
 }

@@ -12,15 +12,16 @@ bt_navigator:
   ros__parameters:
     use_sim_time: false
     global_frame: map
-    robot_base_frame: base_link
+    robot_base_frame: base_footprint
     odom_topic: /wheel_odom
     bt_loop_duration: 10
     default_server_timeout: 60
     # Custom Nav2 BT that adds GoalCheckerSelector (required when multiple
     # goal_checker_plugins are configured in controller_server).
-    default_nav_to_pose_bt_xml: /ros2_ws/install/mowgli_behavior/share/mowgli_behavior/trees/navigate_to_pose.xml
-    default_nav_through_poses_bt_xml: /opt/ros/kilted/share/nav2_bt_navigator/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml
-    enable_stamped_cmd_vel: false
+    # Paths are injected by navigation.launch.py via RewrittenYaml — keep empty here.
+    default_nav_to_pose_bt_xml: ""
+    default_nav_through_poses_bt_xml: ""
+    enable_stamped_cmd_vel: true
 
 bt_navigator_navigate_through_poses_rclcpp_node:
   ros__parameters:
@@ -177,7 +178,7 @@ behavior_server:
     assisted_teleop:
       plugin: "nav2_behaviors::AssistedTeleop"
     global_frame: odom
-    robot_base_frame: base_link
+    robot_base_frame: base_footprint
     transform_tolerance: 0.5
     simulate_ahead_time: 2.0
     max_rotational_vel: 3.0
@@ -231,7 +232,7 @@ global_costmap:
       update_frequency: 1.0
       publish_frequency: 1.0
       global_frame: map
-      robot_base_frame: base_link
+      robot_base_frame: base_footprint
       transform_tolerance: 5.0
       footprint: "[[0.45, 0.20], [0.45, -0.20], [-0.09, -0.20], [-0.09, 0.20]]"
       resolution: 0.05
@@ -258,7 +259,7 @@ local_costmap:
       update_frequency: 5.0
       publish_frequency: 2.0
       global_frame: odom
-      robot_base_frame: base_link
+      robot_base_frame: base_footprint
       footprint: "[[0.45, 0.20], [0.45, -0.20], [-0.09, -0.20], [-0.09, 0.20]]"
       resolution: 0.05
       rolling_window: true
@@ -273,7 +274,8 @@ local_costmap:
         inflation_radius: 0.40
 
 # ---------------------------------------------------------------------------
-# Map server / AMCL (not used with slam_toolbox, kept for completeness)
+# Map server / AMCL (unused — map→odom is a static identity, no SLAM backend;
+# kept for completeness / Nav2 lifecycle compatibility)
 # ---------------------------------------------------------------------------
 map_server:
   ros__parameters:
@@ -294,14 +296,19 @@ map_saver:
 docking_server:
   ros__parameters:
     use_sim_time: false
-    controller_frequency: 50.0
+    # 10 Hz — match nav2_params.yaml. Faster polling of isDocked()/
+    # isCharging() so the robot stops within ~100 ms of the charging
+    # signal; still low enough to not starve Nav2 on ARM.
+    controller_frequency: 10.0
     initial_perception_timeout: 5.0
-    wait_charge_timeout: 5.0
+    # 10 s accommodates the ~2-3 s firmware ADC debounce on
+    # STATUS_BIT_CHARGING before /battery_state reflects charging.
+    wait_charge_timeout: 10.0
     dock_approach_timeout: 30.0
     undock_linear_tolerance: 0.05
     undock_angular_tolerance: 0.1
     max_retries: 3
-    base_frame: base_link
+    base_frame: base_footprint
     fixed_frame: odom
     dock_backwards: false
     dock_prestaging_tolerance: 0.5
@@ -331,7 +338,7 @@ docking_server:
 collision_monitor:
   ros__parameters:
     use_sim_time: false
-    base_frame_id: base_link
+    base_frame_id: base_footprint
     odom_frame_id: odom
     cmd_vel_in_topic: cmd_vel_smoothed
     cmd_vel_out_topic: cmd_vel_monitored

@@ -94,7 +94,8 @@ public:
     emergency_pub_ =
         create_publisher<mowgli_interfaces::msg::Emergency>("/hardware_bridge/emergency",
                                                             rclcpp::QoS(10));
-    battery_state_pub_ = create_publisher<sensor_msgs::msg::BatteryState>("/battery_state", 10);
+    battery_state_pub_ =
+        create_publisher<sensor_msgs::msg::BatteryState>("/battery_state", rclcpp::QoS(10));
 
     // Subscribe to wheel odometry to determine robot position
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(

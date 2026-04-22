@@ -230,7 +230,7 @@ void RecordArea::record_position()
 
   try
   {
-    auto tf = ctx->tf_buffer->lookupTransform("map", "base_link", tf2::TimePointZero);
+    auto tf = ctx->tf_buffer->lookupTransform("map", "base_footprint", tf2::TimePointZero);
     geometry_msgs::msg::Point32 pt;
     pt.x = static_cast<float>(tf.transform.translation.x);
     pt.y = static_cast<float>(tf.transform.translation.y);
@@ -411,11 +411,28 @@ bool RecordArea::save_area(const std::vector<geometry_msgs::msg::Point32>& point
               is_exclusion_zone ? "true" : "false");
 
   auto future = add_area_client_->async_send_request(request);
-  if (rclcpp::spin_until_future_complete(helper, future, std::chrono::seconds(10)) !=
-      rclcpp::FutureReturnCode::SUCCESS)
+  // Poll future without spinning (avoids executor deadlock)
   {
-    RCLCPP_ERROR(ctx->node->get_logger(), "RecordArea: add_area service call timed out");
-    return false;
+    auto timeout = std::chrono::seconds(10);
+    auto start = std::chrono::steady_clock::now();
+    bool completed = false;
+    while (rclcpp::ok())
+    {
+      if (future.wait_for(std::chrono::milliseconds(10)) == std::future_status::ready)
+      {
+        completed = true;
+        break;
+      }
+      if (std::chrono::steady_clock::now() - start > timeout)
+      {
+        break;
+      }
+    }
+    if (!completed)
+    {
+      RCLCPP_ERROR(ctx->node->get_logger(), "RecordArea: add_area service call timed out");
+      return false;
+    }
   }
 
   auto response = future.get();

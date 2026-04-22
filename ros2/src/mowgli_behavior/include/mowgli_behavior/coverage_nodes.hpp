@@ -91,6 +91,11 @@ private:
   rclcpp::Client<mowgli_interfaces::srv::MowerControl>::SharedPtr blade_client_;
   std::shared_future<FollowGoalHandle::SharedPtr> follow_future_;
   FollowGoalHandle::SharedPtr follow_handle_;
+
+  // Blade spinup delay — wait before sending path goal
+  static constexpr double kBladeSpinupDelaySec = 1.5;
+  std::chrono::steady_clock::time_point blade_start_time_;
+  bool goal_sent_ = false;
 };
 
 // ---------------------------------------------------------------------------

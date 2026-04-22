@@ -299,6 +299,10 @@ private:
   std::string areas_file_path_;
   double publish_rate_;
   double keepout_nav_margin_;
+  /// Distance past the nearest allowed-area edge at which a boundary
+  /// violation is classified as "lethal" (emergency stop) rather than
+  /// just "soft" (attempt recovery back inside).
+  double lethal_boundary_margin_m_{0.5};
 
   // ── State ─────────────────────────────────────────────────────────────────
   grid_map::GridMap map_;
@@ -332,6 +336,10 @@ private:
   geometry_msgs::msg::Pose docking_pose_;
   bool docking_pose_set_{false};
 
+  /// Dock exclusion polygon — cells inside are NO_GO_ZONE (no mowing strips).
+  geometry_msgs::msg::Polygon dock_exclusion_polygon_;
+  bool has_dock_exclusion_{false};
+
   /// Cached strip layouts per area (recomputed when area changes).
   std::vector<StripLayout> strip_layouts_;
 
@@ -360,6 +368,7 @@ private:
   // Replan and boundary violation publishers
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr replan_needed_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr boundary_violation_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lethal_boundary_violation_pub_;
 
   // Docking pose publisher (transient_local so late subscribers get the last value)
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr docking_pose_pub_;

@@ -14,11 +14,19 @@ typedef struct
 } VECTOR;
 
 /*
- * conversions to ROS units
+ * Conversions to ROS units.
+ *
+ * RAD_PER_DEG was previously named RAD_PER_G; the "G" was short for
+ * "degrees" (°) but collided visually with the "g" used for gravity.
+ * Renamed to avoid confusion — the numeric value (π/180) is unchanged.
+ *
+ * T_PER_GAUSS is parenthesised with a float literal; the previous
+ * "1/10000" was integer division = 0, which silently zeroed any magnetometer
+ * conversion that precomputed the factor.
  */
-#define RAD_PER_G               0.01745             // convert °/sec to rad/sec
-#define MS2_PER_G               9.80665             // convert g to m/s^2 
-#define T_PER_GAUSS             1/10000             // convert Gauss to T
+#define RAD_PER_DEG             0.017453292519943295f  /* π/180: deg → rad */
+#define MS2_PER_G               9.80665f               /* g → m/s²        */
+#define T_PER_GAUSS             (1.0f / 10000.0f)      /* Gauss → Tesla   */
 
 /*
  * IMU functions that a compatible IMU needs to be able to provide
@@ -30,9 +38,6 @@ float IMU_Onboard_ReadTemp(void);
 void IMU_ReadGyro(float *x, float *y, float *z);
 typedef float (*IMU_ReadBarometerTemperatureC)(void);
 typedef float (*IMU_ReadBarometerAltitudeMeters)(void);
-void IMU_Onboard_AccelerometerSetCovariance(float *cm);
-void IMU_AccelerometerSetCovariance(float *cm);
-void IMU_GyroSetCovariance(float *cm);
 void IMU_Normalize( VECTOR* p );
 
 /* Any external IMU needs to implement the following functions and adhere to the ROS REP 103 standard (https://www.ros.org/reps/rep-0103.html) */
@@ -46,10 +51,6 @@ int IMU_HasGyro();
 int IMU_HasMag();
 void IMU_ReadMag(float *x, float *y, float *z);
 
-/* IMU calibration (accel/gyro only) */
-#define IMU_CAL_SAMPLES     100
-void IMU_CalibrateExternal(void);
-void IMU_CalibrateOnboard(void);
 
 #ifdef __cplusplus
 }

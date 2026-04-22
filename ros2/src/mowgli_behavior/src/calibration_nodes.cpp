@@ -52,13 +52,13 @@ BT::NodeStatus CalibrateHeadingFromUndock::tick()
 
   ctx->undock_start_recorded = false;
 
-  // Read current pose from EKF via TF (map -> base_link).
+  // Read current pose from EKF via TF (map -> base_footprint).
   // The EKF already fuses the best available sources (GPS, IMU, wheel ticks),
   // so its heading is the most accurate estimate we have after undock.
   geometry_msgs::msg::TransformStamped tf_msg;
   try
   {
-    tf_msg = ctx->tf_buffer->lookupTransform("map", "base_link", tf2::TimePointZero);
+    tf_msg = ctx->tf_buffer->lookupTransform("map", "base_footprint", tf2::TimePointZero);
   }
   catch (const tf2::TransformException& ex)
   {
