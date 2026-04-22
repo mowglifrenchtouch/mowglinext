@@ -63,7 +63,7 @@ MowgliNext has a fully functional autonomous mowing stack running on real hardwa
 |-----------|:------:|---------|
 | Simulation | :white_check_mark: | Gazebo Harmonic with full sensor simulation (LiDAR, IMU, GPS, wheel odom) |
 | E2E Testing | :white_check_mark: | Automated simulation testing with live dashboard metrics |
-| Web GUI | :white_check_mark: | React + Go interface for monitoring and control |
+| Web GUI | :white_check_mark: | State-adaptive dashboard with hero card, live sparkline telemetry, weekly schedule grid, statistics. Manrope typography, custom SVG icons, dark/light themes. React + Go + WebSocket |
 | Docker Deployment | :white_check_mark: | Multi-arch (amd64 / arm64), Cyclone DDS, Docker Compose |
 | Firmware | :white_check_mark: | STM32F103 for motor control, IMU, blade safety, battery |
 | Interactive Installer | :white_check_mark: | Shell-based with hardware presets, i18n, UART detection |
