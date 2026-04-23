@@ -375,7 +375,15 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 10.0
-        inflation_radius: 0.40
+        # 0.20 m (was 0.40). With keepout_nav_margin=0.3 m and robot
+        # footprint ±0.20 m lateral, 0.40 m inflation made the footprint
+        # corners land inside the inflated zone whenever the robot was
+        # within ~0.44 m of the polygon edge — Smac reported "Start
+        # occupied" and the BT SkipStripped forever. 0.20 m inflation
+        # gives footprint corners cost-0 cells as long as robot is at
+        # least 0.24 m inside the polygon. collision_monitor retains the
+        # real-time obstacle cushion.
+        inflation_radius: 0.20
 
       keepout_filter:
         plugin: "nav2_costmap_2d::KeepoutFilter"
