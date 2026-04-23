@@ -243,11 +243,18 @@ fusioncore_node:
     zupt.noise_sigma: 0.01
 
     # Non-holonomic constraint (VY=0 in body frame). σ=0.02 is the
-    # empirically stable sweet spot: tight enough to pull body-frame
-    # vy back toward 0 in <~0.2 s but loose enough that the UKF
-    # doesn't fight small GPS/lever-arm lateral components and
-    # oscillate. σ=0.005 was observed to produce visible pose
-    # "sliding" in Foxglove as the filter thrashed lateral state
-    # against GPS position updates.
+    # empirically stable sweet spot.
     nonholonomic.enabled: true
     nonholonomic.sigma_vy: 0.02
+
+    # GPS-velocity heading DISABLED — at low speed (vx < ~0.25 m/s)
+    # the lever-arm correction (ω·lever_arm) is comparable to the
+    # forward-motion signal, so any small UKF ω estimate error
+    # produces wildly wrong yaw measurements. Field session
+    # 2026-04-23 showed 7 yaw jumps >30° in one run, each during
+    # vx = 0.09-0.20 m/s motion. The heading observation then pulls
+    # the UKF yaw in the wrong direction, lidar scans land in the
+    # wrong map cells, costmap gets phantom obstacles, controller
+    # oscillates. Need a more robust gate (e.g. require body_vx
+    # >> ω·lever) before re-enabling.
+    gnss.velocity_heading.enabled: false
