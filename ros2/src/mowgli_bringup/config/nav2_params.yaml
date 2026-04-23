@@ -353,14 +353,16 @@ global_costmap:
         observation_sources: scan
         scan:
           topic: /scan
-          # Raised from 2.0 to tolerate FusionCore Z drift (seen climbing to
-          # 70m+ over minutes when GPS Z is effectively ignored). Without this,
-          # all scans get filtered as "too high" and the obstacle_layer stays
-          # empty → global costmap blank → controller can't plan around real
-          # obstacles. 200m covers any realistic drift window; the LiDAR is a
-          # 2D planar sensor so height filtering only matters for multi-layer
-          # clouds, which we don't use.
-          max_obstacle_height: 200.0
+          # LaserScan is projected to 3D via laser_geometry then filtered by
+          # map-frame Z. With ground_constraint keeping base_link Z ≈ 0,
+          # lidar is at +0.22 m. Any scan return at Z below 0.08 m is
+          # either ground (on a pitched/rolling robot whose scan plane tilts
+          # downward) or below the mower skirt and irrelevant. Above 1.5 m
+          # is overhead (tree canopy, umbrellas) the mower won't hit.
+          # Previously 200 m which was a workaround for old Z-drift bug;
+          # now fixed by the ground constraint so we can filter properly.
+          min_obstacle_height: 0.08
+          max_obstacle_height: 1.5
           clearing: true
           marking: true
           data_type: "LaserScan"
@@ -440,8 +442,10 @@ local_costmap:
         observation_sources: scan
         scan:
           topic: /scan
-          # Large ceiling so FusionCore Z drift doesn't filter scans out.
-          max_obstacle_height: 200.0
+          # Same height band as the global obstacle_layer — filter ground
+          # hits when the mower pitches on uneven terrain.
+          min_obstacle_height: 0.08
+          max_obstacle_height: 1.5
           clearing: true
           marking: true
           data_type: "LaserScan"
