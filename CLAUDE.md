@@ -213,7 +213,7 @@ docker exec -it mowgli-ros2 bash -c '
 The `--output-dir /ros2_ws/maps` redirects to the bind-mounted `install_mowgli_maps` Docker volume so logs persist outside the container. Or bind-mount `docker/logs/mow_sessions/` explicitly in compose for a host-visible path.
 
 **What it records** (per-sample, 10 Hz default):
-- FusionCore pose + twist (x/y/z, yaw, vx/vy/wz)
+- FusionCore pose + twist (x/y/z, yaw, vx/vy/wz) **+ position covariance (cov_xx, cov_yy, derived sigma_xy_m)**
 - TF snapshots: `map→base_footprint` (composed — equals `odom→base_footprint` since `map→odom` is static identity), `odom→base_footprint` (FusionCore)
 - Wheel twist + covariance + integrated distance and yaw
 - IMU gyro + accel + integrated gyro yaw
@@ -225,10 +225,11 @@ The `--output-dir /ros2_ws/maps` redirects to the bind-mounted `install_mowgli_m
 - LiDAR scan health (valid point count, min range)
 - Kinematic-ICP twist (if enabled), for the `fusion ↔ kinematic-icp` cross-check
 - **Cross-source consistency**: `fusion ↔ gps` distance, `fusion ↔ kinematic-icp` integrated-pose distance + yaw diff, `wheel ↔ gyro` yaw drift
+- **RTK covariance-drop health**: on every RTK-Fixed GPS arrival, confirm `/fusion/odom` cov drops to σ≤~3 cm within 300 ms. If it doesn't, the 16.27 outlier gate is rejecting fixes — surfaced as `cross_checks.rtk_cov_check.{arrivals,ok,violations}` per sample and rolled into a `rtk_cov_check.verdict` ("healthy" / "intermittent" / "gate_rejecting" / "no_rtk") in the summary.
 
 **Metadata header** (first line of the JSONL): session name, UTC timestamp, git branch + commit + dirty flag, docker image tags from `.env`, SHA-256 truncated hashes of `mowgli_robot.yaml`, `localization.yaml`, `nav2_params.yaml`, `kinematic_icp.yaml` — so sessions from different tunings are grouped/comparable.
 
-**Summary record** (last line, written on Ctrl-C or clean shutdown): total duration, samples written, wheel-integrated distance, straight-line displacement, peak `fusion↔gps` error, peak `wheel↔gyro` yaw drift, final BT state.
+**Summary record** (last line, written on Ctrl-C or clean shutdown): total duration, samples written, wheel-integrated distance, straight-line displacement, peak `fusion↔gps` error, peak `wheel↔gyro` yaw drift, RTK cov-check totals + verdict, final BT state.
 
 **Log directory:** `docker/logs/mow_sessions/<session_name>.jsonl`. Commit notable sessions (golden runs, failure cases) so they survive in git history.
 
