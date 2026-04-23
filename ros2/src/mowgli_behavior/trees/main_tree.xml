@@ -199,26 +199,24 @@
             <Inverter><IsCharging/></Inverter>
             <!-- On dock — wait for GPS, save map, then undock -->
             <Sequence name="UndockSequence">
-              <!-- Comprehensive readiness gate before undocking: verifies
-                   GPS fix type, battery, TF chain, mowing area, coverage
-                   service — all in a single node with a clear failure log.
-                   Retry for up to 30s to allow transient issues (GPS not
-                   yet RTK, late-starting nodes) to resolve, then proceed
-                   anyway to not block indefinitely at low-GPS sites. -->
+              <!-- Hard preflight gate — blocks until RTK Fixed (4) is
+                   available, battery is OK, TF chain is healthy, and the
+                   mowing/coverage services are up.
+                   Non-RTK GPS gives σ ~20-50 cm, which is enough to push
+                   the robot outside the polygon during transit and trigger
+                   spurious boundary violations. Mowing at non-RTK is not
+                   acceptable, so the check is strict: 120×1s retries then
+                   the sequence fails and falls through to UndockFailed. -->
               <PublishHighLevelStatus state="2" state_name="PREFLIGHT_CHECK"/>
-              <Fallback name="PreFlightOrTimeout">
-                <RetryUntilSuccessful num_attempts="30">
-                  <Fallback>
-                    <PreFlightCheck min_battery="20.0" min_gps_fix_type="2" tf_timeout_sec="0.5"/>
-                    <Sequence>
-                      <WaitForDuration duration_sec="1.0"/>
-                      <AlwaysFailure/>
-                    </Sequence>
-                  </Fallback>
-                </RetryUntilSuccessful>
-                <!-- Timeout: proceed with a warning in logs -->
-                <AlwaysSuccess/>
-              </Fallback>
+              <RetryUntilSuccessful num_attempts="120">
+                <Fallback>
+                  <PreFlightCheck min_battery="20.0" min_gps_fix_type="4" tf_timeout_sec="0.5"/>
+                  <Sequence>
+                    <WaitForDuration duration_sec="1.0"/>
+                    <AlwaysFailure/>
+                  </Sequence>
+                </Fallback>
+              </RetryUntilSuccessful>
               <!-- Save SLAM map while docked with correct heading.
                    If undock flips heading, restart loads this good map. -->
               <SaveSlamMap map_path="/ros2_ws/maps/garden_map"/>
