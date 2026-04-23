@@ -140,12 +140,16 @@ fusioncore_node:
     # cover. At min=2 (Float+) the UKF received zero GPS updates during
     # those intervals and position variance exploded unbounded
     # (0.2 m → 10+ m in a few minutes). At min=1 the UKF keeps absorbing
-    # GPS updates even at plain-GPS quality — base_noise_xy=5.0 scales
-    # the reported cov so a loose fix can't over-pull, but it DOES keep
-    # pose bounded. That's strictly better than drifting into the void.
+    # Require DGPS/SBAS or better before fusing any GPS fix. u-blox
+    # pre-RTK fixes (status=0 NavSatStatus STATUS_FIX) can anchor the UKF
+    # 3-5 m off truth and the error persists long after RTK locks because
+    # the initial position covariance grew tight around the bad first-fix
+    # location. Preflight gates mowing on RTK Fixed (fix_type 4); setting
+    # fusion's threshold at DGPS (2) keeps FusionCore idle until the
+    # receiver has at least SBAS augmentation, which empirically tracks
+    # the moment our u-blox starts reporting believable positions.
     # FusionCore enum: 0=NO_FIX, 1=GPS, 2=DGPS, 3=RTK_FLOAT, 4=RTK_FIXED.
-    # NavSatFix mapping in fusion_node skips 3, so accept 1/2/4.
-    gnss.min_fix_type: 1
+    gnss.min_fix_type: 2
 
     # GPS antenna offset from base_link in body frame.
     # Leaving these at 0 lets FusionCore auto-resolve the lever arm from

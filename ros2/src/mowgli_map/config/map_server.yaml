@@ -15,6 +15,14 @@ map_server_node:
     # when the robot is near the boundary.
     keepout_nav_margin: 1.5
 
+    # Inner-boundary margin. Cells INSIDE a mowing area but within this
+    # distance of the nearest edge are marked LETHAL in the keepout mask,
+    # so the Nav2 planner never drafts a transit path that hugs the
+    # polygon edge. 0.15 m leaves the typical dock position (~0.45 m from
+    # edge on this garden) with enough free corridor to plan from.
+    # Raising above ~0.25 m can trap the docked pose in a lethal cell.
+    boundary_inner_margin_m: 0.15
+
     # Pre-defined mowing / navigation areas (OpenMower-style).
     # Parallel arrays indexed by position.  Polygon format: "x1,y1;x2,y2;..."
     # Simulation garden with obstacles for B-RV validation.
