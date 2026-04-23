@@ -171,12 +171,22 @@ fusioncore_node:
     imu.lever_arm_y: 0.0
     imu.lever_arm_z: 0.0
 
-    # Apply the GNSS antenna lever arm from the very first fix, not only
-    # after heading_validated_. Safe with outlier_rejection on and RTK
-    # fixes: each position innovation observes yaw through the antenna
-    # offset and converges yaw in a few fixes instead of requiring 5 m
-    # of straight driving first.
-    gnss.apply_lever_arm_pre_heading: true
+    # Apply lever arm only AFTER heading is validated.
+    #
+    # Rationale: with pre-heading=true, every GPS fix uses current yaw to
+    # predict antenna position. When yaw is wrong by even 20°, predicted
+    # antenna is off by 0.3·sin(20°) ≈ 10 cm → each GPS update pulls
+    # base_link by ~6 cm. During pure rotation (wheel_vx ≈ 0, wz ≠ 0)
+    # this shows up as ~0.3 m/s phantom base_link motion — the
+    # "sliding on the map" behaviour observed in session
+    # 2026-04-23-heightfilter-v1 (92 cm UKF drift over 3.4 s of pure
+    # in-place rotation).
+    #
+    # With pre-heading=false, the lever arm is off until either
+    # heading_validated_ goes true (via some other heading source) OR
+    # 5 m of straight driving accumulates a GPS track heading. Less
+    # yaw observability early, but no phantom motion during rotation.
+    gnss.apply_lever_arm_pre_heading: false
 
     # No second GPS receiver
     gnss.fix2_topic: ""
