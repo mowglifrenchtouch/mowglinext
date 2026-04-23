@@ -312,11 +312,17 @@ global_costmap:
       rolling_window: true
       width: 30
       height: 30
-      # keepout_filter intentionally NOT loaded: marking the area outside
-      # the mowing polygon as LETHAL blocks transit and docking routes.
-      # Boundary enforcement is handled by the coverage planner via
-      # strip-level in-polygon clipping, not the costmap.
-      plugins: ["obstacle_layer", "inflation_layer"]
+      # keepout_filter makes the polygon boundary visible to the Smac planner
+      # so transit paths never exit the mowing area. `keepout_nav_margin_` in
+      # map_server_node (default 1.5m) leaves a free band outside the polygon
+      # edges so the dock and transit corridor aren't blocked. The standalone
+      # /boundary_violation topic remains as a last-resort tripwire for
+      # localization faults. Local costmap stays filter-free so Nav2 local
+      # recoveries (spin, backup) still function near edges.
+      # inflation_layer is listed AFTER keepout so keepout lethals don't get
+      # inflated outward, which would bleed into the free margin and block
+      # the dock.
+      plugins: ["obstacle_layer", "keepout_filter", "inflation_layer"]
 
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -349,6 +355,11 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 10.0
         inflation_radius: 0.40
+
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: "/costmap_filter_info"
 
 # ---------------------------------------------------------------------------
 # Local costmap

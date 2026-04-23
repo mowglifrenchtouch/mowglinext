@@ -243,13 +243,20 @@ global_costmap:
       width: 200
       height: 200
       # No obstacle_layer — LiDAR is not available.
-      # Only inflation_layer for basic safety margins around static map features.
-      plugins: ["inflation_layer"]
+      # keepout_filter makes the mowing polygon boundary visible to the
+      # planner so transit paths never exit the area. Local costmap stays
+      # filter-free so Nav2 recoveries still function near the dock.
+      plugins: ["keepout_filter", "inflation_layer"]
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 5.0
         inflation_radius: 0.40
+
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: "/costmap_filter_info"
 
 # ---------------------------------------------------------------------------
 # Local costmap — no obstacle layer (no LiDAR)
