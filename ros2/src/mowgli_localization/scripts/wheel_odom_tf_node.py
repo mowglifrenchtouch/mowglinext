@@ -58,12 +58,14 @@ class WheelOdomTfNode(Node):
         self.declare_parameter("input_topic", "/wheel_odom")
         self.declare_parameter("parent_frame", "wheel_odom_raw")
         self.declare_parameter("child_frame", "base_footprint_wheels")
-        # 50 Hz rebroadcast: matches FusionCore/hardware_bridge publish rate,
-        # enough to cover K-ICP scan-end lookups. The MultiThreadedExecutor
-        # below is what actually prevented K-ICP SIGABRT (subscription was
-        # starving the timer in a single-threaded executor); the rate itself
-        # is not load-bearing beyond ~25 Hz.
-        self.declare_parameter("rebroadcast_hz", 50.0)
+        # 100 Hz rebroadcast. K-ICP performs TF lookups at scan-end timestamps
+        # that can land 5-15 ms ahead of the latest rebroadcast tick; at 50 Hz
+        # (20 ms gap) the lookups frequently fail with "extrapolation into the
+        # future" and K-ICP drops those scans — killing the lidar-based twist
+        # correction that is supposed to guard against non-RTK GPS drift.
+        # 100 Hz brings the gap under 10 ms and is still affordable on ARM
+        # under MultiThreadedExecutor (the real K-ICP starvation fix).
+        self.declare_parameter("rebroadcast_hz", 100.0)
 
         input_topic = self.get_parameter("input_topic").value
         self._parent = self.get_parameter("parent_frame").value
