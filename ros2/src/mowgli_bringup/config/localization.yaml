@@ -30,10 +30,13 @@ fusioncore_node:
     # 0.3 m/s so a 20 ms TF tick = 6 mm per step, more than Nav2/RPP needs.
     # Tried 100 Hz briefly — only multiplied TF traffic + DDS load on ARM.
     publish_rate: 50.0
-    # Force 2D: zero Z in published odom + TF so the costmap rolling
-    # window stays in the 2D navigation plane regardless of GPS altitude
-    # noise or IMU-Z drift. We're a garden mower — altitude is irrelevant.
-    publish.force_2d: true
+    # Keep 3D: force_2d zeroes Z in TF but doesn't stop the UKF from
+    # estimating it internally. On this ARM platform, driving the 3D state
+    # against a 2D-projected TF creates a consistency hole — when the Z
+    # estimate drifts, it bleeds into the horizontal residual and the
+    # innovation gate starts rejecting good RTK fixes. Better to let the
+    # TF carry real altitude; the costmap rolling_window already ignores Z.
+    publish.force_2d: false
 
     # QoS overrides — ublox_dgnss publishes /gps/fix BEST_EFFORT (sensor-data
     # convention). FusionCore's default subscription QoS is RELIABLE, which

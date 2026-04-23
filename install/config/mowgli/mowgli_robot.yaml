@@ -20,7 +20,7 @@ mowgli:
         chassis_mass_kg: 8.76
         chassis_width: 0.4
         coverage_xy_tolerance: 0.5
-        datum_alt: 27
+        datum_alt: 70
         datum_lat: 48.87965155
         datum_lon: 2.17285422
         dock_approach_distance: 1
