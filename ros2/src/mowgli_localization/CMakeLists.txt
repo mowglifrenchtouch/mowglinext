@@ -96,6 +96,7 @@ target_link_libraries(localization_monitor_node
   ${mowgli_interfaces_TARGETS}
 )
 
+# ---------------------------------------------------------------------------
 # Executable: gps_slam_corrector_node
 # ---------------------------------------------------------------------------
 
@@ -105,13 +106,13 @@ add_executable(gps_slam_corrector_node
 
 target_include_directories(gps_slam_corrector_node PUBLIC ${INCLUDE_DIR})
 
-target_link_libraries(gps_slam_corrector_node
-  ${rclcpp_TARGETS}
-  ${sensor_msgs_TARGETS}
-  ${geometry_msgs_TARGETS}
-  ${tf2_TARGETS}
-  ${tf2_ros_TARGETS}
-  ${tf2_geometry_msgs_TARGETS}
+ament_target_dependencies(gps_slam_corrector_node
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
 )
 
 # ---------------------------------------------------------------------------
@@ -124,11 +125,11 @@ add_executable(ublox_gnss_adapter_node
 
 target_include_directories(ublox_gnss_adapter_node PUBLIC ${INCLUDE_DIR})
 
-target_link_libraries(ublox_gnss_adapter_node
-  ${diagnostic_msgs_TARGETS}
-  ${rclcpp_TARGETS}
-  ${sensor_msgs_TARGETS}
-  ${ublox_ubx_msgs_TARGETS}
+ament_target_dependencies(ublox_gnss_adapter_node
+  diagnostic_msgs
+  rclcpp
+  sensor_msgs
+  ublox_ubx_msgs
 )
 
 # ---------------------------------------------------------------------------
@@ -145,7 +146,7 @@ install(
     wheel_odometry_node
     navsat_to_absolute_pose_node
     localization_monitor_node
-    gps_slam_corrector_node
+#    gps_slam_corrector_node
     ublox_gnss_adapter_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -160,16 +161,6 @@ install(
 install(
   DIRECTORY config/
   DESTINATION share/${PROJECT_NAME}/config
-)
-
-# Python nodes (installed executable, run via `ros2 run mowgli_localization ...`)
-install(
-  PROGRAMS
-    scripts/calibrate_imu_yaw_node.py
-    scripts/kinematic_icp_encoder_adapter.py
-    scripts/kinematic_icp_scan_frame_relay.py
-    scripts/wheel_odom_tf_node.py
-  DESTINATION lib/${PROJECT_NAME}
 )
 
 # ---------------------------------------------------------------------------
