@@ -49,6 +49,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -99,6 +100,10 @@ public:
     create_services();
     open_serial_port();
     create_timers();
+    // Must run after declare_parameters — reads imu_cal_persist_path_. Runs
+    // before any IMU packet arrives because the serial port callbacks are
+    // dispatched by the executor from main(), not from the constructor.
+    load_persisted_imu_calibration();
   }
 
   ~HardwareBridgeNode() override = default;
@@ -122,6 +127,19 @@ private:
     lift_blade_resume_delay_sec_ = declare_parameter<double>("lift_blade_resume_delay_sec", 1.0);
     // imu_yaw parameter is used by URDF for mounting rotation, not needed here
     imu_cal_samples_ = declare_parameter<int>("imu_cal_samples", 200);
+    // Persist the last successful calibration so container restarts don't
+    // leave the filter running on an uncalibrated IMU until the next dock
+    // (Voie C Test 1 on 2026-04-24 caught this: container restart after
+    // image update + no dock since → gyro_z bias 0.05 rad/s, fusion yaw
+    // drifting 2.9°/s, σ_xy inflated to 50 cm because GPS innovations kept
+    // getting rejected by the outlier gate).
+    imu_cal_persist_path_ = declare_parameter<std::string>(
+        "imu_cal_persist_path", "/ros2_ws/maps/imu_calibration.txt");
+    // Auto-calibrate at rest: if the robot is stationary and NOT charging
+    // for this many seconds AND we don't have a calibration yet, trigger
+    // the same 20 s sample collection used on dock. Lets the robot recover
+    // from boot-without-previous-calibration without requiring a dock.
+    imu_cal_auto_rest_sec_ = declare_parameter<double>("imu_cal_auto_rest_sec", 15.0);
 
     RCLCPP_INFO(get_logger(),
                 "Parameters: serial_port=%s baud_rate=%d heartbeat_rate=%.1f Hz "
@@ -414,39 +432,12 @@ private:
 
       // Start IMU calibration when charging and not already calibrating.
       // Triggers on: (1) dock transition, (2) first status packet if
-      // already on dock at boot.
-      if (is_charging_ && !imu_cal_collecting_ && !imu_cal_ready_)
+      // already on dock at boot. A freshly-docked cal overrides a loaded-
+      // from-file cal because the dock is the most trustworthy at-rest
+      // environment (bias may have drifted since the file was written).
+      if (is_charging_ && !imu_cal_collecting_ && (!imu_cal_ready_ || (!was_charging && imu_cal_ready_)))
       {
-        imu_cal_collecting_ = true;
-        imu_cal_count_ = 0;
-        imu_cal_sum_ax_ = imu_cal_sum_ay_ = imu_cal_sum_az_ = 0.0;
-        imu_cal_sum_gx_ = imu_cal_sum_gy_ = imu_cal_sum_gz_ = 0.0;
-        imu_cal_samples_ax_.clear();
-        imu_cal_samples_ay_.clear();
-        imu_cal_samples_gx_.clear();
-        imu_cal_samples_gy_.clear();
-        imu_cal_samples_gz_.clear();
-        RCLCPP_INFO(get_logger(),
-                    "On dock — starting IMU calibration (%d samples)",
-                    imu_cal_samples_);
-      }
-
-      // Re-calibrate when robot re-docks after a mowing session
-      if (is_charging_ && !was_charging && imu_cal_ready_)
-      {
-        imu_cal_ready_ = false;
-        imu_cal_collecting_ = true;
-        imu_cal_count_ = 0;
-        imu_cal_sum_ax_ = imu_cal_sum_ay_ = imu_cal_sum_az_ = 0.0;
-        imu_cal_sum_gx_ = imu_cal_sum_gy_ = imu_cal_sum_gz_ = 0.0;
-        imu_cal_samples_ax_.clear();
-        imu_cal_samples_ay_.clear();
-        imu_cal_samples_gx_.clear();
-        imu_cal_samples_gy_.clear();
-        imu_cal_samples_gz_.clear();
-        RCLCPP_INFO(get_logger(),
-                    "Re-docked — restarting IMU calibration (%d samples)",
-                    imu_cal_samples_);
+        start_imu_calibration(was_charging ? "on dock (boot)" : "dock transition");
       }
       msg.rain_detected = (pkt.status_bitmask & STATUS_BIT_RAIN) != 0u;
       msg.sound_module_available = (pkt.status_bitmask & STATUS_BIT_SOUND_AVAIL) != 0u;
@@ -583,6 +574,132 @@ private:
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // IMU calibration persistence
+  //
+  // The at-dock calibration lives only in RAM — a ros2 container restart
+  // (e.g. pulling a new image) throws it away, and the filter then runs on
+  // the raw gyro until the robot next docks. The raw WT901 gyro bias is
+  // around 0.05 rad/s → 2.9°/s phantom yaw drift → GPS-innovation rejection
+  // spiral → σ_xy inflates to 50 cm while the robot is literally still.
+  //
+  // We persist offsets + variances to a small text file on the maps volume
+  // (survives container/host restarts) and load them at boot. Line format:
+  //   # mowgli_imu_calibration_v1
+  //   <timestamp_unix> <n_samples>
+  //   <off_ax> <off_ay> <off_gx> <off_gy> <off_gz>
+  //   <cov_ax> <cov_ay> <cov_gx> <cov_gy> <cov_gz>
+  //   <implied_pitch_deg> <implied_roll_deg>
+  // Human-inspectable, no YAML/JSON dependency, easy to delete if bad.
+  // ---------------------------------------------------------------------------
+
+  void persist_imu_calibration(double implied_pitch_deg, double implied_roll_deg)
+  {
+    std::ofstream f(imu_cal_persist_path_, std::ios::trunc);
+    if (!f.is_open())
+    {
+      RCLCPP_WARN(get_logger(),
+                  "Could not open %s for write — IMU cal NOT persisted.",
+                  imu_cal_persist_path_.c_str());
+      return;
+    }
+    f << "# mowgli_imu_calibration_v1\n";
+    f << std::fixed;
+    f.precision(6);
+    f << static_cast<int64_t>(std::time(nullptr)) << " " << imu_cal_count_ << "\n";
+    f << imu_cal_offset_ax_ << " " << imu_cal_offset_ay_ << " "
+      << imu_cal_offset_gx_ << " " << imu_cal_offset_gy_ << " " << imu_cal_offset_gz_
+      << "\n";
+    f << imu_cal_cov_ax_ << " " << imu_cal_cov_ay_ << " "
+      << imu_cal_cov_gx_ << " " << imu_cal_cov_gy_ << " " << imu_cal_cov_gz_
+      << "\n";
+    f << implied_pitch_deg << " " << implied_roll_deg << "\n";
+    f.close();
+    RCLCPP_INFO(get_logger(), "Persisted IMU calibration to %s",
+                imu_cal_persist_path_.c_str());
+  }
+
+  void load_persisted_imu_calibration()
+  {
+    std::ifstream f(imu_cal_persist_path_);
+    if (!f.is_open())
+    {
+      RCLCPP_INFO(get_logger(),
+                  "No persisted IMU calibration at %s — will auto-cal on dock "
+                  "or after %.0f s stationary off-dock.",
+                  imu_cal_persist_path_.c_str(), imu_cal_auto_rest_sec_);
+      return;
+    }
+    std::string header;
+    std::getline(f, header);
+    if (header != "# mowgli_imu_calibration_v1")
+    {
+      RCLCPP_WARN(get_logger(),
+                  "Persisted IMU cal header mismatch (got '%s') — ignoring, "
+                  "will re-calibrate.", header.c_str());
+      return;
+    }
+    int64_t ts = 0;
+    int n = 0;
+    if (!(f >> ts >> n)
+        || !(f >> imu_cal_offset_ax_ >> imu_cal_offset_ay_
+               >> imu_cal_offset_gx_ >> imu_cal_offset_gy_ >> imu_cal_offset_gz_)
+        || !(f >> imu_cal_cov_ax_ >> imu_cal_cov_ay_
+               >> imu_cal_cov_gx_ >> imu_cal_cov_gy_ >> imu_cal_cov_gz_))
+    {
+      RCLCPP_WARN(get_logger(),
+                  "Persisted IMU cal parse failed — ignoring, will re-calibrate.");
+      return;
+    }
+    // Sanity: if a previous cal ran while the robot was actually rotating
+    // (false at-rest detection, dock glitch, whatever), the saved gyro
+    // offset will be huge. Reject to force a clean re-cal rather than
+    // systematically miscorrecting every /imu/data sample. 0.2 rad/s ~=
+    // 11.5°/s; real chip bias on WT901 is empirically < 0.1 rad/s.
+    const double max_plausible = 0.2;
+    if (std::abs(imu_cal_offset_gx_) > max_plausible
+        || std::abs(imu_cal_offset_gy_) > max_plausible
+        || std::abs(imu_cal_offset_gz_) > max_plausible)
+    {
+      RCLCPP_WARN(get_logger(),
+                  "Persisted IMU cal rejected — gyro offset implausible "
+                  "[%.4f, %.4f, %.4f] rad/s > %.2f. Will re-calibrate.",
+                  imu_cal_offset_gx_, imu_cal_offset_gy_, imu_cal_offset_gz_,
+                  max_plausible);
+      imu_cal_offset_gx_ = imu_cal_offset_gy_ = imu_cal_offset_gz_ = 0.0;
+      imu_cal_offset_ax_ = imu_cal_offset_ay_ = 0.0;
+      return;
+    }
+    imu_cal_count_ = n;
+    imu_cal_ready_ = true;
+    imu_cal_loaded_from_file_ = true;
+    const double age_hours = (static_cast<double>(std::time(nullptr)) - static_cast<double>(ts)) / 3600.0;
+    RCLCPP_INFO(get_logger(),
+                "Loaded IMU calibration from %s (%.1f h old, %d samples) — "
+                "gyro offset [%.5f, %.5f, %.5f] rad/s, "
+                "accel offset [%.4f, %.4f] m/s². "
+                "Will re-calibrate at next dock.",
+                imu_cal_persist_path_.c_str(), age_hours, n,
+                imu_cal_offset_gx_, imu_cal_offset_gy_, imu_cal_offset_gz_,
+                imu_cal_offset_ax_, imu_cal_offset_ay_);
+  }
+
+  void start_imu_calibration(const char* reason)
+  {
+    imu_cal_ready_ = false;
+    imu_cal_collecting_ = true;
+    imu_cal_count_ = 0;
+    imu_cal_sum_ax_ = imu_cal_sum_ay_ = imu_cal_sum_az_ = 0.0;
+    imu_cal_sum_gx_ = imu_cal_sum_gy_ = imu_cal_sum_gz_ = 0.0;
+    imu_cal_samples_ax_.clear();
+    imu_cal_samples_ay_.clear();
+    imu_cal_samples_gx_.clear();
+    imu_cal_samples_gy_.clear();
+    imu_cal_samples_gz_.clear();
+    RCLCPP_INFO(get_logger(), "Starting IMU calibration (%d samples) — %s",
+                imu_cal_samples_, reason);
+  }
+
   void handle_imu(const uint8_t* data, std::size_t len)
   {
     if (len < sizeof(LlImu))
@@ -604,6 +721,35 @@ private:
     double gx = static_cast<double>(pkt.gyro_rads[0]);
     double gy = static_cast<double>(pkt.gyro_rads[1]);
     double gz = static_cast<double>(pkt.gyro_rads[2]);
+
+    // Auto-calibrate off-dock when stationary. Covers the "image pulled,
+    // container restarted, robot has not docked since" case that leaves
+    // the filter running on raw gyro (2-3°/s bias → yaw diverges in seconds).
+    // Gate: no cal yet + not charging + wheels stationary for auto_rest_sec.
+    if (!imu_cal_ready_ && !imu_cal_collecting_ && !is_charging_)
+    {
+      if (wheels_stationary_)
+      {
+        if (imu_cal_at_rest_since_.nanoseconds() == 0)
+        {
+          imu_cal_at_rest_since_ = now();
+        }
+        else
+        {
+          const double at_rest_sec =
+              (now() - imu_cal_at_rest_since_).seconds();
+          if (at_rest_sec >= imu_cal_auto_rest_sec_)
+          {
+            start_imu_calibration("off-dock auto-cal after stationary window");
+            imu_cal_at_rest_since_ = rclcpp::Time{};
+          }
+        }
+      }
+      else
+      {
+        imu_cal_at_rest_since_ = rclcpp::Time{};
+      }
+    }
 
     // IMU calibration: collect samples while docked and idle, then compute
     // offsets (mean) and covariances (variance). Same algorithm as firmware
@@ -696,6 +842,10 @@ private:
                     "If magnitudes exceed ~1° set imu_pitch / imu_roll in "
                     "mowgli_robot.yaml and redeploy.",
                     implied_pitch_deg, implied_roll_deg, a_mag, az_mean);
+
+        // Persist to disk so container restarts don't lose the calibration
+        // (this is the fix for the "stale gyro bias after pull" class of bugs).
+        persist_imu_calibration(implied_pitch_deg, implied_roll_deg);
 
         // Free sample buffers
         imu_cal_samples_ax_.clear();
@@ -1222,8 +1372,13 @@ private:
   int32_t  odom_acc_delta_right_{0};
   uint32_t odom_acc_dt_ms_{0};
 
-  // IMU calibration state (computed while docked and idle)
+  // IMU calibration state (computed while docked and idle, OR when stationary
+  // off-dock via auto-cal, OR loaded from the persisted file at boot)
   int imu_cal_samples_{200};
+  std::string imu_cal_persist_path_{"/ros2_ws/maps/imu_calibration.txt"};
+  double imu_cal_auto_rest_sec_{15.0};
+  rclcpp::Time imu_cal_at_rest_since_{};   // default-constructed (nanoseconds=0) = "not at rest yet"
+  bool imu_cal_loaded_from_file_{false};
   bool imu_cal_collecting_{false};
   bool imu_cal_ready_{false};
   int imu_cal_count_{0};
