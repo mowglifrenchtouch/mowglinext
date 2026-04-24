@@ -8,6 +8,7 @@
 #include <utility>
 
 #include <fcntl.h>
+#include <poll.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -57,7 +58,7 @@ bool SerialPort::open()
     return true;
   }
 
-  fd_ = ::open(device_.c_str(), O_RDONLY | O_NOCTTY | O_NONBLOCK);
+  fd_ = ::open(device_.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
   if (fd_ < 0)
   {
     return false;
@@ -145,6 +146,78 @@ ssize_t SerialPort::read(uint8_t* buffer, std::size_t max_len)
     return -1;
   }
   return ::read(fd_, buffer, max_len);
+}
+
+ssize_t SerialPort::write(const uint8_t* buffer, std::size_t len)
+{
+  if (fd_ < 0)
+  {
+    errno = EBADF;
+    return -1;
+  }
+
+  std::size_t total_written = 0U;
+  while (total_written < len)
+  {
+    const ssize_t rc = ::write(fd_, buffer + total_written, len - total_written);
+    if (rc > 0)
+    {
+      total_written += static_cast<std::size_t>(rc);
+      continue;
+    }
+
+    if (rc < 0 && errno == EINTR)
+    {
+      continue;
+    }
+
+    if (rc < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+    {
+      if (!wait_writable(100))
+      {
+        errno = EAGAIN;
+        return -1;
+      }
+      continue;
+    }
+
+    return -1;
+  }
+
+  return static_cast<ssize_t>(total_written);
+}
+
+bool SerialPort::wait_writable(int timeout_ms) const
+{
+  if (fd_ < 0)
+  {
+    errno = EBADF;
+    return false;
+  }
+
+  struct pollfd poll_fd
+  {
+  };
+  poll_fd.fd = fd_;
+  poll_fd.events = POLLOUT;
+
+  while (true)
+  {
+    const int rc = ::poll(&poll_fd, 1, timeout_ms);
+    if (rc > 0)
+    {
+      return (poll_fd.revents & POLLOUT) != 0;
+    }
+    if (rc == 0)
+    {
+      return false;
+    }
+    if (errno == EINTR)
+    {
+      continue;
+    }
+    return false;
+  }
 }
 
 int SerialPort::to_termios_baud(int baudrate) noexcept

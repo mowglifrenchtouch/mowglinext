@@ -9,3 +9,4 @@ um982_node:
     fix_topic: /gps/fix
     heading_topic: /gps/azimuth
     diagnostics_topic: /gps/diagnostics
+    rtcm_topic: /ntrip_client/rtcm

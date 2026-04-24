@@ -23,6 +23,7 @@
 #include <diagnostic_msgs/msg/diagnostic_status.hpp>
 #include <diagnostic_msgs/msg/key_value.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rtcm_msgs/msg/message.hpp>
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <sensor_msgs/msg/nav_sat_status.hpp>
 
@@ -103,13 +104,18 @@ public:
     fix_topic_ = declare_parameter<std::string>("fix_topic", "/gps/fix");
     heading_topic_ = declare_parameter<std::string>("heading_topic", "/gps/azimuth");
     diagnostics_topic_ = declare_parameter<std::string>("diagnostics_topic", "/gps/diagnostics");
+    rtcm_topic_ = declare_parameter<std::string>("rtcm_topic", "/ntrip_client/rtcm");
 
     serial_.configure(port_, baudrate_);
 
-    fix_pub_ = create_publisher<sensor_msgs::msg::NavSatFix>(fix_topic_, rclcpp::QoS(10));
+    auto fix_qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
+    fix_pub_ = create_publisher<sensor_msgs::msg::NavSatFix>(fix_topic_, fix_qos);
     heading_pub_ = create_publisher<compass_msgs::msg::Azimuth>(heading_topic_, rclcpp::QoS(10));
     diagnostics_pub_ =
       create_publisher<diagnostic_msgs::msg::DiagnosticArray>(diagnostics_topic_, rclcpp::QoS(10));
+    rtcm_sub_ = create_subscription<rtcm_msgs::msg::Message>(
+      rtcm_topic_, rclcpp::QoS(10),
+      std::bind(&Um982Node::handle_rtcm, this, std::placeholders::_1));
 
     const auto poll_period = std::chrono::duration<double>(1.0 / std::max(1.0, read_poll_hz_));
     poll_timer_ = create_wall_timer(
@@ -310,6 +316,9 @@ private:
       case 0:
         status.status = sensor_msgs::msg::NavSatStatus::STATUS_NO_FIX;
         break;
+      case 1:
+        status.status = sensor_msgs::msg::NavSatStatus::STATUS_FIX;
+        break;
       case 2:
       case 5:
         status.status = sensor_msgs::msg::NavSatStatus::STATUS_SBAS_FIX;
@@ -448,8 +457,41 @@ private:
       status.values.push_back(kv("count_" + sentence_type, std::to_string(count)));
     }
 
+    status.values.push_back(kv("rtcm_messages", std::to_string(rtcm_message_count_)));
+    status.values.push_back(kv("rtcm_bytes", std::to_string(rtcm_byte_count_)));
+
     array.status.push_back(status);
     diagnostics_pub_->publish(array);
+  }
+
+  void handle_rtcm(const rtcm_msgs::msg::Message::SharedPtr msg)
+  {
+    ensure_serial_open();
+    if (!serial_.is_open())
+    {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Dropping RTCM message because serial port %s is not open", port_.c_str());
+      return;
+    }
+
+    if (msg->message.empty())
+    {
+      return;
+    }
+
+    const auto written = serial_.write(msg->message.data(), msg->message.size());
+    if (written < 0)
+    {
+      RCLCPP_ERROR_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Failed to write RTCM message to %s: %s", port_.c_str(), std::strerror(errno));
+      serial_.close();
+      return;
+    }
+
+    ++rtcm_message_count_;
+    rtcm_byte_count_ += static_cast<std::size_t>(written);
   }
 
   std::string port_;
@@ -461,6 +503,7 @@ private:
   std::string fix_topic_;
   std::string heading_topic_;
   std::string diagnostics_topic_;
+  std::string rtcm_topic_;
 
   SerialPort serial_;
   Um982Parser parser_;
@@ -474,10 +517,13 @@ private:
   std::optional<TimedData<VelocityData>> latest_velocity_;
 
   std::unordered_map<std::string, std::size_t> sentence_counts_;
+  std::size_t rtcm_message_count_{0U};
+  std::size_t rtcm_byte_count_{0U};
 
   rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr fix_pub_;
   rclcpp::Publisher<compass_msgs::msg::Azimuth>::SharedPtr heading_pub_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_pub_;
+  rclcpp::Subscription<rtcm_msgs::msg::Message>::SharedPtr rtcm_sub_;
   rclcpp::TimerBase::SharedPtr poll_timer_;
   rclcpp::TimerBase::SharedPtr diagnostics_timer_;
 };

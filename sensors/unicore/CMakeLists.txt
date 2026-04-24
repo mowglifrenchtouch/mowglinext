@@ -14,6 +14,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(compass_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
+find_package(rtcm_msgs REQUIRED)
 
 add_library(${PROJECT_NAME}_core STATIC
   src/serial_port.cpp
@@ -39,6 +40,7 @@ ament_target_dependencies(um982_node
   sensor_msgs
   compass_msgs
   diagnostic_msgs
+  rtcm_msgs
 )
 
 install(

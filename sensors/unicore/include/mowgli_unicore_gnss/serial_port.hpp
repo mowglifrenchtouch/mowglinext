@@ -33,9 +33,11 @@ public:
 
   void configure(std::string device, int baudrate);
   ssize_t read(uint8_t* buffer, std::size_t max_len);
+  ssize_t write(const uint8_t* buffer, std::size_t len);
 
 private:
   [[nodiscard]] static int to_termios_baud(int baudrate) noexcept;
+  bool wait_writable(int timeout_ms) const;
 
   std::string device_;
   int baudrate_;
