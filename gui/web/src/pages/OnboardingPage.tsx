@@ -216,7 +216,9 @@ const RobotModelStep: React.FC<RobotModelStepProps> = ({ values, onChange }) => 
 
 // ── GPS Configuration step (receiver + NTRIP, no datum) ─────────────────
 
-const GpsStep: React.FC<RobotModelStepProps> = ({ values, onChange }) => {
+type GpsStepProps = RobotModelStepProps & { gpsRestarting?: boolean };
+
+const GpsStep: React.FC<GpsStepProps> = ({ values, onChange, gpsRestarting }) => {
     const ntripEnabled = values.ntrip_enabled ?? true;
 
     return (
@@ -229,6 +231,16 @@ const GpsStep: React.FC<RobotModelStepProps> = ({ values, onChange }) => {
                 from. The map origin (datum) is set later — once this step is saved and the receiver has had a
                 moment to acquire an RTK fix, the Datum step will let you anchor the map at your dock.
             </Paragraph>
+
+            {gpsRestarting && (
+                <Alert
+                    type="info"
+                    showIcon
+                    message="GPS container is restarting to apply your NTRIP / serial settings"
+                    description="Wait ~10–30 s for RTK Fix to come back before setting the datum."
+                    style={{ marginBottom: 12 }}
+                />
+            )}
 
             <Card size="small" title={<Space><WifiOutlined /> GPS Receiver</Space>} style={{ marginBottom: 16 }}>
                 <Form layout="vertical">
@@ -884,11 +896,11 @@ const OnboardingWizard: React.FC = () => {
     }, [savedValues]);
 
     // Snapshot GPS-affecting fields whenever the user enters the GPS step
-    // (now step 3 in the reordered wizard: Welcome / Robot Model / Firmware
-    // / GPS), so we can compare on Next and decide whether to auto-restart
+    // (step 3 in the reordered wizard: Welcome / Robot Model / Firmware /
+    // GPS), so we can compare on Next and decide whether to auto-restart
     // mowgli-gps.
     useEffect(() => {
-        if (currentStep === 3) {
+        if (currentStep === STEP_GPS) {
             const snap: Record<string, any> = {};
             for (const k of GPS_RESTART_KEYS) snap[k] = localValues[k];
             gpsSnapshotRef.current = snap;
@@ -909,6 +921,7 @@ const OnboardingWizard: React.FC = () => {
     //   6 Datum
     //   7 Complete
     const STEP_FIRMWARE = 2;
+    const STEP_GPS = 3;
     const STEP_DATUM = 6;
     const STEP_COMPLETE = STEP_TITLES.length - 1;
 
@@ -930,7 +943,7 @@ const OnboardingWizard: React.FC = () => {
         // entry, bounce the GPS container so the new config is applied.
         // Without this the user has to know to click "Restart GPS" before
         // "Set Datum" can ever see RTK Fix.
-        if (currentStep === 3 && gpsSnapshotRef.current) {
+        if (currentStep === STEP_GPS && gpsSnapshotRef.current) {
             const snap = gpsSnapshotRef.current;
             let changed = false;
             for (const k of GPS_RESTART_KEYS) {
@@ -982,7 +995,7 @@ const OnboardingWizard: React.FC = () => {
                 {currentStep === 0 && <WelcomeStep onNext={handleNext} />}
                 {currentStep === 1 && <RobotModelStep values={localValues} onChange={handleChange} />}
                 {currentStep === 2 && <FirmwareStep onNext={handleNext} />}
-                {currentStep === 3 && <GpsStep values={localValues} onChange={handleChange} />}
+                {currentStep === 3 && <GpsStep values={localValues} onChange={handleChange} gpsRestarting={gpsRestarting} />}
                 {currentStep === 4 && <SensorStep values={localValues} onChange={handleChange} />}
                 {currentStep === 5 && <ImuYawStep values={localValues} onChange={handleChange} />}
                 {currentStep === 6 && <DatumStep values={localValues} onChange={handleChange} gpsRestarting={gpsRestarting} />}
