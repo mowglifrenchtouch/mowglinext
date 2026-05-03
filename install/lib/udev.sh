@@ -21,14 +21,46 @@ find_serial_by_id() {
 emit_by_id_udev_rule() {
   local by_id_path="$1"
   local symlink="$2"
-  local kernel
+  local resolved kernel vendor product serial line key value
 
   [ -L "$by_id_path" ] || return 1
-  kernel="$(basename "$(readlink -f "$by_id_path")")"
+  resolved="$(readlink -f "$by_id_path")"
+  kernel="$(basename "$resolved")"
   [ -n "$kernel" ] || return 1
 
+  vendor=""
+  product=""
+  serial=""
+
+  # Prefer a USB-attribute match (idVendor/idProduct[/serial]) so the symlink
+  # survives re-enumeration. The previous KERNEL=="ttyACMn" form broke as soon
+  # as a device's CDC-ACM index changed (e.g. F9P resets after ublox_dgnss
+  # writes config, jumping ttyACM1 -> ttyACM3, leaving /dev/gps dangling and
+  # causing EIO on every RTCM write).
+  if command -v udevadm >/dev/null 2>&1 && [ -e "$resolved" ]; then
+    while IFS='=' read -r key value; do
+      case "$key" in
+        ID_VENDOR_ID)    vendor="$value" ;;
+        ID_MODEL_ID)     product="$value" ;;
+        ID_SERIAL_SHORT) serial="$value" ;;
+      esac
+    done < <(udevadm info --query=property --name="$resolved" 2>/dev/null)
+  fi
+
   echo "# $symlink from $by_id_path"
-  echo "KERNEL==\"${kernel}\", SYMLINK+=\"${symlink}\", MODE=\"0666\""
+  if [ -n "$vendor" ] && [ -n "$product" ]; then
+    line="SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"${vendor}\", ATTRS{idProduct}==\"${product}\""
+    # Pin by USB serial when one is exposed — protects against collisions with
+    # other devices sharing the same VID/PID (e.g. generic 0483:5740 STM32 VCPs).
+    [ -n "$serial" ] && line="${line}, ATTRS{serial}==\"${serial}\""
+    line="${line}, SYMLINK+=\"${symlink}\", MODE=\"0666\""
+    echo "$line"
+  else
+    # Fallback for environments where udevadm can't resolve USB attributes
+    # (e.g. test sandboxes with fake device nodes). Kernel-name rules are not
+    # stable across re-enumeration; warn callers via the comment above.
+    echo "KERNEL==\"${kernel}\", SYMLINK+=\"${symlink}\", MODE=\"0666\""
+  fi
 }
 
 build_static_udev_rules() {

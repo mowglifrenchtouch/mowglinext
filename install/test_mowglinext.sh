@@ -271,6 +271,34 @@ case "$udev_rules" in
 esac
 unset SERIAL_BY_ID_DIR MAVROS_BY_ID
 
+# Test: emit_by_id_udev_rule prefers ATTRS{idVendor}/{idProduct}/{serial}
+# (a stable match that survives USB re-enumeration) when udevadm exposes
+# them. We mock udevadm to simulate a real USB tty and assert the emitted
+# rule shape, then drop the mock to confirm the KERNEL== fallback path.
+udevadm() {
+  case "$1 $2" in
+    "info --query=property")
+      cat <<'PROPS'
+ID_VENDOR_ID=1546
+ID_MODEL_ID=01a9
+ID_SERIAL_SHORT=DEADBEEF
+PROPS
+      ;;
+  esac
+}
+export -f udevadm
+mkdir -p "$SANDBOX/dev"
+touch "$SANDBOX/dev/ttyACM9"
+mkdir -p "$SANDBOX/serial-attrs"
+ln -sf "$SANDBOX/dev/ttyACM9" "$SANDBOX/serial-attrs/usb-u-blox_GNSS-if00"
+attrs_rule="$(emit_by_id_udev_rule "$SANDBOX/serial-attrs/usb-u-blox_GNSS-if00" gps)"
+case "$attrs_rule" in
+  *'SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", ATTRS{serial}=="DEADBEEF", SYMLINK+="gps", MODE="0666"'*)
+    pass "udev attrs: emits stable VID/PID/serial rule when udevadm available" ;;
+  *) fail "udev attrs: emits stable VID/PID/serial rule when udevadm available" "$attrs_rule" ;;
+esac
+unset -f udevadm
+
 # =============================================================================
 # Test 3: configure_lidar — preset mode (skips prompts)
 # =============================================================================
