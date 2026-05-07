@@ -1047,6 +1047,11 @@ bool MapServerNode::find_next_segment(size_t area_index,
     }
     if (!std::isfinite(best_dist2))
     {
+      // Last-fallback perimeter-ring pass: close the annulus the bypass
+      // arcs leave around each user-promoted obstacle. If every ring is
+      // already covered, declare the area complete.
+      if (try_emit_perimeter_ring(area_index, out_seg))
+        return true;
       out_seg.coverage_complete = true;
       return true;
     }
@@ -1624,6 +1629,140 @@ void MapServerNode::recompute_reachability_for_area(size_t area_index)
                 flipped_dead,
                 flipped_lawn);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Perimeter-ring pass — close the annulus around user-promoted obstacles
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool MapServerNode::try_emit_perimeter_ring(size_t area_index, SegmentResult& out_seg) const
+{
+  if (area_index >= areas_.size())
+    return false;
+  const auto& area = areas_[area_index];
+  if (area.is_navigation_area)
+    return false;
+
+  // Offset = chassis_half_width + safety_margin. Same value the bypass
+  // arc uses, so a ring at this distance closes the gap left by an
+  // earlier bypass cleanly.
+  const double offset = std::max(0.5 * chassis_width_m_ + bypass_safety_margin_m_, mower_width_);
+  const auto& cls = map_[std::string(layers::CLASSIFICATION)];
+  const auto& prog = map_[std::string(layers::MOW_PROGRESS)];
+  const double step = resolution_;
+
+  // Iterate this area's user-promoted obstacles (single source of truth
+  // — only entries the operator validated via ~/promote_obstacle).
+  for (const auto& obs : area.obstacles)
+  {
+    if (obs.points.size() < 3)
+      continue;
+
+    // Centroid (mean of vertices). For convex obstacles, pushing each
+    // vertex outward from the centroid by `offset` produces a ring at
+    // the desired clearance. Concave obstacles can yield self-intersection
+    // — acceptable here because user-promoted shapes are typically
+    // tree-trunks / pots / rocks, not C-shapes.
+    double cx = 0.0;
+    double cy = 0.0;
+    for (const auto& p : obs.points)
+    {
+      cx += p.x;
+      cy += p.y;
+    }
+    cx /= static_cast<double>(obs.points.size());
+    cy /= static_cast<double>(obs.points.size());
+
+    std::vector<std::pair<double, double>> ring;
+    ring.reserve(obs.points.size());
+    for (const auto& p : obs.points)
+    {
+      const double dx = p.x - cx;
+      const double dy = p.y - cy;
+      const double dist = std::hypot(dx, dy);
+      if (dist < 1e-3)
+        continue;
+      const double scale = (dist + offset) / dist;
+      ring.emplace_back(cx + dx * scale, cy + dy * scale);
+    }
+    if (ring.size() < 3)
+      continue;
+
+    // Sample cells along the ring perimeter to decide whether this
+    // obstacle still needs a perimeter pass. Count valid (in-area,
+    // non-blocked) sample points and how many are already mowed —
+    // skip if the ring is already mostly covered.
+    int total = 0;
+    int mowed = 0;
+    for (size_t i = 0; i < ring.size(); ++i)
+    {
+      const auto& a = ring[i];
+      const auto& b = ring[(i + 1) % ring.size()];
+      const double dx = b.first - a.first;
+      const double dy = b.second - a.second;
+      const double leg_len = std::hypot(dx, dy);
+      const int nsamples = std::max(1, static_cast<int>(leg_len / step));
+      for (int j = 0; j <= nsamples; ++j)
+      {
+        const double t = static_cast<double>(j) / static_cast<double>(nsamples);
+        const double x = a.first + t * dx;
+        const double y = a.second + t * dy;
+        geometry_msgs::msg::Point32 pt32;
+        pt32.x = static_cast<float>(x);
+        pt32.y = static_cast<float>(y);
+        if (!point_in_polygon(pt32, area.polygon))
+          continue;
+        grid_map::Position pos(x, y);
+        if (!map_.isInside(pos))
+          continue;
+        grid_map::Index idx;
+        if (!map_.getIndex(pos, idx))
+          continue;
+        const auto t_cell = static_cast<CellType>(static_cast<int>(cls(idx(0), idx(1))));
+        // Skip ring sample points that fall inside any obstacle/keepout/
+        // dead/costmap-blocked cell — those would be unmowable anyway,
+        // and don't count toward "needs ring" decision.
+        if (t_cell == CellType::OBSTACLE_PERMANENT || t_cell == CellType::OBSTACLE_TEMPORARY ||
+            t_cell == CellType::NO_GO_ZONE || t_cell == CellType::LAWN_DEAD)
+          continue;
+        if (is_costmap_blocked(x, y))
+          continue;
+        ++total;
+        if (prog(idx(0), idx(1)) >= 0.3F)
+          ++mowed;
+      }
+    }
+
+    // If the ring sampled out empty (all points unreachable / outside
+    // area), don't try to mow it. If >50 % is already mowed, ring done.
+    if (total < 3)
+      continue;
+    if (mowed * 2 >= total)
+      continue;
+
+    // Emit the ring as a single segment. via_points are the ring
+    // vertices except the first (which is start_*); end_* closes back
+    // to start so FTC drives a complete loop. is_long_transit is true
+    // because the robot likely needs to travel from its current pose
+    // to the ring start — BT will disengage the blade for the move.
+    out_seg.start_x = ring[0].first;
+    out_seg.start_y = ring[0].second;
+    out_seg.via_points.clear();
+    out_seg.via_points.reserve(ring.size());
+    for (size_t i = 1; i < ring.size(); ++i)
+      out_seg.via_points.emplace_back(ring[i].first, ring[i].second);
+    // Close the loop.
+    out_seg.via_points.emplace_back(ring[0].first, ring[0].second);
+    out_seg.end_x = ring[0].first;
+    out_seg.end_y = ring[0].second;
+    out_seg.cell_count = total;
+    out_seg.termination_reason = "perimeter_ring";
+    out_seg.is_long_transit = true;
+    out_seg.coverage_complete = false;
+    return true;
+  }
+
+  return false;
 }
 
 }  // namespace mowgli_map

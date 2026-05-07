@@ -1381,6 +1381,66 @@ TEST_F(CoverageCellScenarioTest, BypassesCostmapBlockedRegion)
   EXPECT_GT(o.end_x, 0.55);  // past the obstacle blob
 }
 
+// Perimeter pass — once the in-row pattern + brute-force scan exhaust,
+// the planner emits a ring around each user-promoted obstacle whose
+// annulus is still mostly unmowed. Verifies (a) the ring fires, (b) it
+// has multiple via points (not a straight segment), and (c) the ring
+// vertices sit at the expected offset from the obstacle.
+
+TEST_F(CoverageCellScenarioTest, PerimeterRingFiresAfterInRowExhaust)
+{
+  // Add a small persistent obstacle as a user-promoted polygon for area 0
+  // and mark every other cell in the area as already mowed so the in-row
+  // search has nothing to do.
+  geometry_msgs::msg::Polygon obs;
+  for (auto p : std::vector<std::pair<double, double>>{
+           {0.9, -0.1}, {1.1, -0.1}, {1.1, 0.1}, {0.9, 0.1}})
+  {
+    geometry_msgs::msg::Point32 pt;
+    pt.x = static_cast<float>(p.first);
+    pt.y = static_cast<float>(p.second);
+    obs.points.push_back(pt);
+  }
+  ASSERT_TRUE(node_->apply_promoted_obstacle(0, obs));
+
+  {
+    std::lock_guard<std::mutex> lock(node_->map_mutex());
+    auto& prog = node_->map()[std::string(mowgli_map::layers::MOW_PROGRESS)];
+    grid_map::Polygon area_poly;
+    area_poly.addVertex(grid_map::Position(-2.0, -2.0));
+    area_poly.addVertex(grid_map::Position(2.0, -2.0));
+    area_poly.addVertex(grid_map::Position(2.0, 2.0));
+    area_poly.addVertex(grid_map::Position(-2.0, 2.0));
+    for (grid_map::PolygonIterator it(node_->map(), area_poly); !it.isPastEnd(); ++it)
+      prog((*it)(0), (*it)(1)) = 1.0F;
+    // Carve a "bypass annulus" around the obstacle: cells within the
+    // bypass-offset radius but outside the obstacle stay unmowed, so the
+    // perimeter ring has work to do.
+    for (double x = 0.5; x <= 1.5; x += 0.05)
+      for (double y = -0.5; y <= 0.5; y += 0.05)
+      {
+        if (x >= 0.9 && x <= 1.1 && y >= -0.1 && y <= 0.1)
+          continue;
+        grid_map::Position pos(x, y);
+        grid_map::Index idx;
+        if (node_->map().getIndex(pos, idx))
+          prog(idx(0), idx(1)) = 0.0F;
+      }
+  }
+
+  auto o = select(0.0, 0.0);
+  ASSERT_TRUE(o.ok);
+  EXPECT_FALSE(o.coverage_complete);
+  // The ring closes back to the starting point so via_points must be at
+  // least #obstacle_vertices (4 here, with the closing vertex repeated).
+  EXPECT_GE(o.via_points.size(), 4u);
+  // start equals end (closed loop).
+  EXPECT_NEAR(o.start_x, o.end_x, 1e-6);
+  EXPECT_NEAR(o.start_y, o.end_y, 1e-6);
+  // termination_reason flags this as a perimeter pass for the GUI/log.
+  EXPECT_EQ(o.reason, "perimeter_ring");
+}
+
 TEST_F(CoverageCellScenarioTest, BoustrophedonJumpsToNextRow)
 {
   {

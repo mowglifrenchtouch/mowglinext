@@ -330,6 +330,17 @@ private:
   /// call from a 0.5 Hz timer.
   void recompute_reachability_for_area(size_t area_index);
 
+  /// Generate a perimeter-ring segment around the next user-promoted
+  /// obstacle whose annulus (the unmowed strip the bypass arcs leave
+  /// behind) is still mostly unmowed. Used as the last fallback in
+  /// find_next_segment before declaring coverage_complete: in-row
+  /// strips bypass each obstacle, leaving a one-tool-width annulus
+  /// of unmowed grass; this pass closes it. Caller must hold
+  /// map_mutex_.
+  /// @return true if a ring was emitted (out_seg populated), false if
+  ///         every obstacle's annulus is already covered.
+  bool try_emit_perimeter_ring(size_t area_index, SegmentResult& out_seg) const;
+
   /// Build and publish the speed OccupancyGrid mask and CostmapFilterInfo.
   /// Cells within one tool_width of the mowing boundary → 50 (50 % speed).
   /// All other interior cells → 0 (full speed).
