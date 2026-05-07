@@ -92,6 +92,16 @@ public:
     max_yaw_var_ = declare_parameter<double>("max_yaw_variance", 3.0);
     min_yaw_var_ = declare_parameter<double>("min_yaw_variance", 7.6e-5);
 
+    // Multi-sample baseline accumulator: don't publish a COG yaw until
+    // the robot has travelled this distance since the anchor sample.
+    // Per-pair F9P fixes at 8 Hz / 0.20 m/s yield ~25 mm displacement
+    // and σ_yaw ≈ 18°, which floods fusion_graph with near-useless yaws
+    // that the optimizer must integrate over many nodes before it
+    // converges. Accumulating to e.g. 0.10 m gives σ_yaw ≈ 5° per
+    // publish, so a single COG correction is enough to pull the graph.
+    min_baseline_displacement_m_ =
+        declare_parameter<double>("min_baseline_displacement_m", 0.10);
+
     // ── Stationary yaw latch ────────────────────────────────────────
     stationary_seed_rate_hz_ = declare_parameter<double>("stationary_seed_rate_hz", 2.0);
     stationary_drift_rate_ = declare_parameter<double>("stationary_yaw_drift_rate", 0.005);
@@ -161,9 +171,11 @@ public:
     }
 
     RCLCPP_INFO(get_logger(),
-                "cog_to_imu started — publish /imu/cog_heading on every "
-                "RTK-Fixed sample with |wheel_vx| > %.2f m/s (forward + "
-                "reverse, adaptive covariance, no hard speed gate)",
+                "cog_to_imu started — publish /imu/cog_heading once the "
+                "RTK-Fixed baseline accumulates %.3f m at |wheel_vx| > "
+                "%.2f m/s (forward + reverse, adaptive covariance, "
+                "anchor resets on stationary or direction change)",
+                min_baseline_displacement_m_,
                 min_abs_wheel_);
   }
 
@@ -225,52 +237,62 @@ private:
                      static_cast<double>(msg.header.stamp.nanosec) * 1e-9;
     pos_acc = std::max(pos_acc, 0.002);
 
-    if (!have_prev_)
+    // Sample-to-sample dt sanity. A long gap means we lost lock or paused;
+    // the anchor's age would inflate σ_pos and the wheel direction may
+    // have flipped silently — drop the anchor and restart accumulation.
+    if (have_last_sample_)
     {
-      prev_t_ = t;
-      prev_x_ = x;
-      prev_y_ = y;
-      prev_pa_ = pos_acc;
-      have_prev_ = true;
-      return;
-    }
-
-    const double dt = t - prev_t_;
-    if (dt < min_dt_ || dt > max_dt_)
-    {
-      if (dt > max_dt_)
+      const double dt_sample = t - last_sample_t_;
+      if (dt_sample > max_dt_)
       {
-        prev_t_ = t;
-        prev_x_ = x;
-        prev_y_ = y;
-        prev_pa_ = pos_acc;
+        have_anchor_ = false;
+        have_last_sample_ = false;
       }
+      else if (dt_sample < min_dt_)
+      {
+        // Duplicate / out-of-order; ignore but don't disturb anchor.
+        return;
+      }
+    }
+    last_sample_t_ = t;
+    have_last_sample_ = true;
+
+    // Stationary samples don't extend the baseline (GPS noise would just
+    // pollute the integrated displacement). Drop the anchor so we don't
+    // bake a stationary segment into the next yaw computation.
+    if (std::abs(wheel_vx_) < min_abs_wheel_)
+    {
+      ++rejected_stationary_;
+      have_anchor_ = false;
       return;
     }
 
-    const double dx = x - prev_x_;
-    const double dy = y - prev_y_;
-    const double displacement = std::hypot(dx, dy);
-    const double pa0 = prev_pa_;
-    prev_t_ = t;
-    prev_x_ = x;
-    prev_y_ = y;
-    prev_pa_ = pos_acc;
+    const int wheel_sign = (wheel_vx_ >= 0.0) ? 1 : -1;
 
-    if (displacement < 0.005)
+    // Anchor seeding / direction-change reset.
+    if (!have_anchor_ || (anchor_wheel_sign_ != 0 && anchor_wheel_sign_ != wheel_sign))
+    {
+      anchor_t_ = t;
+      anchor_x_ = x;
+      anchor_y_ = y;
+      anchor_pa_ = pos_acc;
+      anchor_wheel_sign_ = wheel_sign;
+      have_anchor_ = true;
+      return;
+    }
+
+    const double dx = x - anchor_x_;
+    const double dy = y - anchor_y_;
+    const double displacement = std::hypot(dx, dy);
+
+    if (displacement < min_baseline_displacement_m_)
     {
       ++rejected_displacement_;
       return;
     }
 
-    if (std::abs(wheel_vx_) < min_abs_wheel_)
-    {
-      ++rejected_stationary_;
-      return;
-    }
-
     double yaw;
-    if (wheel_vx_ >= 0.0)
+    if (wheel_sign > 0)
     {
       yaw = std::atan2(dy, dx);
       ++published_fwd_;
@@ -281,9 +303,18 @@ private:
       ++published_rev_;
     }
 
-    const double sigma_pos = std::hypot(pos_acc, pa0);
+    const double sigma_pos = std::hypot(pos_acc, anchor_pa_);
     const double sigma_yaw = std::atan2(2.0 * sigma_pos, std::max(displacement, 1e-3));
     const double yaw_var = std::max(min_yaw_var_, std::min(sigma_yaw * sigma_yaw, max_yaw_var_));
+
+    // Advance the anchor to the current sample so the next baseline starts
+    // fresh — keeps each published yaw independent and bounds the temporal
+    // window over which wheel direction is assumed constant.
+    anchor_t_ = t;
+    anchor_x_ = x;
+    anchor_y_ = y;
+    anchor_pa_ = pos_acc;
+    anchor_wheel_sign_ = wheel_sign;
 
     publish_imu(now(), yaw, yaw_var);
 
@@ -628,9 +659,21 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr stats_timer_, stationary_timer_, mag_refit_timer_;
 
-  bool have_prev_{false};
-  double prev_t_{}, prev_x_{}, prev_y_{}, prev_pa_{};
+  // Baseline accumulator. The COG yaw is computed from the displacement
+  // between an anchor sample and the current sample once the accumulated
+  // displacement crosses min_baseline_displacement_m. The anchor advances
+  // to the current sample after each successful publish; it is reset
+  // whenever the wheel direction changes, the robot is stationary, or
+  // the gap to the previous fix exceeds max_dt_.
+  bool have_anchor_{false};
+  double anchor_t_{}, anchor_x_{}, anchor_y_{}, anchor_pa_{};
+  // Wheel sign at the anchor sample: +1 forward, -1 reverse, 0 unknown.
+  // A change in sign during the baseline invalidates the anchor.
+  int anchor_wheel_sign_{0};
+  double last_sample_t_{};
+  bool have_last_sample_{false};
   double wheel_vx_{0.0};
+  double min_baseline_displacement_m_{};
 
   struct LatchedYaw
   {
