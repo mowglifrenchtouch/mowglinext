@@ -429,122 +429,38 @@ void MapServerNode::on_get_recovery_point(
               yaw);
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// Obstacle diff and replan triggering
+// User-promoted obstacle application
 // ─────────────────────────────────────────────────────────────────────────────
 
-void MapServerNode::diff_and_update_obstacles(
-    const std::vector<mowgli_interfaces::msg::TrackedObstacle>& incoming)
+bool MapServerNode::apply_promoted_obstacle(size_t area_index,
+                                            const geometry_msgs::msg::Polygon& polygon)
 {
-  // Always update obstacle polygons for costmap/keepout.
-  obstacle_polygons_.clear();
-  for (const auto& obs : incoming)
+  // Validate + mutate areas_/obstacle_polygons_ under map_mutex_, then
+  // release before calling apply_area_classifications (which locks
+  // itself). This avoids both deadlock and a long-held mutex during
+  // the polygon-iterator pass.
   {
-    if (obs.polygon.points.size() >= 3)
-    {
-      obstacle_polygons_.push_back(obs.polygon);
-    }
-  }
+    std::lock_guard<std::mutex> lock(map_mutex_);
+    if (area_index >= areas_.size())
+      return false;
+    if (areas_[area_index].is_navigation_area)
+      return false;
+    if (polygon.points.size() < 3)
+      return false;
 
-  // Update classification layer with obstacle cells.
-  // First clear previous obstacle marks (reset to UNKNOWN), then re-mark.
-  auto& cls = map_[std::string(layers::CLASSIFICATION)];
-  for (grid_map::GridMapIterator it(map_); !it.isPastEnd(); ++it)
-  {
-    auto val = static_cast<CellType>(static_cast<int>(cls((*it)(0), (*it)(1))));
-    if (val == CellType::OBSTACLE_PERMANENT || val == CellType::OBSTACLE_TEMPORARY)
-    {
-      cls((*it)(0), (*it)(1)) = static_cast<float>(CellType::UNKNOWN);
-    }
-  }
-  // Mark obstacle cells from tracked obstacles
-  for (const auto& obs : incoming)
-  {
-    if (obs.polygon.points.size() < 3)
-      continue;
-    auto cell_val = (obs.status == mowgli_interfaces::msg::TrackedObstacle::PERSISTENT)
-                        ? static_cast<float>(CellType::OBSTACLE_PERMANENT)
-                        : static_cast<float>(CellType::OBSTACLE_TEMPORARY);
-    grid_map::Polygon gm_poly;
-    for (const auto& pt : obs.polygon.points)
-    {
-      gm_poly.addVertex(grid_map::Position(static_cast<double>(pt.x), static_cast<double>(pt.y)));
-    }
-    for (grid_map::PolygonIterator pit(map_, gm_poly); !pit.isPastEnd(); ++pit)
-    {
-      cls((*pit)(0), (*pit)(1)) = cell_val;
-    }
-  }
-
-  // Check for new persistent obstacles not yet planned around.
-  // Only persistent obstacles with stable IDs trigger replanning.
-  bool has_new_persistent = false;
-  std::set<uint32_t> current_persistent_ids;
-  for (const auto& obs : incoming)
-  {
-    if (obs.status == mowgli_interfaces::msg::TrackedObstacle::PERSISTENT)
-    {
-      current_persistent_ids.insert(obs.id);
-      if (planned_obstacle_ids_.find(obs.id) == planned_obstacle_ids_.end())
-      {
-        has_new_persistent = true;
-        RCLCPP_INFO(get_logger(),
-                    "New persistent obstacle #%u detected (not yet planned around)",
-                    obs.id);
-      }
-    }
-  }
-
-  const std::size_t incoming_count = current_persistent_ids.size();
-  if (incoming_count != last_obstacle_count_)
-  {
-    RCLCPP_INFO(get_logger(),
-                "Obstacle change detected: %zu -> %zu persistent obstacles",
-                last_obstacle_count_,
-                incoming_count);
-    last_obstacle_count_ = incoming_count;
+    areas_[area_index].obstacles.push_back(polygon);
+    obstacle_polygons_.push_back(polygon);
     masks_dirty_ = true;
   }
+  apply_area_classifications();
 
-  // Handle deferred replans.
-  if (!has_new_persistent)
-  {
-    if (replan_pending_ && (now() - last_replan_time_).seconds() >= replan_cooldown_sec_)
-    {
-      replan_pending_ = false;
-      planned_obstacle_ids_ = current_persistent_ids;
-      std_msgs::msg::Bool msg;
-      msg.data = true;
-      replan_needed_pub_->publish(msg);
-      last_replan_time_ = now();
-      RCLCPP_INFO(get_logger(), "Deferred replan triggered (cooldown expired)");
-    }
-    return;
-  }
-
-  // New persistent obstacle — trigger or defer replan.
-  if ((now() - last_replan_time_).seconds() < replan_cooldown_sec_)
-  {
-    replan_pending_ = true;
-    RCLCPP_INFO(get_logger(),
-                "Replan deferred (cooldown %.0fs, remaining %.0fs)",
-                replan_cooldown_sec_,
-                replan_cooldown_sec_ - (now() - last_replan_time_).seconds());
-    return;
-  }
-
-  replan_pending_ = false;
-  size_t new_count = 0;
-  for (const auto& id : current_persistent_ids)
-  {
-    if (planned_obstacle_ids_.find(id) == planned_obstacle_ids_.end())
-      ++new_count;
-  }
-  planned_obstacle_ids_ = current_persistent_ids;
-  std_msgs::msg::Bool msg;
-  msg.data = true;
-  replan_needed_pub_->publish(msg);
-  last_replan_time_ = now();
-  RCLCPP_INFO(get_logger(), "Replan triggered: %zu new persistent obstacles", new_count);
+  // Republish-trigger for any consumer of /map_server_node/replan_needed
+  // (BT GetNextSegment requesters). The keepout-mask publisher will
+  // pick up masks_dirty_ on its next tick.
+  std_msgs::msg::Bool replan_msg;
+  replan_msg.data = true;
+  replan_needed_pub_->publish(replan_msg);
+  return true;
 }
 
 }  // namespace mowgli_map

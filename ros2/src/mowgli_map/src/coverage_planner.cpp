@@ -1395,9 +1395,10 @@ void MapServerNode::on_mark_segment_blocked(
       continue;
 
     auto t = static_cast<CellType>(static_cast<int>(cls(idx(0), idx(1))));
-    // Don't bump cells that are already non-mowable (real obstacles
-    // get their own handling via diff_and_update_obstacles); we only
-    // care about LAWN cells the robot couldn't reach.
+    // Don't bump cells that are already non-mowable (real obstacles are
+    // handled via the costmap obstacle_layer + ground filter, and
+    // user-validated keepouts via ~/promote_obstacle); we only care
+    // about LAWN cells the robot couldn't reach.
     if (t != CellType::LAWN && t != CellType::UNKNOWN && t != CellType::LAWN_DEAD)
       continue;
 

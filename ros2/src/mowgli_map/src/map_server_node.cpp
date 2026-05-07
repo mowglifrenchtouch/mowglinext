@@ -308,10 +308,6 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
         on_get_recovery_point(req, res);
       });
 
-  // ── Replanning parameters ────────────────────────────────────────────────
-  replan_cooldown_sec_ = declare_parameter<double>("replan_cooldown_sec", 30.0);
-  last_replan_time_ = now();
-
   // ── Replan / boundary publishers ────────────────────────────────────────
   replan_needed_pub_ = create_publisher<std_msgs::msg::Bool>("~/replan_needed", rclcpp::QoS(1));
   boundary_violation_pub_ =
@@ -323,13 +319,27 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
       create_publisher<geometry_msgs::msg::PoseStamped>("~/docking_pose",
                                                         rclcpp::QoS(1).transient_local());
 
-  // ── Obstacle subscription ─────────────────────────────────────────────
+  // ── Obstacle-tracker snapshot (monitoring only) ───────────────────────
+  // The tracker output is no longer auto-mirrored into the classification
+  // layer or obstacle_polygons_. We only cache the most recent message so
+  // ~/promote_obstacle can resolve a tracker id → polygon. Real-time
+  // avoidance now flows through the costmap obstacle_layer + the
+  // gravity-aware ground filter, and permanent keepouts come from the
+  // user via promote_obstacle.
   obstacle_sub_ = create_subscription<mowgli_interfaces::msg::ObstacleArray>(
       "/obstacle_tracker/obstacles",
       rclcpp::QoS(1),
       [this](mowgli_interfaces::msg::ObstacleArray::ConstSharedPtr msg)
       {
         on_obstacles(std::move(msg));
+      });
+
+  promote_obstacle_srv_ = create_service<mowgli_interfaces::srv::PromoteObstacle>(
+      "~/promote_obstacle",
+      [this](const mowgli_interfaces::srv::PromoteObstacle::Request::SharedPtr req,
+             mowgli_interfaces::srv::PromoteObstacle::Response::SharedPtr res)
+      {
+        on_promote_obstacle(req, res);
       });
 
   // ── Load pre-defined areas from parameters ────────────────────────────
@@ -556,8 +566,11 @@ void MapServerNode::on_odom(nav_msgs::msg::Odometry::ConstSharedPtr /*msg*/)
 
 void MapServerNode::on_obstacles(mowgli_interfaces::msg::ObstacleArray::ConstSharedPtr msg)
 {
+  // Snapshot ONLY — the avoidance path no longer reacts to tracker
+  // observations. The cache lets ~/promote_obstacle resolve a tracker
+  // id without a round-trip through the GUI.
   std::lock_guard<std::mutex> lock(map_mutex_);
-  diff_and_update_obstacles(msg->obstacles);
+  last_tracker_snapshot_ = msg->obstacles;
 }
 
 void MapServerNode::on_costmap(nav_msgs::msg::OccupancyGrid::ConstSharedPtr msg)

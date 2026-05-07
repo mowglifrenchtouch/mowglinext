@@ -51,6 +51,7 @@
 #include <mowgli_interfaces/srv/get_next_strip.hpp>
 #include <mowgli_interfaces/srv/get_recovery_point.hpp>
 #include <mowgli_interfaces/srv/mark_segment_blocked.hpp>
+#include <mowgli_interfaces/srv/promote_obstacle.hpp>
 #include <mowgli_interfaces/srv/set_docking_point.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
@@ -192,7 +193,12 @@ private:
   /// Also checks boundary violation.
   void on_odom(nav_msgs::msg::Odometry::ConstSharedPtr msg);
 
-  /// Receive persistent obstacle updates from ObstacleTracker.
+  /// Cache the latest /obstacle_tracker/obstacles message so the
+  /// promote_obstacle service can look up an observation by id. The
+  /// tracker subscription is for snapshot lookup ONLY — it no longer
+  /// mutates the classification layer or obstacle_polygons_. User
+  /// validation (via promote_obstacle) is the single source of truth
+  /// for permanent keepouts now.
   void on_obstacles(mowgli_interfaces::msg::ObstacleArray::ConstSharedPtr msg);
 
   // ── Timer callback ───────────────────────────────────────────────────────
@@ -225,6 +231,12 @@ private:
 
   void on_load_areas(const std_srvs::srv::Trigger::Request::SharedPtr req,
                      std_srvs::srv::Trigger::Response::SharedPtr res);
+
+  /// User-promotion of a tracker observation (or raw polygon) to a
+  /// permanent keepout. See PromoteObstacle.srv for the contract.
+  void on_promote_obstacle(
+      const mowgli_interfaces::srv::PromoteObstacle::Request::SharedPtr req,
+      mowgli_interfaces::srv::PromoteObstacle::Response::SharedPtr res);
 
   // ── Strip planner services ───────────────────────────────────────────────
 
@@ -298,9 +310,14 @@ private:
   /// Check if the robot is outside all allowed polygons and publish violation.
   void check_boundary_violation(double x, double y);
 
-  /// Compare incoming obstacles to current set and trigger replan if needed.
-  void diff_and_update_obstacles(
-      const std::vector<mowgli_interfaces::msg::TrackedObstacle>& incoming);
+  /// Append a user-validated polygon as a permanent keepout for an area.
+  /// Called by the ~/promote_obstacle service. Updates obstacle_polygons_,
+  /// re-runs apply_area_classifications so cells become NO_GO_ZONE, marks
+  /// masks_dirty_, and triggers a replan. Manages map_mutex_ internally
+  /// — caller must NOT hold it.
+  /// @return false if the polygon has fewer than 3 points or area_index
+  ///         is out of range / a navigation area.
+  bool apply_promoted_obstacle(size_t area_index, const geometry_msgs::msg::Polygon& polygon);
 
   /// Build and publish the speed OccupancyGrid mask and CostmapFilterInfo.
   /// Cells within one tool_width of the mowing boundary → 50 (50 % speed).
@@ -543,26 +560,25 @@ private:
   bool mow_blade_enabled_{false};
   rclcpp::Time last_decay_time_;
 
-  // ── Replanning state ──────────────────────────────────────────────────────
-  /// Number of persistent obstacles at last replan (for change detection).
-  std::size_t last_obstacle_count_{0};
-  /// Persistent obstacle IDs already included in a replan.
-  std::set<uint32_t> planned_obstacle_ids_;
-  /// Timestamp of last replan trigger (for cooldown).
-  rclcpp::Time last_replan_time_;
-  /// Minimum seconds between replan triggers.
-  double replan_cooldown_sec_{30.0};
-  /// Whether a replan is pending (deferred due to cooldown).
-  bool replan_pending_{false};
-
   /// Pre-defined areas (mowing zones + navigation corridors).
   /// Any cell inside ANY area polygon is free in the keepout mask;
   /// everything outside is lethal.
   std::vector<AreaEntry> areas_;
 
   /// Obstacle polygons: regions within the allowed areas that are off-limits
-  /// (trees, flower beds, etc.).  Marked as lethal in the keepout mask.
+  /// (trees, flower beds, etc.). Marked as lethal in the keepout mask.
+  /// Single source of truth: area YAML on disk + ~/promote_obstacle. Not
+  /// auto-mirrored from /obstacle_tracker/obstacles anymore (that path
+  /// was always-on and clobbered any user-validated keepouts on every
+  /// tracker tick).
   std::vector<geometry_msgs::msg::Polygon> obstacle_polygons_;
+
+  /// Most recent /obstacle_tracker/obstacles snapshot, kept ONLY so that
+  /// the ~/promote_obstacle service can resolve a tracker id → polygon
+  /// without a round-trip through the GUI. Has no effect on costmap or
+  /// classification — promote_obstacle is the only path that mutates
+  /// permanent keepouts.
+  std::vector<mowgli_interfaces::msg::TrackedObstacle> last_tracker_snapshot_;
 
   /// Docking point in map frame.
   geometry_msgs::msg::Pose docking_pose_;
@@ -658,6 +674,7 @@ private:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_dead_cells_srv_;
   rclcpp::Service<mowgli_interfaces::srv::GetCoverageStatus>::SharedPtr get_coverage_status_srv_;
   rclcpp::Service<mowgli_interfaces::srv::GetRecoveryPoint>::SharedPtr get_recovery_point_srv_;
+  rclcpp::Service<mowgli_interfaces::srv::PromoteObstacle>::SharedPtr promote_obstacle_srv_;
 
   // ── TF ────────────────────────────────────────────────────────────────────
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;

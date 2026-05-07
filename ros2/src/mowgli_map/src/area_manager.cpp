@@ -781,6 +781,73 @@ void MapServerNode::on_load_areas(const std_srvs::srv::Trigger::Request::SharedP
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// User-driven obstacle promotion
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MapServerNode::on_promote_obstacle(
+    const mowgli_interfaces::srv::PromoteObstacle::Request::SharedPtr req,
+    mowgli_interfaces::srv::PromoteObstacle::Response::SharedPtr res)
+{
+  // Resolve the polygon source: prefer the request's explicit polygon
+  // (free-form draw), fall back to looking up the obstacle id in the
+  // most recent /obstacle_tracker/obstacles snapshot.
+  geometry_msgs::msg::Polygon poly = req->polygon;
+  if (poly.points.size() < 3)
+  {
+    bool found = false;
+    {
+      std::lock_guard<std::mutex> lock(map_mutex_);
+      for (const auto& obs : last_tracker_snapshot_)
+      {
+        if (obs.id == req->obstacle_id)
+        {
+          poly = obs.polygon;
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found)
+    {
+      res->success = false;
+      res->message = "obstacle_id not found in last tracker snapshot and no polygon supplied";
+      return;
+    }
+  }
+
+  if (!apply_promoted_obstacle(req->area_index, poly))
+  {
+    res->success = false;
+    res->message = "promotion rejected (bad area_index, navigation area, or polygon < 3 points)";
+    return;
+  }
+
+  // Persist immediately so the keepout survives a restart. Failures
+  // here are logged but don't fail the service — the polygon is live
+  // in memory; the next save_areas tick will retry.
+  if (!areas_file_path_.empty())
+  {
+    try
+    {
+      save_areas_to_file(areas_file_path_);
+    }
+    catch (const std::exception& ex)
+    {
+      RCLCPP_WARN(get_logger(),
+                  "promote_obstacle: applied to live state but YAML save failed: %s",
+                  ex.what());
+    }
+  }
+
+  res->success = true;
+  res->message = "obstacle promoted to permanent keepout for area " + std::to_string(req->area_index);
+  RCLCPP_INFO(get_logger(),
+              "promote_obstacle: appended polygon (%zu points) to area %u",
+              poly.points.size(),
+              req->area_index);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Area persistence helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
