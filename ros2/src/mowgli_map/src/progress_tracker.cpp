@@ -162,6 +162,8 @@ void MapServerNode::apply_decay(double elapsed_seconds)
     return;
   }
 
+  // Mow-progress decay: cells slowly bleed back from fully-mowed (1.0)
+  // toward 0 so a long-idle session re-mows when restarted.
   if (decay_rate_per_hour_ > 0.0)
   {
     const double decay_per_second = decay_rate_per_hour_ / 3600.0;
@@ -170,27 +172,11 @@ void MapServerNode::apply_decay(double elapsed_seconds)
     prog = (prog.array() - decay).max(0.0F).matrix();
   }
 
-  // Path C — fail_count decay. Cells that haven't been re-blocked
-  // recently bleed off their failure count, so a transient obstacle
-  // doesn't permanently disable a region. When fail_count drops below
-  // the unblock threshold a previously-promoted LAWN_DEAD cell
-  // reverts to LAWN.
-  if (dead_decay_rate_per_hour_ > 0.0)
-  {
-    const double decay_per_second = dead_decay_rate_per_hour_ / 3600.0;
-    const float decay = static_cast<float>(decay_per_second * elapsed_seconds);
-    auto& fc = map_[std::string(layers::FAIL_COUNT)];
-    fc = (fc.array() - decay).max(0.0F).matrix();
-
-    auto& cls = map_[std::string(layers::CLASSIFICATION)];
-    const float unblock = static_cast<float>(dead_unblock_threshold_);
-    for (grid_map::GridMapIterator it(map_); !it.isPastEnd(); ++it)
-    {
-      auto t = static_cast<CellType>(static_cast<int>(cls((*it)(0), (*it)(1))));
-      if (t == CellType::LAWN_DEAD && fc((*it)(0), (*it)(1)) < unblock)
-        cls((*it)(0), (*it)(1)) = static_cast<float>(CellType::LAWN);
-    }
-  }
+  // DEAD-cell decay was deleted in the topological-reachability redesign
+  // (2026-05-07). DEAD now means "unreachable from the area's seed",
+  // computed by recompute_reachability_for_area. A previously-DEAD cell
+  // flips back to LAWN as soon as the wall that isolated it (obstacle
+  // polygon, costmap blob) is gone — no time-based decay.
 }
 
 void MapServerNode::mark_cells_mowed(double x, double y)
@@ -202,9 +188,6 @@ void MapServerNode::mark_cells_mowed(double x, double y)
   {
     map_.at(std::string(layers::MOW_PROGRESS), *it) = 1.0F;
     map_.at(std::string(layers::CONFIDENCE), *it) += 1.0F;
-    // Path C — successful mow resets the failure counter so the next
-    // obstacle encounter starts from zero, not from a stale count.
-    map_.at(std::string(layers::FAIL_COUNT), *it) = 0.0F;
   }
 }
 

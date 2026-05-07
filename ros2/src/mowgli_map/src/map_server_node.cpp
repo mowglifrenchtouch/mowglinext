@@ -57,10 +57,7 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
   map_frame_ = declare_parameter<std::string>("map_frame", "map");
   decay_rate_per_hour_ = declare_parameter<double>("decay_rate_per_hour", 0.1);
   mower_width_ = declare_parameter<double>("mower_width", 0.18);
-  // Path C — fail-count tuning. See header for semantics.
-  dead_promote_threshold_ = declare_parameter<double>("dead_promote_threshold", 3.0);
-  dead_decay_rate_per_hour_ = declare_parameter<double>("dead_decay_rate_per_hour", 0.5);
-  dead_unblock_threshold_ = declare_parameter<double>("dead_unblock_threshold", 1.0);
+  reachability_period_s_ = declare_parameter<double>("reachability_period_s", 2.0);
   map_file_path_ = declare_parameter<std::string>("map_file_path", "");
   areas_file_path_ = declare_parameter<std::string>("areas_file_path", "");
   publish_rate_ = declare_parameter<double>("publish_rate", 1.0);
@@ -551,6 +548,12 @@ void MapServerNode::on_odom(nav_msgs::msg::Odometry::ConstSharedPtr /*msg*/)
     return;
   }
 
+  // Latch most recent map-frame position so reachability BFS can use
+  // the robot's actual location as a seed (preferred over the area
+  // centroid when the robot is inside the area).
+  last_robot_x_ = x;
+  last_robot_y_ = y;
+
   check_boundary_violation(x, y);
 
   if (!mow_blade_enabled_)
@@ -627,6 +630,30 @@ void MapServerNode::on_publish_timer()
   const rclcpp::Time now_time = now();
   const double elapsed = (now_time - last_decay_time_).seconds();
   last_decay_time_ = now_time;
+
+  // Topological reachability recompute (DEAD redesign). Run when the
+  // mask is dirty (areas/obstacles/keepouts changed) OR every
+  // reachability_period_s seconds (catches slowly-changing costmap
+  // obstacles like a person standing still). Done OUTSIDE the
+  // map_mutex_ block below because recompute_reachability_for_area
+  // takes the lock itself.
+  bool needs_reach = masks_dirty_;
+  if (!needs_reach && last_reachability_time_.nanoseconds() != 0)
+  {
+    const double age = (now_time - last_reachability_time_).seconds();
+    needs_reach = age >= reachability_period_s_;
+  }
+  else if (last_reachability_time_.nanoseconds() == 0)
+  {
+    needs_reach = true;
+  }
+  if (needs_reach)
+  {
+    const size_t n = areas_.size();
+    for (size_t i = 0; i < n; ++i)
+      recompute_reachability_for_area(i);
+    last_reachability_time_ = now_time;
+  }
 
   {
     std::lock_guard<std::mutex> lock(map_mutex_);

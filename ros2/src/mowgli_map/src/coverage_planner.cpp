@@ -1346,118 +1346,284 @@ bool MapServerNode::find_next_segment_public(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Path C — mark_segment_blocked + clear_dead_cells handlers
+//
+// DEAD redesign (2026-05-07): DEAD cells are now defined as
+// "topologically unreachable from the area's seed cell", computed by
+// recompute_reachability_for_area() — not by per-cell failure counting.
+// mark_segment_blocked is kept as a no-op stub so the existing BT
+// MarkBlockedAndSkip branch keeps compiling and returning SUCCESS;
+// the BT's WasRecentlyInCollisionStop guard already routes transient
+// dynamic-obstacle failures away from this path. clear_dead_cells
+// flips every LAWN_DEAD cell back to LAWN as a manual reset.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void MapServerNode::on_mark_segment_blocked(
     const mowgli_interfaces::srv::MarkSegmentBlocked::Request::SharedPtr req,
     mowgli_interfaces::srv::MarkSegmentBlocked::Response::SharedPtr res)
 {
-  std::lock_guard<std::mutex> lock(map_mutex_);
-
-  if (req->area_index >= areas_.size())
-  {
-    res->success = false;
-    return;
-  }
-  const auto& area = areas_[req->area_index];
-  if (area.polygon.points.size() < 3)
-  {
-    res->success = false;
-    return;
-  }
-
-  auto& fc = map_[std::string(layers::FAIL_COUNT)];
-  auto& cls = map_[std::string(layers::CLASSIFICATION)];
-  const float promote = static_cast<float>(dead_promote_threshold_);
-
-  // Track which cells we've already bumped this call so a redundant
-  // path that loops over the same cell doesn't get charged twice for
-  // a single failure event.
-  std::set<std::pair<int, int>> bumped;
-  uint32_t bumps = 0;
-  uint32_t promotions = 0;
-
-  for (const auto& pose : req->failed_path.poses)
-  {
-    geometry_msgs::msg::Point32 pt32;
-    pt32.x = static_cast<float>(pose.pose.position.x);
-    pt32.y = static_cast<float>(pose.pose.position.y);
-    if (!point_in_polygon(pt32, area.polygon))
-      continue;
-    grid_map::Position pos(pose.pose.position.x, pose.pose.position.y);
-    if (!map_.isInside(pos))
-      continue;
-    grid_map::Index idx;
-    if (!map_.getIndex(pos, idx))
-      continue;
-    auto key = std::make_pair(idx(0), idx(1));
-    if (!bumped.insert(key).second)
-      continue;
-
-    auto t = static_cast<CellType>(static_cast<int>(cls(idx(0), idx(1))));
-    // Don't bump cells that are already non-mowable (real obstacles are
-    // handled via the costmap obstacle_layer + ground filter, and
-    // user-validated keepouts via ~/promote_obstacle); we only care
-    // about LAWN cells the robot couldn't reach.
-    if (t != CellType::LAWN && t != CellType::UNKNOWN && t != CellType::LAWN_DEAD)
-      continue;
-
-    fc(idx(0), idx(1)) += 1.0F;
-    ++bumps;
-
-    if (fc(idx(0), idx(1)) >= promote && t != CellType::LAWN_DEAD)
-    {
-      cls(idx(0), idx(1)) = static_cast<float>(CellType::LAWN_DEAD);
-      ++promotions;
-    }
-  }
-
-  if (promotions > 0)
-  {
-    masks_dirty_ = true;
-    RCLCPP_WARN(get_logger(),
-                "MarkSegmentBlocked: %u cells bumped, %u promoted to LAWN_DEAD "
-                "(area %u).",
-                bumps,
-                promotions,
-                req->area_index);
-  }
-  else
-  {
-    RCLCPP_INFO(get_logger(),
-                "MarkSegmentBlocked: %u cells bumped (area %u).",
-                bumps,
-                req->area_index);
-  }
-
+  // No-op under the topological-reachability DEAD model. A controller
+  // failure on a reachable cell is by definition transient (the cell
+  // IS reachable, otherwise reachability BFS would already have flipped
+  // it DEAD). The BT now skips the segment via the cell-walker's next
+  // selection without any per-cell mutation here. Kept as a stub for
+  // BT XML compatibility — log, return success, no state change.
+  RCLCPP_INFO_THROTTLE(get_logger(),
+                       *get_clock(),
+                       5000,
+                       "mark_segment_blocked: no-op under reachability-based DEAD "
+                       "(area %u, %zu poses) — cell-walker will pick a different segment",
+                       req->area_index,
+                       req->failed_path.poses.size());
   res->success = true;
-  res->cells_marked_blocked = bumps;
-  res->cells_promoted_dead = promotions;
+  res->cells_marked_blocked = 0;
+  res->cells_promoted_dead = 0;
 }
 
 void MapServerNode::on_clear_dead_cells(const std_srvs::srv::Trigger::Request::SharedPtr,
                                         std_srvs::srv::Trigger::Response::SharedPtr res)
 {
-  std::lock_guard<std::mutex> lock(map_mutex_);
-
-  auto& fc = map_[std::string(layers::FAIL_COUNT)];
-  auto& cls = map_[std::string(layers::CLASSIFICATION)];
   uint32_t cleared = 0;
-  for (grid_map::GridMapIterator it(map_); !it.isPastEnd(); ++it)
   {
-    auto t = static_cast<CellType>(static_cast<int>(cls((*it)(0), (*it)(1))));
-    if (t == CellType::LAWN_DEAD)
+    std::lock_guard<std::mutex> lock(map_mutex_);
+    auto& cls = map_[std::string(layers::CLASSIFICATION)];
+    for (grid_map::GridMapIterator it(map_); !it.isPastEnd(); ++it)
     {
-      cls((*it)(0), (*it)(1)) = static_cast<float>(CellType::LAWN);
-      ++cleared;
+      auto t = static_cast<CellType>(static_cast<int>(cls((*it)(0), (*it)(1))));
+      if (t == CellType::LAWN_DEAD)
+      {
+        cls((*it)(0), (*it)(1)) = static_cast<float>(CellType::LAWN);
+        ++cleared;
+      }
     }
-    fc((*it)(0), (*it)(1)) = 0.0F;
+    masks_dirty_ = true;
   }
-  masks_dirty_ = true;
+  // Re-run reachability for every area immediately so anything that
+  // really IS unreachable goes back to DEAD before the next segment
+  // request.
+  for (size_t i = 0; i < areas_.size(); ++i)
+    recompute_reachability_for_area(i);
 
   res->success = true;
-  res->message = "cleared " + std::to_string(cleared) + " LAWN_DEAD cells";
+  res->message = "cleared " + std::to_string(cleared) +
+                 " LAWN_DEAD cells (reachability re-run for all areas)";
   RCLCPP_INFO(get_logger(), "ClearDeadCells: %s", res->message.c_str());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reachability BFS (topological DEAD)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MapServerNode::recompute_reachability_for_area(size_t area_index)
+{
+  std::lock_guard<std::mutex> lock(map_mutex_);
+  if (area_index >= areas_.size())
+    return;
+  const auto& area = areas_[area_index];
+  if (area.is_navigation_area)
+    return;
+  const auto& poly = area.polygon;
+  if (poly.points.size() < 3)
+    return;
+
+  auto& cls = map_[std::string(layers::CLASSIFICATION)];
+
+  // Wall predicate. A cell is a wall if any of:
+  //   * outside the area polygon (off-area cells aren't candidates anyway)
+  //   * classification = OBSTACLE_PERMANENT / OBSTACLE_TEMPORARY / NO_GO_ZONE
+  //   * costmap_blocked (live LiDAR obstacle)
+  // DOCKING_AREA cells are NOT walls — corridor lawn is reachable
+  // through the corridor in the user's spec.
+  auto is_wall = [&](double x, double y) -> bool
+  {
+    geometry_msgs::msg::Point32 pt32;
+    pt32.x = static_cast<float>(x);
+    pt32.y = static_cast<float>(y);
+    if (!point_in_polygon(pt32, poly))
+      return true;
+    grid_map::Position pos(x, y);
+    if (!map_.isInside(pos))
+      return true;
+    grid_map::Index idx;
+    if (!map_.getIndex(pos, idx))
+      return true;
+    auto t = static_cast<CellType>(static_cast<int>(cls(idx(0), idx(1))));
+    if (t == CellType::OBSTACLE_PERMANENT || t == CellType::OBSTACLE_TEMPORARY ||
+        t == CellType::NO_GO_ZONE)
+      return true;
+    if (is_costmap_blocked(x, y))
+      return true;
+    return false;
+  };
+
+  // Build the polygon iterator's (r, c) bounding box and a reached[]
+  // grid the same shape.
+  grid_map::Polygon gm_poly;
+  for (const auto& p : poly.points)
+    gm_poly.addVertex(grid_map::Position(static_cast<double>(p.x), static_cast<double>(p.y)));
+
+  // Pick a seed: prefer the robot's last-known position inside this area,
+  // else the area centroid, else the first non-wall polygon cell. We
+  // use map_-scoped grid indices so neighborhood checks stay O(1).
+  auto pick_seed = [&]() -> std::optional<grid_map::Index>
+  {
+    auto try_cell = [&](double x, double y) -> std::optional<grid_map::Index>
+    {
+      grid_map::Position pos(x, y);
+      grid_map::Index idx;
+      if (!map_.isInside(pos))
+        return std::nullopt;
+      if (!map_.getIndex(pos, idx))
+        return std::nullopt;
+      if (is_wall(x, y))
+        return std::nullopt;
+      return idx;
+    };
+    if (auto s = try_cell(last_robot_x_, last_robot_y_))
+      return s;
+    // Centroid (mean of polygon vertices — fast, good enough for convex
+    // and most concave shapes; spiral-search picks up any blocked cells).
+    double cx = 0.0;
+    double cy = 0.0;
+    for (const auto& p : poly.points)
+    {
+      cx += p.x;
+      cy += p.y;
+    }
+    cx /= static_cast<double>(poly.points.size());
+    cy /= static_cast<double>(poly.points.size());
+    if (auto s = try_cell(cx, cy)) return s;
+    // Spiral around centroid up to ~2 m at resolution_ steps. Accepts
+    // the first non-wall cell.
+    const double step = std::max(0.05, resolution_);
+    for (int ring = 1; ring <= 40; ++ring)
+    {
+      const double r = ring * step;
+      for (int k = 0; k < 12; ++k)
+      {
+        const double a = (2.0 * M_PI * k) / 12.0;
+        if (auto s = try_cell(cx + r * std::cos(a), cy + r * std::sin(a)))
+          return s;
+      }
+    }
+    return std::nullopt;
+  };
+  const auto seed = pick_seed();
+
+  // Walk every cell inside the polygon's bounding box. If no seed
+  // exists, every in-polygon non-wall cell becomes DEAD (the area is
+  // an island we can't enter at all).
+  uint32_t flipped_dead = 0;
+  uint32_t flipped_lawn = 0;
+
+  if (!seed.has_value())
+  {
+    for (grid_map::PolygonIterator it(map_, gm_poly); !it.isPastEnd(); ++it)
+    {
+      grid_map::Position pos;
+      if (!map_.getPosition(*it, pos))
+        continue;
+      auto t = static_cast<CellType>(static_cast<int>(cls((*it)(0), (*it)(1))));
+      if (t == CellType::LAWN || t == CellType::UNKNOWN)
+      {
+        cls((*it)(0), (*it)(1)) = static_cast<float>(CellType::LAWN_DEAD);
+        ++flipped_dead;
+      }
+    }
+    if (flipped_dead > 0)
+      masks_dirty_ = true;
+    RCLCPP_WARN(get_logger(),
+                "reachability(area %zu): no seed cell — area entirely unreachable; "
+                "%u cells → DEAD",
+                area_index,
+                flipped_dead);
+    return;
+  }
+
+  // BFS over 4-connected grid (diagonals add complexity without much
+  // benefit — at typical resolutions the planner won't squeeze through
+  // single-cell diagonal gaps anyway).
+  const int nx = map_.getSize()(0);
+  const int ny = map_.getSize()(1);
+  std::vector<uint8_t> visited(static_cast<size_t>(nx * ny), 0);
+  auto idx_to_flat = [&](int r, int c) -> size_t
+  {
+    return static_cast<size_t>(r * ny + c);
+  };
+
+  std::vector<grid_map::Index> stack;
+  stack.reserve(1024);
+  stack.push_back(*seed);
+  visited[idx_to_flat((*seed)(0), (*seed)(1))] = 1;
+
+  while (!stack.empty())
+  {
+    grid_map::Index cur = stack.back();
+    stack.pop_back();
+    for (const auto& d : {std::pair<int, int>{1, 0},
+                          std::pair<int, int>{-1, 0},
+                          std::pair<int, int>{0, 1},
+                          std::pair<int, int>{0, -1}})
+    {
+      const int rr = cur(0) + d.first;
+      const int cc = cur(1) + d.second;
+      if (rr < 0 || rr >= nx || cc < 0 || cc >= ny)
+        continue;
+      const size_t flat = idx_to_flat(rr, cc);
+      if (visited[flat])
+        continue;
+      grid_map::Index nb(rr, cc);
+      grid_map::Position pos;
+      if (!map_.getPosition(nb, pos))
+        continue;
+      if (is_wall(pos.x(), pos.y()))
+      {
+        visited[flat] = 1;  // mark visited to skip subsequent neighbour visits
+        continue;
+      }
+      visited[flat] = 1;
+      stack.push_back(nb);
+    }
+  }
+
+  // Apply the diff. Walk every in-polygon cell:
+  //   * reached & currently DEAD          → flip back to LAWN.
+  //   * not reached & currently LAWN/UNKN → flip to DEAD.
+  //   * not reached & currently DEAD      → leave (already DEAD).
+  //   * reached & currently LAWN/UNKN     → leave (already mowable).
+  for (grid_map::PolygonIterator it(map_, gm_poly); !it.isPastEnd(); ++it)
+  {
+    const auto idx = *it;
+    const size_t flat = idx_to_flat(idx(0), idx(1));
+    auto t = static_cast<CellType>(static_cast<int>(cls(idx(0), idx(1))));
+    const bool reached = (visited[flat] != 0) && [&]()
+    {
+      grid_map::Position pos;
+      if (!map_.getPosition(idx, pos))
+        return false;
+      return !is_wall(pos.x(), pos.y());
+    }();
+
+    if (reached && t == CellType::LAWN_DEAD)
+    {
+      cls(idx(0), idx(1)) = static_cast<float>(CellType::LAWN);
+      ++flipped_lawn;
+    }
+    else if (!reached && (t == CellType::LAWN || t == CellType::UNKNOWN))
+    {
+      cls(idx(0), idx(1)) = static_cast<float>(CellType::LAWN_DEAD);
+      ++flipped_dead;
+    }
+  }
+
+  if (flipped_dead > 0 || flipped_lawn > 0)
+  {
+    masks_dirty_ = true;
+    RCLCPP_INFO(get_logger(),
+                "reachability(area %zu): %u → DEAD, %u → LAWN",
+                area_index,
+                flipped_dead,
+                flipped_lawn);
+  }
 }
 
 }  // namespace mowgli_map

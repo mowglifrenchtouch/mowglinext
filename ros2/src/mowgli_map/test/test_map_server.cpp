@@ -905,8 +905,6 @@ protected:
     opts.append_parameter_override("mower_width", 0.2);
     opts.append_parameter_override("map_file_path", "");
     opts.append_parameter_override("publish_rate", 1.0);
-    opts.append_parameter_override("dead_promote_threshold", 3.0);
-    opts.append_parameter_override("dead_decay_rate_per_hour", 0.0);  // disable decay for tests
 
     // Single 4x4 m mowing area centred at origin.
     std::vector<std::string> names = {"test_area"};
@@ -1112,9 +1110,6 @@ protected:
     opts.append_parameter_override("mower_width", 0.2);
     opts.append_parameter_override("map_file_path", "");
     opts.append_parameter_override("publish_rate", 1.0);
-    opts.append_parameter_override("dead_promote_threshold", 3.0);
-    opts.append_parameter_override("dead_decay_rate_per_hour", 0.5);
-    opts.append_parameter_override("dead_unblock_threshold", 1.0);
 
     std::vector<std::string> names = {"garden"};
     std::vector<std::string> polys = {"-2,-2;2,-2;2,2;-2,2"};
@@ -1278,19 +1273,22 @@ TEST_F(CoverageCellScenarioTest, MidRowObstacleStopsThenResumesAfterClear)
   EXPECT_GT(resume.end_x, 0.5);
 }
 
-TEST_F(CoverageCellScenarioTest, DeadCellsDecayBackToLawnOverTime)
+TEST_F(CoverageCellScenarioTest, DeadCellsDoNotDecayWithTime)
 {
+  // After the topological-reachability redesign (2026-05-07), DEAD is
+  // a structural label — a cell stays DEAD until the wall isolating it
+  // disappears. Time-based decay is gone. This test pins that behaviour
+  // so a future regression that re-adds decay gets caught.
   bump_fail_count_along(0.0, 0.5, 0.0);
   bump_fail_count_along(0.0, 0.5, 0.0);
   bump_fail_count_along(0.0, 0.5, 0.0);
 
-  EXPECT_GT(count_cells_of_type(mowgli_map::CellType::LAWN_DEAD), 0u);
+  const auto dead_after_bump = count_cells_of_type(mowgli_map::CellType::LAWN_DEAD);
+  EXPECT_GT(dead_after_bump, 0u);
 
-  // 5 hours of decay at 0.5/hour = 2.5 → fail_count drops 3.0 → 0.5,
-  // below unblock_threshold=1.0.
-  node_->tick_once(5.0 * 3600.0);
-
-  EXPECT_EQ(count_cells_of_type(mowgli_map::CellType::LAWN_DEAD), 0u);
+  // 24 h of decay must NOT revive any DEAD cells (no decay path exists).
+  node_->tick_once(24.0 * 3600.0);
+  EXPECT_EQ(count_cells_of_type(mowgli_map::CellType::LAWN_DEAD), dead_after_bump);
 }
 
 TEST_F(CoverageCellScenarioTest, DockExclusionIsSkipped)

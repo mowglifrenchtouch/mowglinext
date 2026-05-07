@@ -319,6 +319,17 @@ private:
   ///         is out of range / a navigation area.
   bool apply_promoted_obstacle(size_t area_index, const geometry_msgs::msg::Polygon& polygon);
 
+  /// Topological reachability analysis (DEAD redesign 2026-05-07).
+  /// BFS over the area's grid cells from a seed (robot pose if inside
+  /// area, else area centroid + spiral fallback), treating any cell
+  /// outside the polygon, in OBSTACLE_*/NO_GO_ZONE, or costmap-blocked
+  /// as a wall. Cells inside the polygon but unreachable get flipped
+  /// to LAWN_DEAD; previously-DEAD cells that are now reachable flip
+  /// back to LAWN. Manages map_mutex_ internally — caller must NOT hold
+  /// it. Cheap (<10 ms on a 30×30 m area at 0.05 m resolution); safe to
+  /// call from a 0.5 Hz timer.
+  void recompute_reachability_for_area(size_t area_index);
+
   /// Build and publish the speed OccupancyGrid mask and CostmapFilterInfo.
   /// Cells within one tool_width of the mowing boundary → 50 (50 % speed).
   /// All other interior cells → 0 (full speed).
@@ -464,18 +475,6 @@ private:
   std::string map_frame_;
   double decay_rate_per_hour_;
   double mower_width_;
-  // Path C — fail-count + DEAD promotion tuning. Defaults are
-  // declared in the constructor.
-  /// Number of consecutive segment failures before a cell is
-  /// promoted to LAWN_DEAD.
-  double dead_promote_threshold_{3.0};
-  /// fail_count decay rate. Cells unblock when fail_count drops
-  /// below dead_unblock_threshold_. Default 0.5 / hour means a cell
-  /// at 3 failures auto-recovers in ~6h, at 2 failures in ~4h. Set
-  /// to 0 to disable decay entirely (DEAD is forever).
-  double dead_decay_rate_per_hour_{0.5};
-  /// fail_count threshold below which LAWN_DEAD reverts to LAWN.
-  double dead_unblock_threshold_{1.0};
   std::string map_file_path_;
   std::string areas_file_path_;
   double publish_rate_;
@@ -559,6 +558,18 @@ private:
 
   bool mow_blade_enabled_{false};
   rclcpp::Time last_decay_time_;
+
+  /// Most recent map-frame robot position (latched in on_odom). Used as
+  /// the preferred seed for reachability_for_area when the robot is
+  /// inside the area being analysed.
+  double last_robot_x_{0.0};
+  double last_robot_y_{0.0};
+  /// Throttle the reachability BFS — recomputing every publish_timer
+  /// tick is wasted work when neither the costmap nor the polygons
+  /// changed. Recompute when masks_dirty_ flips OR every
+  /// reachability_period_s seconds.
+  rclcpp::Time last_reachability_time_{0, 0, RCL_ROS_TIME};
+  double reachability_period_s_{2.0};
 
   /// Pre-defined areas (mowing zones + navigation corridors).
   /// Any cell inside ANY area polygon is free in the keepout mask;
