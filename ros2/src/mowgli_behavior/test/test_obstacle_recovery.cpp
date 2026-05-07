@@ -34,6 +34,7 @@
 
 using mowgli_behavior::BTContext;
 using mowgli_behavior::IsObstacleStuck;
+using mowgli_behavior::WasRecentlyInCollisionStop;
 using CollisionMonitorState = nav2_msgs::msg::CollisionMonitorState;
 
 // ---------------------------------------------------------------------------
@@ -213,4 +214,93 @@ TEST_F(IsObstacleStuckTest, GuardsAgainstStopTypeWithUnsetTimestamp)
   ctx->collision_stop_since = std::chrono::steady_clock::time_point{};
   EXPECT_EQ(tick(), BT::NodeStatus::FAILURE);
   EXPECT_EQ(ctx->obstacle_backoff_count, 0);
+}
+
+// ---------------------------------------------------------------------------
+// WasRecentlyInCollisionStop fixture + tests
+// ---------------------------------------------------------------------------
+
+class WasRecentlyInCollisionStopTest : public ::testing::Test
+{
+protected:
+  std::shared_ptr<BTContext> ctx;
+  BT::Blackboard::Ptr blackboard;
+  BT::BehaviorTreeFactory factory;
+  BT::Tree tree;
+
+  void SetUp() override
+  {
+    ctx = std::make_shared<BTContext>();
+    ctx->node = rclcpp::Node::make_shared("test_was_recently_in_collision_stop");
+
+    blackboard = BT::Blackboard::create();
+    blackboard->set("context", ctx);
+
+    factory.registerNodeType<WasRecentlyInCollisionStop>("WasRecentlyInCollisionStop");
+
+    static const char* xml = R"(
+      <root BTCPP_format="4">
+        <BehaviorTree ID="MainTree">
+          <WasRecentlyInCollisionStop max_age_sec="10.0"/>
+        </BehaviorTree>
+      </root>
+    )";
+    tree = factory.createTreeFromText(xml, blackboard);
+  }
+
+  /// Mark a STOP→non-STOP transition as having happened `seconds_ago` seconds
+  /// in the past. Mirrors the behavior_tree_node subscriber callback.
+  void setStoppedEndedAgo(double seconds_ago)
+  {
+    ctx->collision_action_type = CollisionMonitorState::DO_NOTHING;
+    ctx->collision_stop_since = std::chrono::steady_clock::time_point{};
+    ctx->last_collision_stop_end =
+        std::chrono::steady_clock::now() -
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(seconds_ago));
+  }
+
+  BT::NodeStatus tick()
+  {
+    return tree.tickOnce();
+  }
+};
+
+TEST_F(WasRecentlyInCollisionStopTest, FailsWhenNoStopEverHappened)
+{
+  // Default-constructed context — no STOP entry, no STOP exit.
+  EXPECT_EQ(tick(), BT::NodeStatus::FAILURE);
+}
+
+TEST_F(WasRecentlyInCollisionStopTest, SucceedsWhileCurrentlyInStop)
+{
+  // Currently in STOP — recent by definition, no need to inspect timestamp.
+  ctx->collision_action_type = CollisionMonitorState::STOP;
+  ctx->collision_stop_since = std::chrono::steady_clock::now();
+  EXPECT_EQ(tick(), BT::NodeStatus::SUCCESS);
+}
+
+TEST_F(WasRecentlyInCollisionStopTest, SucceedsWhenStopEndedRecently)
+{
+  setStoppedEndedAgo(3.0);  // 3 s ago, within 10 s window
+  EXPECT_EQ(tick(), BT::NodeStatus::SUCCESS);
+}
+
+TEST_F(WasRecentlyInCollisionStopTest, FailsWhenStopEndedLongAgo)
+{
+  setStoppedEndedAgo(30.0);  // way past 10 s window
+  EXPECT_EQ(tick(), BT::NodeStatus::FAILURE);
+}
+
+TEST_F(WasRecentlyInCollisionStopTest, NoSideEffectsOnContext)
+{
+  // The guard is a pure read — must not mutate any context fields.
+  setStoppedEndedAgo(5.0);
+  const auto before_end = ctx->last_collision_stop_end;
+  const int before_count = ctx->obstacle_backoff_count;
+  const auto before_backoff = ctx->last_obstacle_backoff_time;
+  EXPECT_EQ(tick(), BT::NodeStatus::SUCCESS);
+  EXPECT_EQ(ctx->last_collision_stop_end, before_end);
+  EXPECT_EQ(ctx->obstacle_backoff_count, before_count);
+  EXPECT_EQ(ctx->last_obstacle_backoff_time, before_backoff);
 }

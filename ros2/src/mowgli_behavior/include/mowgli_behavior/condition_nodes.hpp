@@ -545,4 +545,49 @@ public:
   BT::NodeStatus tick() override;
 };
 
+// ---------------------------------------------------------------------------
+// WasRecentlyInCollisionStop
+// ---------------------------------------------------------------------------
+
+/// Returns SUCCESS if collision_monitor is currently in STOP OR the most
+/// recent STOP→non-STOP transition happened within the last `max_age_sec`
+/// seconds. FAILURE otherwise.
+///
+/// Field problem this solves: a dynamic obstacle (person, animal) wedges
+/// the robot just long enough for the controller to abort the FollowStrip
+/// goal, then walks off before IsObstacleStuck's check fires. Without this
+/// guard the BT falls through to MarkBlockedAndSkip and DEAD-marks cells
+/// the robot was perfectly capable of mowing once the obstacle moved.
+/// Inserted as a guard before MarkBlockedAndSkip: if we WERE recently
+/// stopped, treat the failure as a transient dynamic-obstacle event,
+/// clear the costmap, and let SegmentLoop fetch a fresh segment without
+/// permanently penalizing the cells.
+///
+/// Source signal: ctx->collision_action_type and ctx->last_collision_stop_end,
+/// both maintained by the /collision_monitor_state subscriber in
+/// behavior_tree_node. Pure read — no side effects on the context.
+///
+/// Input ports:
+///   max_age_sec (double, default 10.0) — how recently STOP must have ended
+///                                        for this guard to fire.
+class WasRecentlyInCollisionStop : public BT::ConditionNode
+{
+public:
+  WasRecentlyInCollisionStop(const std::string& name, const BT::NodeConfig& config)
+      : BT::ConditionNode(name, config)
+  {
+  }
+
+  static BT::PortsList providedPorts()
+  {
+    return {
+        BT::InputPort<double>("max_age_sec",
+                              10.0,
+                              "Seconds since last STOP exit to still count as recent"),
+    };
+  }
+
+  BT::NodeStatus tick() override;
+};
+
 }  // namespace mowgli_behavior

@@ -222,7 +222,11 @@ private:
           context_->collision_action_type = msg->action_type;
 
           // Stamp the entry-into-STOP transition so IsObstacleStuck can
-          // measure duration. Clear on exit.
+          // measure duration. On STOP exit, clear collision_stop_since AND
+          // record the exit time in last_collision_stop_end so
+          // WasRecentlyInCollisionStop can guard MarkBlockedAndSkip against
+          // marking cells DEAD just because a dynamic obstacle wedged the
+          // robot for a few seconds and then walked off.
           if (msg->action_type == nav2_msgs::msg::CollisionMonitorState::STOP)
           {
             if (prev != nav2_msgs::msg::CollisionMonitorState::STOP)
@@ -232,6 +236,10 @@ private:
           }
           else
           {
+            if (prev == nav2_msgs::msg::CollisionMonitorState::STOP)
+            {
+              context_->last_collision_stop_end = std::chrono::steady_clock::now();
+            }
             context_->collision_stop_since = std::chrono::steady_clock::time_point{};
           }
         });

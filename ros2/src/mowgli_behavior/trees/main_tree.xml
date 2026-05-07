@@ -484,7 +484,7 @@
                              IsObstacleStuck returns FAILURE and the
                              Fallback advances to MarkBlockedAndSkip). -->
                         <Sequence name="StuckBackoff">
-                          <IsObstacleStuck min_duration_sec="5.0"
+                          <IsObstacleStuck min_duration_sec="4.0"
                                            max_count="3"
                                            cooldown_sec="8.0"/>
                           <PublishHighLevelStatus state="2"
@@ -494,7 +494,29 @@
                           <ClearCostmap/>
                           <AlwaysSuccess/>
                         </Sequence>
-                        <!-- Both retry attempts failed. Bump fail_count for
+                        <!-- Dynamic-obstacle clear gate. If FollowStrip
+                             aborted within the last 10 s of a collision
+                             STOP, treat the failure as a transient
+                             obstacle (person/animal walking past). Skip
+                             the cell-marking step entirely so we don't
+                             DEAD-promote cells we were perfectly capable
+                             of mowing once the obstacle moved. The next
+                             GetNextSegment will retry the same area
+                             naturally. -->
+                        <Sequence name="DynamicObstacleSkip">
+                          <WasRecentlyInCollisionStop max_age_sec="10.0"/>
+                          <PublishHighLevelStatus state="2"
+                                                  state_name="DYNAMIC_OBSTACLE_CLEARED"/>
+                          <SetMowerEnabled enabled="false"/>
+                          <StopMoving/>
+                          <ClearCostmap/>
+                          <WaitForDuration duration_sec="1.0"/>
+                          <PublishHighLevelStatus state="2" state_name="MOWING"/>
+                          <AlwaysSuccess/>
+                        </Sequence>
+                        <!-- Both retry attempts failed and the failure was
+                             not collision-driven (or STOP cleared too long
+                             ago to count as transient). Bump fail_count for
                              the cells along the failed segment (DEAD-promote
                              after 3 consecutive failures), increment skipped
                              swath counter for the GUI, and let the loop

@@ -635,4 +635,48 @@ BT::NodeStatus IsObstacleStuck::tick()
   return BT::NodeStatus::SUCCESS;
 }
 
+// ---------------------------------------------------------------------------
+// WasRecentlyInCollisionStop
+// ---------------------------------------------------------------------------
+
+BT::NodeStatus WasRecentlyInCollisionStop::tick()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  double max_age_sec = 10.0;
+  if (auto res = getInput<double>("max_age_sec"))
+  {
+    max_age_sec = res.value();
+  }
+
+  std::lock_guard<std::mutex> lock(ctx->context_mutex);
+
+  // Currently in STOP — by definition "recently" stopped.
+  // CollisionMonitorState::STOP == 1.
+  if (ctx->collision_action_type == 1)
+  {
+    return BT::NodeStatus::SUCCESS;
+  }
+
+  // Never had a STOP this session.
+  if (ctx->last_collision_stop_end.time_since_epoch().count() == 0)
+  {
+    return BT::NodeStatus::FAILURE;
+  }
+
+  const auto now = std::chrono::steady_clock::now();
+  const double age_sec =
+      std::chrono::duration<double>(now - ctx->last_collision_stop_end).count();
+  if (age_sec <= max_age_sec)
+  {
+    RCLCPP_INFO(ctx->node->get_logger(),
+                "WasRecentlyInCollisionStop: STOP ended %.1fs ago (≤%.1fs) — "
+                "treating segment failure as transient dynamic obstacle",
+                age_sec,
+                max_age_sec);
+    return BT::NodeStatus::SUCCESS;
+  }
+  return BT::NodeStatus::FAILURE;
+}
+
 }  // namespace mowgli_behavior

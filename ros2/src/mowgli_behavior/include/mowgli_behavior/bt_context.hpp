@@ -162,6 +162,12 @@ struct BTContext
   /// flags "not currently in STOP".
   std::chrono::steady_clock::time_point collision_stop_since{};
 
+  /// Time of the most recent STOP→non-STOP transition. Default-constructed
+  /// = no STOP has ever ended this session. Used by WasRecentlyInCollisionStop
+  /// so transient obstacles that clear between FollowStrip retry attempts
+  /// don't fall through to MarkBlockedAndSkip and get permanently DEAD-marked.
+  std::chrono::steady_clock::time_point last_collision_stop_end{};
+
   /// Number of obstacle-backoff recoveries already attempted in the
   /// current session. Reset by EndSession.
   int obstacle_backoff_count{0};
