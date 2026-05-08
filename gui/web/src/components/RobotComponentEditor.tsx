@@ -93,6 +93,19 @@ const roundTo = (v: number, decimals: number): number => {
 const radToDeg = (r: number): number => (r * 180) / Math.PI;
 const degToRad = (d: number): number => (d * Math.PI) / 180;
 
+// dock_pose_yaw is stored as ROS/ENU yaw in radians (0 = +X / East,
+// CCW positive). Operators set the dock with a real compass, which
+// reads bearings in 0–360° clockwise from North. These helpers translate
+// between the two so the UI can speak compass while the YAML/firmware
+// keeps speaking ROS yaw.
+const yawRadToCompassBearing = (yawRad: number): number => {
+    const yawDeg = radToDeg(yawRad);
+    return ((90 - yawDeg) % 360 + 360) % 360;
+};
+const compassBearingToYawRad = (bearing: number): number => {
+    return degToRad(90 - bearing);
+};
+
 type Props = {
     values: Record<string, any>;
     onChange: (name: string, value: any) => void;
@@ -162,7 +175,7 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
         const px = robotX!;
         const py = robotY!;
         const yawRad = robotYaw!;
-        const yawDeg = roundTo(radToDeg(yawRad), 1);
+        const yawDeg = roundTo(yawRadToCompassBearing(yawRad), 1);
         const savedX = values.dock_pose_x;
         const savedY = values.dock_pose_y;
         const savedYawRad = values.dock_pose_yaw;
@@ -193,14 +206,14 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                             <Col span={8}><Text type="secondary" style={{fontSize: 11}}>Current robot</Text></Col>
                             <Col span={5}>x: <strong>{fmt(px, " m")}</strong></Col>
                             <Col span={5}>y: <strong>{fmt(py, " m")}</strong></Col>
-                            <Col span={6}>yaw: <strong>{yawDeg}°</strong></Col>
+                            <Col span={6}>bearing: <strong>{yawDeg}°</strong></Col>
                         </Row>
                         <Row gutter={[8, 4]} style={{marginTop: 4}}>
                             <Col span={8}><Text type="secondary" style={{fontSize: 11}}>Saved dock</Text></Col>
                             <Col span={5}>x: <strong>{fmt(savedX, " m")}</strong></Col>
                             <Col span={5}>y: <strong>{fmt(savedY, " m")}</strong></Col>
-                            <Col span={6}>yaw:{" "}
-                                <strong>{savedYawRad == null ? "—" : `${roundTo(radToDeg(savedYawRad), 1)}°`}</strong>
+                            <Col span={6}>bearing:{" "}
+                                <strong>{savedYawRad == null ? "—" : `${roundTo(yawRadToCompassBearing(savedYawRad), 1)}°`}</strong>
                             </Col>
                         </Row>
                     </Card>
@@ -771,12 +784,17 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                     >
                         <Row gutter={[8, 4]} align="middle">
                             <Col span={12}>
-                                <Text type="secondary" style={{ fontSize: 11 }}>Heading (compass)</Text>
+                                <Text type="secondary" style={{ fontSize: 11 }}>Bearing (compass, 0–360°)</Text>
                                 <InputNumber
-                                    value={roundTo(radToDeg(dockYawRad), 1)}
-                                    onChange={(v) => onChange("dock_pose_yaw", roundTo(degToRad(v ?? 0), 4))}
+                                    value={roundTo(yawRadToCompassBearing(dockYawRad), 1)}
+                                    onChange={(v) => {
+                                        const bearing = ((Number(v ?? 0) % 360) + 360) % 360;
+                                        onChange("dock_pose_yaw", roundTo(compassBearingToYawRad(bearing), 4));
+                                    }}
                                     step={1}
                                     precision={1}
+                                    min={0}
+                                    max={360}
                                     size="small"
                                     style={{ width: "100%" }}
                                     addonAfter="°"
@@ -799,11 +817,12 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                                                 </text>
                                             );
                                         })}
-                                        {/* Robot heading arrow */}
+                                        {/* Robot heading arrow.
+                                            Compass bearing → SVG angle: bearing 0°=N=up, SVG 0°=right (CW),
+                                            so svgAngle = bearing - 90. */}
                                         {(() => {
-                                            const yawDeg = radToDeg(dockYawRad);
-                                            // Convert compass bearing to SVG angle (compass 0°=N=up, SVG 0°=right)
-                                            const svgAngle = yawDeg - 90;
+                                            const bearing = yawRadToCompassBearing(dockYawRad);
+                                            const svgAngle = bearing - 90;
                                             const rad = svgAngle * Math.PI / 180;
                                             const tipX = 30 + 16 * Math.cos(rad);
                                             const tipY = 30 + 16 * Math.sin(rad);
@@ -824,9 +843,10 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                             </Col>
                         </Row>
                         <Typography.Paragraph type="secondary" style={{ fontSize: 10, marginTop: 4, marginBottom: 8 }}>
-                            Auto-captured on first charge by dock_yaw_to_set_pose
-                            (source: <code>{dockYawSource}</code>). Re-runs each time the
-                            robot returns to the dock — no manual entry needed.
+                            Compass bearing: 0° = N, 90° = E, 180° = S, 270° = W. Hold a
+                            phone compass behind the dock pointing the way the robot enters
+                            and read the bearing off it. Auto-captured on first charge by
+                            dock_yaw_to_set_pose (source: <code>{dockYawSource}</code>).
                         </Typography.Paragraph>
 
                         {/* Capture-from-robot action ─────────────────────── */}
@@ -853,7 +873,7 @@ export const RobotComponentEditor: React.FC<Props> = ({ values, onChange }) => {
                                 <Col flex="auto">
                                     <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                                         {poseAvailable
-                                            ? `Robot now: x=${roundTo(robotX!, 2)} m, y=${roundTo(robotY!, 2)} m, yaw=${roundTo(radToDeg(robotYaw!), 0)}°`
+                                            ? `Robot now: x=${roundTo(robotX!, 2)} m, y=${roundTo(robotY!, 2)} m, bearing=${roundTo(yawRadToCompassBearing(robotYaw!), 0)}°`
                                             : "Waiting for robot pose…"}
                                     </Typography.Text>
                                 </Col>
