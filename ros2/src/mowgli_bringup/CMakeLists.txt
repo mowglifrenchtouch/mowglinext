@@ -44,6 +44,16 @@ if(BUILD_TESTING)
     TIMEOUT 60
   )
 
+  # Static config-validation tests for nav2_params.yaml. Cheap (no nodes
+  # spun up) and they guard against regressions like the 2026-05-08
+  # coverage_goal_checker.xy_goal_tolerance=0.5 m field bug, where the
+  # FTC controller silently SUCCEEDED on the first tick and the robot
+  # never moved.
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_nav2_params test/test_nav2_params.py
+    TIMEOUT 30
+  )
+
 endif()
 
 ament_package()

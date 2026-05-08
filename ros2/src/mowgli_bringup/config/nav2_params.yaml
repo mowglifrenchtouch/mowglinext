@@ -91,9 +91,19 @@ controller_server:
 
     # Coverage goal checker: used by FTC controller. Only checks position,
     # not velocity. The FTC controller manages its own stopping logic.
+    #
+    # xy_goal_tolerance was 0.5 m, which silently broke cell-based mowing:
+    # GetNextSegment returns sub-3 m strips, often <0.5 m near the robot's
+    # current pose. SimpleGoalChecker with stateful=true fired on the
+    # first tick (start ≈ end ≈ robot, all inside the 0.5 m radius) and
+    # the controller returned SUCCEEDED before publishing a single
+    # cmd_vel. The BT looped GetNextSegment → FollowStrip → SUCCEEDED
+    # forever, robot never moved, coverage stuck below 1 %. 0.10 m forces
+    # FTC to actually traverse most of the strip; below the strip pitch
+    # (0.18 m mower_width) so mid-strip jitter doesn't false-fire.
     coverage_goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.5
+      xy_goal_tolerance: 0.10
       yaw_goal_tolerance: 6.28  # Don't check yaw for coverage paths
       stateful: true             # succeed once within tolerance, don't re-check
 
