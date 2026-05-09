@@ -100,9 +100,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-kilted-nav2-util \
     # Nav2 msgs (CostmapFilterInfo for costmap filters)
     ros-kilted-nav2-msgs \
-    # Simulation bridge (needed at runtime for ros_gz_bridge topic bridging)
-    ros-kilted-ros-gz-sim \
-    ros-kilted-ros-gz-bridge \
     # DDS middleware — Cyclone DDS is more reliable than FastRTPS on ARM
     # (no shared memory, no stale /dev/shm segments, better service discovery)
     ros-kilted-rmw-cyclonedds-cpp \
@@ -280,20 +277,21 @@ CMD ["ros2", "launch", "mowgli_bringup", "mowgli.launch.py"]
 
 # =============================================================================
 # Stage 6: simulation
-# Extends runtime with a full Gazebo installation for headless/web simulation.
+# Extends runtime with the Webots simulator for headless/web simulation.
+#
+# NOTE: This stage is mid-migration from Gazebo Ignition to Webots. The
+# Gazebo apt packages have been removed; the Webots binary + ROS2 driver
+# install steps are TODO (Phase 2 of the Webots migration). Running the
+# simulation image as-is will fail until Webots is installed here.
 # =============================================================================
 FROM runtime AS simulation
 
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Gazebo Harmonic comes via ros-kilted-ros-gz-sim (Jazzy default pairing)
-    ros-kilted-ros-gz-sim \
-    ros-kilted-ros-gz-bridge \
-    ros-kilted-ros-gz-interfaces \
     # Headless rendering (sensors need a virtual display when no GPU)
     xvfb \
-    # VNC + lightweight desktop for Gazebo GUI access from macOS
+    # VNC + lightweight desktop for sim GUI access from macOS
     tigervnc-standalone-server \
     tigervnc-common \
     novnc \
@@ -301,6 +299,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openbox \
     xterm \
     x11-utils \
+    # TODO(webots): install Webots binary + ros-kilted-webots-ros2-driver
  && rm -rf /var/lib/apt/lists/*
 
 # Copy VNC startup script
@@ -313,7 +312,7 @@ COPY foxglove/ /ros2_ws/foxglove/
 
 # Foxglove Bridge WebSocket port
 EXPOSE 8765
-# noVNC web port (Gazebo GUI via browser)
+# noVNC web port (sim GUI via browser)
 EXPOSE 6080
 
 CMD ["ros2", "launch", "mowgli_bringup", "sim_full_system.launch.py", "headless:=true", "use_rviz:=false"]

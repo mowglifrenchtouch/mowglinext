@@ -16,44 +16,6 @@ find_package(std_msgs REQUIRED)
 find_package(mowgli_interfaces REQUIRED)
 
 # ---------------------------------------------------------------------------
-# GPS degradation simulator node
-# ---------------------------------------------------------------------------
-add_executable(gps_degradation_sim_node
-  src/gps_degradation_sim_node.cpp
-)
-
-target_include_directories(gps_degradation_sim_node
-  PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-)
-
-ament_target_dependencies(gps_degradation_sim_node
-  rclcpp
-  geometry_msgs
-  std_msgs
-)
-
-# ---------------------------------------------------------------------------
-# NavSat → Pose converter for simulation GPS pipeline
-# ---------------------------------------------------------------------------
-add_executable(navsat_to_pose_node
-  src/navsat_to_pose_node.cpp
-)
-
-target_include_directories(navsat_to_pose_node
-  PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-)
-
-ament_target_dependencies(navsat_to_pose_node
-  rclcpp
-  geometry_msgs
-  sensor_msgs
-)
-
-# ---------------------------------------------------------------------------
 # Fake hardware bridge for simulation
 # ---------------------------------------------------------------------------
 add_executable(fake_hardware_bridge_node
@@ -74,8 +36,6 @@ ament_target_dependencies(fake_hardware_bridge_node
 )
 
 install(TARGETS
-  gps_degradation_sim_node
-  navsat_to_pose_node
   fake_hardware_bridge_node
   DESTINATION lib/${PROJECT_NAME}
 )
@@ -87,7 +47,6 @@ install(
   PROGRAMS
     scripts/sim_imu_noise.py
     scripts/sim_navsat_rtk_fix.py
-    scripts/sim_cmd_vel_unstamp.py
     scripts/sim_wheel_slip.py
   DESTINATION lib/${PROJECT_NAME}
 )
@@ -97,12 +56,9 @@ install(
 # ---------------------------------------------------------------------------
 install(
   DIRECTORY
-    worlds
     worlds_webots
-    models
     urdf_webots
     launch
-    config
     config_webots
     rviz
   DESTINATION share/${PROJECT_NAME}
