@@ -27,6 +27,8 @@
 #include <tf2/utils.hpp>
 #include <tf2_ros/transform_listener.hpp>
 
+#include "mowgli_nav2_plugins/obstacle_deviation.hpp"
+
 namespace mowgli_nav2_plugins
 {
 
@@ -174,6 +176,12 @@ void FTCController::declareParameters(const rclcpp_lifecycle::LifecycleNode::Sha
   config_.check_obstacles = declare_bool("check_obstacles", true);
   config_.obstacle_lookahead = declare_int("obstacle_lookahead", 5);
   config_.obstacle_footprint = declare_bool("obstacle_footprint", true);
+
+  // Obstacle deviation
+  config_.enable_obstacle_deviation = declare_bool("enable_obstacle_deviation", true);
+  config_.max_lateral_deviation = declare_double("max_lateral_deviation", 1.5);
+  config_.deviation_step = declare_double("deviation_step", 0.05);
+  config_.deviation_blend_rate = declare_double("deviation_blend_rate", 0.5);
 
   // Register parameter-change callback.
   param_cb_handle_ = node->add_on_set_parameters_callback(
@@ -337,6 +345,22 @@ rcl_interfaces::msg::SetParametersResult FTCController::onParameterChange(
     {
       config_.obstacle_footprint = p.as_bool();
     }
+    else if (key == "enable_obstacle_deviation")
+    {
+      config_.enable_obstacle_deviation = p.as_bool();
+    }
+    else if (key == "max_lateral_deviation")
+    {
+      config_.max_lateral_deviation = p.as_double();
+    }
+    else if (key == "deviation_step")
+    {
+      config_.deviation_step = p.as_double();
+    }
+    else if (key == "deviation_blend_rate")
+    {
+      config_.deviation_blend_rate = p.as_double();
+    }
   }
 
   // Ensure slow speed is always the safe baseline when parameters change.
@@ -352,6 +376,12 @@ void FTCController::setPlan(const nav_msgs::msg::Path& path)
   current_state_ = PlannerState::PRE_ROTATE;
   state_entered_time_ = clock_->now();
   is_crashed_ = false;
+
+  // Reset deviation state with the new path so a previous strip's avoidance
+  // doesn't leak into the new one.
+  is_avoiding_ = false;
+  target_lateral_deviation_ = 0.0;
+  lateral_deviation_ = 0.0;
 
   global_plan_ = path.poses;
   current_index_ = 0;
@@ -484,8 +514,17 @@ geometry_msgs::msg::TwistStamped FTCController::computeVelocityCommands(
   const double dt = (now - last_time_).seconds();
   last_time_ = now;
 
-  // Guard against very large dt on first call or after pauses.
-  const double safe_dt = std::min(dt, 0.5);
+  // Guard against pathological dt:
+  //   * Upper bound 0.5 s — prevents an integration jump after a pause
+  //     (e.g. preempted action, then resumed seconds later).
+  //   * Lower bound 0.01 s — `setPlan` resets `last_time_ = clock_->now()`
+  //     so the very first computeVelocityCommands call after a new plan
+  //     sees dt ≈ 0. Without a floor, the PID derivative becomes
+  //     `(error - 0) / 0 = ±inf`, the resulting cmd_vel is NaN, and
+  //     controller_server logs `Velocity message contains NaNs or Infs!`
+  //     and silently drops it — leaving the strip un-driven for the
+  //     entire goal_timeout window.
+  const double safe_dt = std::clamp(dt, 0.01, 0.5);
 
   if (is_crashed_)
   {
@@ -539,8 +578,18 @@ geometry_msgs::msg::TwistStamped FTCController::computeVelocityCommands(
     current_state_ = new_state;
   }
 
-  // 3. Collision check.
-  if (checkCollision(config_.obstacle_lookahead))
+  // 3. Collision check + lateral-deviation update.
+  // When enable_obstacle_deviation is true, we never throw on a lookahead
+  // collision: instead the carrot is laterally offset until the obstacle
+  // clears (see updateLateralDeviation). Throws are reserved for the
+  // hard-fail case where the offset would exceed max_lateral_deviation —
+  // BT then aborts the strip and requests the next one.
+  if (config_.enable_obstacle_deviation)
+  {
+    updateLateralDeviation(safe_dt);
+    applyLateralDeviationToCarrot();
+  }
+  else if (checkCollision(config_.obstacle_lookahead))
   {
     is_crashed_ = true;
     throw nav2_core::ControllerException("FTCController: collision detected along lookahead path.");
@@ -658,10 +707,20 @@ FTCController::PlannerState FTCController::update_planner_state()
       const double distance = local_control_point_.translation().norm();
       if (time_in_current_state() > config_.goal_timeout)
       {
+        // Approach timed out — robot didn't reach within max_goal_distance_error.
+        // Mark the controller as crashed so the next computeVelocityCommands
+        // throws a ControllerException, which the action server reports as a
+        // failure. This unblocks the BT (FollowStrip → aborted → SKIP_SEGMENT
+        // → next strip). Without it the FTC would silently sit in FINISHED
+        // emitting zero velocity, leaving the action open while the goal
+        // checker waits for a tolerance the robot will never meet.
         RCLCPP_WARN(
             logger_,
-            "FTCController: timeout in WAITING_FOR_GOAL_APPROACH, skipping to POST_ROTATE.");
-        return PlannerState::POST_ROTATE;
+            "FTCController: timeout in WAITING_FOR_GOAL_APPROACH (dist=%.3fm > "
+            "max_goal_distance_error=%.3fm); aborting strip.",
+            distance, config_.max_goal_distance_error);
+        is_crashed_ = true;
+        return PlannerState::FINISHED;
       }
       if (distance < config_.max_goal_distance_error)
       {
@@ -675,7 +734,12 @@ FTCController::PlannerState FTCController::update_planner_state()
     {
       if (time_in_current_state() > config_.goal_timeout)
       {
-        RCLCPP_WARN(logger_, "FTCController: timeout in POST_ROTATE.");
+        // Same rationale as the WAITING_FOR_GOAL_APPROACH timeout: bubble the
+        // failure up through ControllerException so the BT sees an aborted
+        // action and progresses. Otherwise FTC would idle in FINISHED with
+        // the goal-checker still unhappy about the angle tolerance.
+        RCLCPP_WARN(logger_, "FTCController: timeout in POST_ROTATE; aborting strip.");
+        is_crashed_ = true;
         return PlannerState::FINISHED;
       }
       if (std::abs(angle_error_) * (180.0 / M_PI) < config_.max_goal_angle_error)
@@ -996,7 +1060,6 @@ bool FTCController::checkCollision(int max_points)
 
   unsigned int mx = 0;
   unsigned int my = 0;
-  unsigned char previous_cost = 255u;
 
   visualization_msgs::msg::Marker obstacle_marker;
 
@@ -1047,24 +1110,118 @@ bool FTCController::checkCollision(int max_points)
             obstacle_marker, static_cast<double>(mx), static_cast<double>(my), cost, max_points);
       }
 
+      // Only abort on lethal-or-inscribed cells: the robot footprint will hit
+      // the obstacle. Inflation-gradient cells (128..252) are routinely
+      // crossed by coverage strips that intentionally pass near obstacles —
+      // collision_monitor's PolygonStop is the runtime guard for those (see
+      // CLAUDE.md invariant 5).
       if (cost >= 253u)
       {
-        // Lethal or inscribed obstacle — immediate collision.
         RCLCPP_WARN(logger_, "FTCController: lethal obstacle on path (cost=%u).", cost);
         return true;
       }
-      if (cost > 127u && cost > previous_cost)
-      {
-        // Cost increasing toward obstacle — approaching collision.
-        RCLCPP_WARN(logger_, "FTCController: possible forward collision on path (cost=%u).", cost);
-        return true;
-      }
-
-      previous_cost = cost;
     }
   }
 
   return false;
+}
+
+// ── Lateral deviation (skirt obstacles) ───────────────────────────────────────
+
+void FTCController::updateLateralDeviation(double dt)
+{
+  // Bail if no costmap or path — tests sometimes run without one of either.
+  if (costmap_map_ == nullptr || global_plan_.empty())
+  {
+    return;
+  }
+
+  const std::size_t start_idx = std::min(static_cast<std::size_t>(current_index_),
+                                         global_plan_.size() - 1);
+
+  // Step 1: figure out whether the current applied deviation still keeps the
+  // path clear in the lookahead window.
+  const bool currently_clear = ObstacleDeviation::isPathClearWithDeviation(
+      *costmap_map_, global_plan_, start_idx, config_.obstacle_lookahead, lateral_deviation_);
+
+  if (!currently_clear)
+  {
+    // Need to grow the deviation. If we weren't already avoiding, choose a
+    // side from the first obstacle pose; otherwise keep the current sign.
+    if (!is_avoiding_)
+    {
+      const int obs_idx = ObstacleDeviation::findFirstObstacleIndex(
+          *costmap_map_, global_plan_, start_idx, config_.obstacle_lookahead);
+      if (obs_idx < 0)
+      {
+        // Footprint collision but no path-pose hit (e.g. inflated cell next
+        // to robot from a transient scan return) — nothing to deviate around.
+        return;
+      }
+      target_lateral_deviation_ = ObstacleDeviation::chooseDeviationSide(
+          *costmap_map_,
+          global_plan_[static_cast<std::size_t>(obs_idx)],
+          config_.max_lateral_deviation,
+          config_.deviation_step);
+      if (target_lateral_deviation_ == 0.0)
+      {
+        // Both sides blocked at the obstacle pose — give up, let BT replan.
+        is_crashed_ = true;
+        throw nav2_core::ControllerException(
+            "FTCController: obstacle blocks both sides, cannot skirt.");
+      }
+      is_avoiding_ = true;
+      RCLCPP_INFO(logger_,
+                  "FTCController: entering AVOIDANCE (target_dev=%.2fm at idx=%d)",
+                  target_lateral_deviation_,
+                  obs_idx);
+    }
+
+    // Grow the deviation until clear or past the cap.
+    target_lateral_deviation_ = ObstacleDeviation::growDeviationUntilClear(
+        *costmap_map_,
+        global_plan_,
+        start_idx,
+        config_.obstacle_lookahead,
+        target_lateral_deviation_,
+        config_.max_lateral_deviation,
+        config_.deviation_step);
+
+    if (std::abs(target_lateral_deviation_) > config_.max_lateral_deviation)
+    {
+      is_crashed_ = true;
+      throw nav2_core::ControllerException(
+          "FTCController: lateral deviation needed > max_lateral_deviation, aborting strip.");
+    }
+  }
+  else if (is_avoiding_)
+  {
+    // Path is clear at the current deviation — start blending back toward
+    // the original path.
+    target_lateral_deviation_ = 0.0;
+    if (std::abs(lateral_deviation_) < 0.01)
+    {
+      is_avoiding_ = false;
+      RCLCPP_INFO(logger_, "FTCController: AVOIDANCE complete, back on path.");
+    }
+  }
+
+  // Step 2: slew lateral_deviation_ toward target_lateral_deviation_ at the
+  // configured blend rate (m/s of lateral shift).
+  const double max_step = config_.deviation_blend_rate * dt;
+  const double delta = target_lateral_deviation_ - lateral_deviation_;
+  lateral_deviation_ += std::clamp(delta, -max_step, max_step);
+}
+
+void FTCController::applyLateralDeviationToCarrot()
+{
+  if (lateral_deviation_ == 0.0)
+  {
+    return;
+  }
+  // Shift the carrot's translation in its own y-axis (left of heading).
+  const Eigen::Vector3d lateral(0.0, lateral_deviation_, 0.0);
+  current_control_point_.translation() += current_control_point_.linear() * lateral;
 }
 
 void FTCController::debugObstacle(

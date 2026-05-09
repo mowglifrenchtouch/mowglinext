@@ -142,6 +142,33 @@ private:
                      unsigned char cost,
                      int max_ids);
 
+  // ── Obstacle deviation ────────────────────────────────────────────────────
+  //
+  // When checkCollision() reports a lethal cell in the lookahead window,
+  // instead of throwing we laterally offset the carrot to skirt the obstacle.
+  // Implementation in mowgli_nav2_plugins/obstacle_deviation.{hpp,cpp}.
+  //
+  //   target_lateral_deviation_ — the offset the algorithm wants right now
+  //                                (positive = left of path heading).
+  //   lateral_deviation_         — the smoothed value actually applied to
+  //                                the carrot, slewed toward the target at
+  //                                config_.deviation_blend_rate m/s.
+  //   is_avoiding_               — true while the deviation is non-zero, used
+  //                                to bias chooseDeviationSide toward the
+  //                                already-chosen side (no zigzag).
+
+  /// Update target / smoothed lateral deviation based on current costmap
+  /// state. Throws ControllerException if the algorithm needs more than
+  /// max_lateral_deviation to find clearance.
+  void updateLateralDeviation(double dt);
+
+  /// Apply lateral_deviation_ to current_control_point_ in-place.
+  void applyLateralDeviationToCarrot();
+
+  bool is_avoiding_{false};
+  double target_lateral_deviation_{0.0};
+  double lateral_deviation_{0.0};
+
   // ── Oscillation detection ─────────────────────────────────────────────────
 
   bool checkOscillation(const geometry_msgs::msg::TwistStamped& cmd_vel);
@@ -232,6 +259,15 @@ private:
     bool check_obstacles{true};
     int obstacle_lookahead{5};
     bool obstacle_footprint{true};
+
+    // Obstacle deviation (FTC's "skirt the obstacle" behaviour). When
+    // disabled, hitting an obstacle in lookahead throws ControllerException
+    // (the legacy behaviour). When enabled, the carrot is laterally offset
+    // until the path is clear, then blended back once the obstacle is past.
+    bool enable_obstacle_deviation{true};
+    double max_lateral_deviation{1.5};   // m, abort if needed offset exceeds this
+    double deviation_step{0.05};         // m, search increment
+    double deviation_blend_rate{0.5};    // m/s, slew rate for lateral_deviation_
   };
 
   Config config_;
