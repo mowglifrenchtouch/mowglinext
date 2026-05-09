@@ -1,0 +1,60 @@
+# diff_drive_controller config for the Webots Mowgli sim.
+#
+# Why these values:
+#   * wheel_separation: 0.325 m — physical track from mowgli_robot.yaml
+#   * wheel_radius: 0.093 m — physical wheel radius from mowgli_robot.yaml
+#   * base_frame_id: "base_footprint" — REP-105. We collapse base_link
+#     and base_footprint to the same frame in our use case (flat
+#     outdoor mower, no significant tilt) but diff_drive_controller
+#     publishes odometry with child_frame_id = base_frame_id, so we
+#     name the published child explicitly to match what Nav2 + the rest
+#     of the stack expect.
+#   * odom_frame_id: "odom" — matches robot_localization, ekf_odom_node.
+#   * publish_rate: 50 Hz — matches existing /wheel_odom rate.
+#   * use_stamped_vel: true — twist_mux outputs TwistStamped, no need
+#     for sim_cmd_vel_unstamp.py adapter (deleted).
+#   * Cmd vel and odom remapped at the launch-file level to match
+#     the existing topic names (/cmd_vel and /wheel_odom_raw).
+
+controller_manager:
+  ros__parameters:
+    update_rate: 50
+
+    diffdrive_controller:
+      type: diff_drive_controller/DiffDriveController
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+diffdrive_controller:
+  ros__parameters:
+    left_wheel_names: ["left_wheel_motor"]
+    right_wheel_names: ["right_wheel_motor"]
+
+    wheel_separation: 0.325
+    wheel_radius: 0.093
+
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+
+    use_stamped_vel: true
+
+    publish_rate: 50.0
+
+    # Don't publish odom→base TF from the controller — robot_localization's
+    # ekf_odom_node owns that transform (REP-105).
+    enable_odom_tf: false
+
+    linear:
+      x:
+        max_velocity: 0.50           # m/s — leaves headroom over Mowgli max
+        min_velocity: -0.50
+        max_acceleration: 1.0
+        min_acceleration: -1.0
+
+    angular:
+      z:
+        max_velocity: 3.0            # rad/s — matches measured ~π rad/s capability
+        min_velocity: -3.0
+        max_acceleration: 5.0
+        min_acceleration: -5.0

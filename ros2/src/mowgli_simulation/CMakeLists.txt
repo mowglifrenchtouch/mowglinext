@@ -98,9 +98,12 @@ install(
 install(
   DIRECTORY
     worlds
+    worlds_webots
     models
+    urdf_webots
     launch
     config
+    config_webots
     rviz
   DESTINATION share/${PROJECT_NAME}
 )

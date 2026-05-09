@@ -1,0 +1,76 @@
+<?xml version="1.0" ?>
+<!--
+  Webots-side URDF for the Mowgli mower.
+
+  This URDF is consumed only by webots_ros2_driver to wire the Webots
+  device names (defined in worlds_webots/mowgli_garden.wbt) to ROS2
+  topics + frame_ids. The robot's static TF tree (base_link →
+  imu_link / lidar_link / gps_link) is published by the regular
+  robot_state_publisher fed from mowgli_bringup/urdf/mowgli.urdf.xacro
+  — the same xacro used on real hardware. Two URDFs, one for sim
+  device wiring, one for the actual robot description.
+
+  base_link == base_footprint in our use case (flat outdoor mower with
+  no significant tilt). diff_drive_controller publishes its odometry
+  with child_frame_id: base_footprint to satisfy REP-105 / Nav2.
+-->
+<robot name="MowgliMower">
+  <!--
+    Minimal kinematic link block. The static TF tree (base_link →
+    sensor links) is published by mowgli_bringup's robot_state_publisher
+    using the production URDF. RSP just needs *a* link to validate this
+    file as a URDF.
+  -->
+  <link name="base_link"/>
+
+  <webots>
+    <device reference="lidar" type="Lidar">
+      <ros>
+        <enabled>true</enabled>
+        <updateRate>10</updateRate>
+        <topicName>/scan</topicName>
+        <alwaysOn>true</alwaysOn>
+        <frameName>lidar_link</frameName>
+      </ros>
+    </device>
+
+    <device reference="gps" type="GPS">
+      <ros>
+        <enabled>true</enabled>
+        <updateRate>5</updateRate>
+        <topicName>/gps/fix_raw</topicName>
+        <alwaysOn>true</alwaysOn>
+        <frameName>gps_link</frameName>
+      </ros>
+    </device>
+
+    <plugin type="webots_ros2_driver::Ros2IMU">
+      <enabled>true</enabled>
+      <updateRate>100</updateRate>
+      <topicName>/imu/data_sim</topicName>
+      <alwaysOn>true</alwaysOn>
+      <frameName>imu_link</frameName>
+      <inertialUnitName>inertial_unit</inertialUnitName>
+      <gyroName>gyro</gyroName>
+      <accelerometerName>accelerometer</accelerometerName>
+    </plugin>
+
+    <plugin type="webots_ros2_control::Ros2Control" />
+  </webots>
+
+  <ros2_control name="WebotsControl" type="system">
+    <hardware>
+      <plugin>webots_ros2_control::Ros2ControlSystem</plugin>
+    </hardware>
+    <joint name="left_wheel_motor">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <command_interface name="velocity"/>
+    </joint>
+    <joint name="right_wheel_motor">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <command_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+</robot>
