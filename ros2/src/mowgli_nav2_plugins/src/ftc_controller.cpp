@@ -167,8 +167,13 @@ void FTCController::declareParameters(const rclcpp_lifecycle::LifecycleNode::Sha
 
   // Recovery
   config_.oscillation_recovery = declare_bool("oscillation_recovery", true);
-  config_.oscillation_v_eps = declare_double("oscillation_v_eps", 5.0);
-  config_.oscillation_omega_eps = declare_double("oscillation_omega_eps", 5.0);
+  // 0.05 m/s and 0.05 rad/s match the ftc_controller.hpp Config defaults.
+  // The previous 5.0 m/s default was a typo — at 5 m/s eps the oscillation
+  // detector treats almost any motion as "stopped" and never fires its
+  // recovery override. With 0.05 the detector fires only when the robot is
+  // truly idle (below the firmware ~0.12 m/s deadband).
+  config_.oscillation_v_eps = declare_double("oscillation_v_eps", 0.05);
+  config_.oscillation_omega_eps = declare_double("oscillation_omega_eps", 0.05);
   config_.oscillation_recovery_min_duration =
       declare_double("oscillation_recovery_min_duration", 5.0);
 

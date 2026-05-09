@@ -1,7 +1,12 @@
 # Nav2 parameters for Mowgli outdoor robot mower.
-# Controller: RegulatedPurePursuit (placeholder until FTCController is integrated).
-# Planner:    SmacPlanner2D.
-# Costmaps configured for outdoor operation with LiDAR at /scan.
+# Controller:   mowgli_nav2_plugins/FTCController (Follow-The-Carrot PID
+#               with three decoupled channels + obstacle-skirting via
+#               lateral carrot deviation). Used for both FollowPath
+#               (transit) and FollowCoveragePath (strips).
+# Planner:      nav2_smac_planner/SmacPlanner2D.
+# Coverage:     cell-based strip planner in mowgli_map (not nav2_coverage).
+# Costmaps:     outdoor operation with LiDAR /scan (filtered via
+#               costmap_scan_filter_node into /scan_costmap).
 
 bt_navigator:
   ros__parameters:
@@ -10,6 +15,9 @@ bt_navigator:
     robot_base_frame: base_footprint
     odom_topic: /odometry/filtered
     bt_loop_duration: 10
+    # 60 ms — Nav2 default is 20 ms (NOT 1.0 s as a previous comment
+    # claimed). 3× the default to absorb ARM scheduler jitter on
+    # blackboard service calls without making timeouts feel sluggish.
     default_server_timeout: 60
     # Default is 1.0 s — observed on ARM that planner_server / controller_server
     # finish lifecycle transition to active before bt_navigator but their
@@ -80,11 +88,17 @@ controller_server:
     # jitter doesn't false-fire. yaw_goal_tolerance must stay > FTC's
     # max_goal_angle_error so FTC's POST_ROTATE finishes inside its band
     # before the goal_checker demands tighter than the controller can deliver.
+    # stateful: true (Nav2 default) — once XY is met, the checker latches
+    # XY-OK and only re-checks yaw. Without this, RTK lateral noise during
+    # POST_ROTATE can drop the robot back out of XY tolerance and force a
+    # re-translation, which oscillates against FTC's PID. Note: xy_goal_tolerance
+    # is OVERRIDDEN AT LAUNCH by mowgli_robot.yaml.coverage_xy_tolerance via
+    # navigation.launch.py (the 0.05 here matches by coincidence).
     coverage_goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.05
       yaw_goal_tolerance: 0.30
-      stateful: false
+      stateful: true
 
     # FollowPath (transit) — FTCController. Same plugin as FollowCoveragePath
     # since FTC handles both pivots and obstacle deviation natively.
@@ -211,8 +225,12 @@ behavior_server:
   ros__parameters:
     use_sim_time: false
     enable_stamped_cmd_vel: true
-    costmap_topic: local_costmap/costmap_raw
-    footprint_topic: local_costmap/published_footprint
+    # Kilted+ renamed costmap_topic / footprint_topic to local_*_topic
+    # (with global_* siblings); the un-prefixed keys are silently ignored.
+    # Values match Nav2's local-costmap defaults so this is purely
+    # explicit-is-better-than-implicit.
+    local_costmap_topic: local_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
     behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
     spin:
@@ -343,13 +361,12 @@ global_costmap:
           # now fixed by the ground constraint so we can filter properly.
           # 2D LaserScan rays are at lidar_link.z (≈0.22 m). After TF
           # to map their per-point Z is constant ≈ lidar height. With
-          # min_obstacle_height: 0.08 the band excluded those points
-          # in some sim configurations, leaving the costmap empty of
-          # obstacles → obstacle_tracker (which feeds off
-          # /global_costmap/costmap) saw nothing → auto-promote never
-          # fired → strip planner generated strips straight through
-          # obs_mid and MPPI froze at its perimeter. 0 keeps every
-          # projected return.
+          # min_obstacle_height: 0.08 used to exclude valid LiDAR
+          # returns in some sim configurations (LaserScan rays project
+          # at constant lidar_link.z ≈ 0.22 m), leaving the costmap
+          # empty so obstacle_tracker had nothing to surface. 0 keeps
+          # every projected return; the upper bound (max_obstacle_height
+          # below) handles ceiling/canopy filtering.
           min_obstacle_height: 0.0
           max_obstacle_height: 1.5
           clearing: true
@@ -417,14 +434,13 @@ local_costmap:
       footprint: "[[0.50, 0.20], [0.50, -0.20], [-0.10, -0.20], [-0.10, 0.20]]"
       resolution: 0.05
       rolling_window: true
-      # 12×12 m (was 6×6). DWB's transformGlobalPlan uses
-      # `dist_threshold = max(width, height) / 2` as its cap on
-      # transform_end_threshold (and indirectly transform_start_threshold).
-      # With 6 m costmap that gave 3 m which the headland walk exceeds in
-      # seconds — once the robot is >3 m from any of the path's first
-      # `prune_point` poses, transformation_begin == transformation_end and
-      # FollowStrip aborts with "Resulting plan has 0 poses in it". 12 m
-      # gives us 6 m headroom, enough for the perimeter walk's curvature.
+      # 12×12 m local costmap. The 13 m headland walk plus FTC's
+      # ~2 m max_follow_distance means the robot's lookahead window
+      # routinely sits 3-5 m from base_footprint; a 6 m costmap
+      # truncated the obstacle signal mid-strip (planner replans
+      # blind, controller hits unfiltered LiDAR returns). 12 m gives
+      # ~6 m radius around base_footprint, enough for any one strip
+      # plus its end-of-segment pivot.
       width: 12
       height: 12
       # keepout_filter removed: it marks boundary as LETHAL in the local
@@ -464,13 +480,12 @@ local_costmap:
           # hits when the mower pitches on uneven terrain.
           # 2D LaserScan rays are at lidar_link.z (≈0.22 m). After TF
           # to map their per-point Z is constant ≈ lidar height. With
-          # min_obstacle_height: 0.08 the band excluded those points
-          # in some sim configurations, leaving the costmap empty of
-          # obstacles → obstacle_tracker (which feeds off
-          # /global_costmap/costmap) saw nothing → auto-promote never
-          # fired → strip planner generated strips straight through
-          # obs_mid and MPPI froze at its perimeter. 0 keeps every
-          # projected return.
+          # min_obstacle_height: 0.08 used to exclude valid LiDAR
+          # returns in some sim configurations (LaserScan rays project
+          # at constant lidar_link.z ≈ 0.22 m), leaving the costmap
+          # empty so obstacle_tracker had nothing to surface. 0 keeps
+          # every projected return; the upper bound (max_obstacle_height
+          # below) handles ceiling/canopy filtering.
           min_obstacle_height: 0.0
           max_obstacle_height: 1.5
           clearing: true
@@ -491,13 +506,11 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 10.0
-        # 0.25 m (was 0.40). Now that obstacle_min_range is 0.10 m and
-        # 0.30 m to match the global costmap (and the new 0.60 m
-        # chassis). Local controller (RotationShim+DWB) uses critic-
-        # based rollout, so the inflation gradient feeds into
-        # BaseObstacle scoring naturally without triggering hard
-        # aborts. The 0.05 m bump from 0.25 doesn't meaningfully
-        # change strip following at 0.18 m mower_width.
+        # 0.30 m matches the global costmap inflation. FTC reads
+        # inflation cells via checkCollision() / obstacle_lookahead
+        # — only LETHAL (cost ≥ 253) cells trigger lateral deviation,
+        # so a moderate inflation gradient is informational rather
+        # than action-forcing.
         inflation_radius: 0.30
 
 # ---------------------------------------------------------------------------
@@ -542,10 +555,11 @@ docking_server:
     max_retries: 3
     base_frame: base_footprint
     fixed_frame: odom
-    # 2026-05-09: docking_server deprecated dock_backwards in favour
-    # of per-plugin dock_direction. Setting both for back-compat.
+    # docking_server-level dock_backwards is deprecated in Kilted+; the
+    # replacement (dock_direction) lives PER-PLUGIN under
+    # simple_charging_dock below. Keep dock_backwards: false here only as
+    # an explicit guard — top-level dock_direction is silently ignored.
     dock_backwards: false
-    dock_direction: "forward"
     dock_prestaging_tolerance: 0.5
     # Disable the docking controller's internal collision check. It
     # projects the dock-approach trajectory through the local_costmap
@@ -579,6 +593,12 @@ docking_server:
       pose: [0.0, 0.0, 0.0]  # Overridden at launch from dock_pose_x/y/yaw params
     simple_charging_dock:
       plugin: "opennav_docking::SimpleChargingDock"
+      # Forward dock approach (matches the YardForce charger contact
+      # geometry — robot drives nose-first into the dock).
+      dock_direction: "forward"
+      # 0.1 A (default 0.5 A): the YardForce charger sources >0.1 A
+      # almost immediately on contact; 0.5 A would add ~1 s of delay
+      # before is_charging_ flips and the BT considers the dock reached.
       charging_threshold: 0.1
       # Geometric distance (m) from base_link to dock pose for isDocked().
       # RTK-Fixed gives σ ~3 mm, so 0.05 m is a comfortable envelope
@@ -678,34 +698,6 @@ collision_monitor:
 # with the correct node list. This section provides parameters that get merged
 # via RewrittenYaml.
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# Coverage server (legacy opennav_coverage config — kept for reference).
-# Cell-based strip coverage now handles mowing; no external planner needed.
-# ---------------------------------------------------------------------------
-coverage_server:
-  ros__parameters:
-    use_sim_time: false
-    # Robot parameters
-    robot_width: 0.40
-    operation_width: 0.18
-    min_turning_radius: 0.01
-    linear_curv_change: 200.0
-    # Headland
-    default_headland_width: 0.50
-    default_headland_type: "CONSTANT"
-    # Swath generation
-    default_swath_type: "LENGTH"
-    default_swath_angle_type: "SET_ANGLE"
-    default_swath_angle: 0.0
-    default_allow_overlap: false
-    # Route ordering
-    default_route_type: "BOUSTROPHEDON"
-    # Path connecting (turns between swaths)
-    default_path_type: "DUBIN"
-    default_path_continuity_type: "CONTINUOUS"
-    # Coordinate system
-    coordinates_in_cartesian_frame: true
-
 lifecycle_manager_navigation:
   ros__parameters:
     use_sim_time: false

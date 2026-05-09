@@ -58,10 +58,10 @@ mowgli:
     mag_yaw_variance: 0.0027
     # Dock seeding (consumed by dock_yaw_to_set_pose)
     dock_pose_yaw_sigma_rad: 0.035
-    # Informational only — circumference 2π·0.093 = 0.584 m, so
-    # 300 ticks/m × 0.584 m/rev ≈ 175 ticks per revolution. Kept as a
-    # cross-check for future wheel-size changes.
-    ticks_per_meter: 300.0
+    # (Informational: circumference 2π·0.093 = 0.584 m, so
+    #  300 ticks/m × 0.584 m/rev ≈ 175 ticks per revolution. ticks_per_meter
+    #  is declared once above; this comment stays as the wheel-size
+    #  cross-check.)
 
     # Front casters
     caster_radius: 0.03
@@ -83,11 +83,18 @@ mowgli:
     lidar_z: 0.22              # vertical offset (m)
     lidar_yaw: 3.1408          # heading offset (rad) — ~π for 180°-rotated mount
 
-    # IMU mounting (relative to base_link = wheel axis centre)
+    # IMU mounting (relative to base_link = wheel axis centre).
+    # imu_pitch / imu_roll: bench-zero default. The hardware_bridge
+    # IMU calibration phase logs the implied mounting offset on each
+    # docking event; promote any sustained |offset| > 1° here so that
+    # gravity removal stops leaking into yaw integration. See
+    # CLAUDE.md invariant 6.
     imu_x: 0.18                # forward offset from wheel axis (m)
     imu_y: 0.0                 # lateral offset (m)
     imu_z: 0.095               # vertical offset (m) — base_height / 2
-    imu_yaw: 0.0               # heading offset (rad) — if IMU is rotated
+    imu_roll: 0.0              # mounting roll  (rad)
+    imu_pitch: 0.0             # mounting pitch (rad)
+    imu_yaw: 0.0               # heading offset (rad) — auto-calibrated via GUI button
 
     # GPS antenna mounting (relative to base_link = wheel axis centre)
     # From OpenMower: OM_ANTENNA_OFFSET_X=0.3 (antenna on front top cover)
@@ -105,6 +112,12 @@ mowgli:
     # scan-matching-driven map-frame consistency through RTK-Float
     # gaps.
     use_fusion_graph: true
+
+    # use_lidar (default true): if false, navigation.launch.py boots
+    # the no-lidar config (different costmap setup, FollowPath without
+    # obstacle layer) — useful for hardware bring-up before the LiDAR
+    # is mounted.
+    use_lidar: true
 
     # use_magnetometer (default false): subscribe to /imu/mag_yaw and
     # let it influence the map-frame yaw. The chassis motor field
@@ -136,8 +149,11 @@ mowgli:
     gps_protocol: "UBX"
     datum_lat: 0.0             # map origin latitude  (set per-site)
     datum_lon: 0.0             # map origin longitude (set per-site)
-    gps_wait_after_undock_sec: 10.0   # wait for RTK fix after undocking
-    gps_timeout_sec: 5.0              # pause mowing if no GPS for this long
+    # (Removed 2026-05-10: gps_wait_after_undock_sec / gps_timeout_sec
+    #  had no readers anywhere on the runtime path. The BT's
+    #  CalibrateHeadingFromUndock and the GPS health check use their own
+    #  hardcoded values. Re-add here if/when those nodes are
+    #  parameterised.)
 
     # NTRIP (RTK correction stream)
     ntrip_enabled: false
@@ -168,9 +184,11 @@ mowgli:
     outline_offset: 0.05           # inward offset from boundary (m)
     mow_angle_offset_deg: -1.0    # -1 = auto-detect optimal angle
     mow_angle_increment_deg: 0.0  # rotate pattern each full pass
-    headland_width: 0.18           # headland = 1 × tool_width
-    path_spacing: 0.18             # = tool_width for full coverage
-    min_turning_radius: 0.30       # differential drive can turn tight
+    # (Removed 2026-05-10: headland_width / path_spacing /
+    #  min_turning_radius had no readers in the runtime path. The
+    #  cell-based strip planner uses map_server.yaml.mower_width
+    #  for inter-strip spacing; nav2's coverage_server is not loaded.
+    #  Re-add here when wiring through to coverage_planner.cpp.)
 
     # -----------------------------------------------------------------
     # Docking
@@ -196,7 +214,8 @@ mowgli:
     # -----------------------------------------------------------------
     # Modes: 0=ignore, 1=dock, 2=dock_until_dry, 3=pause_auto
     rain_mode: 2
-    rain_delay_minutes: 30.0       # wait after rain stops before resuming
+    # (rain_delay_minutes removed 2026-05-10 — no reader in BT or
+    #  hardware_bridge. Re-add when behavior_tree_node consumes it.)
     rain_debounce_sec: 10.0        # rain must persist this long to trigger
 
     # -----------------------------------------------------------------
