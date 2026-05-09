@@ -52,12 +52,22 @@
     </collision>
   </link>
 
-  <!-- Flat outdoor mower: collapse base_link and base_footprint. -->
+  <!-- REP-105: base_footprint is on the ground, base_link above it.
+       odom→base_footprint is published by ekf_odom_node (Phase 2 sim
+       and production). RSP must therefore make base_footprint the
+       PARENT of base_link, otherwise base_footprint has two parents
+       (odom AND base_link) and tf2 silently picks one — Nav2 lookups
+       then resolve against a stale or wrong chain.
+
+       Phase 1 worked with the old direction because no ekf_odom was
+       running; Phase 2 brings it up. Inline Robot {} in mowgli_garden.wbt
+       sits at world z=0.10, so base_footprint at world z=0 ⇒ base_link
+       offset of +0.10 m above base_footprint. -->
   <link name="base_footprint"/>
-  <joint name="base_link_to_base_footprint" type="fixed">
-    <parent link="base_link"/>
-    <child link="base_footprint"/>
-    <origin xyz="0 0 -0.10" rpy="0 0 0"/>
+  <joint name="base_footprint_to_base_link" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.10" rpy="0 0 0"/>
   </joint>
 
   <!-- Left rear drive wheel (physics in .wbt — see comment on base_link). -->
@@ -78,6 +88,12 @@
   <joint name="left_wheel_motor" type="continuous">
     <parent link="base_link"/>
     <child link="left_wheel"/>
+    <!-- Wheel HingeJoint anchor matches the .wbt (-0.10 in robot frame
+         → wheel centre at world z=0, half-buried in the floor). The
+         buried geometry is intentional: ODE clamps the wheel out and
+         the constant upward push pins the chassis against tip-over
+         under cmd_vel acceleration. Phase 1 measured ω_cmd vs
+         ω_measured at <0.01 % error with this layout. -->
     <origin xyz="0 0.1625 -0.10" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit effort="10.0" velocity="100.0"/>
@@ -101,6 +117,7 @@
   <joint name="right_wheel_motor" type="continuous">
     <parent link="base_link"/>
     <child link="right_wheel"/>
+    <!-- See left_wheel_motor for the rationale on z=-0.10. -->
     <origin xyz="0 -0.1625 -0.10" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit effort="10.0" velocity="100.0"/>

@@ -128,6 +128,11 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             "world": world,
             "use_sim_time": "true",
+            # Headless physics-only — no GUI render wait, simulation runs
+            # as fast as the host can step. Critical for E2E tests where
+            # we need wall-clock progress in the BT (Nav2 lifecycle
+            # activation, RecordArea, MOWING) within reasonable time.
+            "mode": "fast",
         }.items(),
     )
 
@@ -373,7 +378,12 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             {
                 "use_sim_time": True,
-                "input_topic": "/imu/data_raw",
+                # Webots IMU plugin (Ros2IMU in mowgli_webots.urdf) emits
+                # /imu/data_sim. The previous /imu/data_raw matched the
+                # Gazebo-era topic name and silently produced nothing in
+                # Webots — robot_localization saw zero IMU input and the
+                # map→odom TF never converged.
+                "input_topic": "/imu/data_sim",
                 "output_topic": "/imu/data",
                 # All bias + white noise temporarily zeroed for
                 # fusion_graph debugging — gives a perfect-sensor sim so
