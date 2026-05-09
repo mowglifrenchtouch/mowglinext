@@ -51,6 +51,8 @@ assert_not_empty() {
 # ── Source common helpers (needed by configure_* functions) ─────────────────
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/i18n.sh"
+source "$SCRIPT_DIR/lib/config.sh"
+source "$SCRIPT_DIR/lib/state.sh"
 load_locale
 
 # ���─ Sandbox ────────────────────────────────────────────────────────────────
@@ -130,6 +132,7 @@ assert_eq "Full preset: TFLUNA_EDGE_ENABLED=false" "false" "$TFLUNA_EDGE_ENABLED
 echo ""
 echo "── configure_gps with preset tests ──"
 
+source "$SCRIPT_DIR/lib/serial_probe.sh"
 source "$SCRIPT_DIR/lib/gps.sh"
 
 pick_uart_port() {
@@ -417,6 +420,7 @@ echo "── Script syntax tests ──"
 for script in \
   "$SCRIPT_DIR/mowglinext.sh" \
   "$SCRIPT_DIR/lib/gps.sh" \
+  "$SCRIPT_DIR/lib/serial_probe.sh" \
   "$SCRIPT_DIR/lib/lidar.sh" \
   "$SCRIPT_DIR/lib/range.sh" \
   "$SCRIPT_DIR/lib/common.sh" \

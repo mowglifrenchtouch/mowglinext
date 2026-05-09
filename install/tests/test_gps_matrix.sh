@@ -183,6 +183,80 @@ assert_eq "unicore web preset selects by-id interactively" "$serial_dir/usb-Unic
 assert_eq "unicore web preset keeps backend" "unicore" "${GNSS_BACKEND:-}"
 unset SERIAL_BY_ID_DIR
 
+# ── Explicit GPS_BAUD must remain authoritative ───────────────────────────
+section "explicit GPS_BAUD is not auto-replaced"
+
+repo="$SANDBOX/repo_explicit_baud"
+sandbox_repo "$repo"
+harness_init "$repo"
+
+export PRESET_LOADED=true
+export STATE_ACTIVE_PRESET_COUNT=4
+STATE_PARSED_KEYS=(GNSS_BACKEND GPS_CONNECTION GPS_PROTOCOL GPS_BAUD)
+STATE_PARSED_VALUES=(gps uart NMEA 115200)
+
+GNSS_BACKEND=gps
+GPS_CONNECTION=uart
+GPS_PROTOCOL=NMEA
+GPS_BAUD=115200
+GPS_UART_DEVICE=/dev/ttyAMA4
+
+prompt_or_probe_baud() {
+  fail "explicit GPS_BAUD is not auto-replaced" "prompt_or_probe_baud should not be called"
+  return 1
+}
+
+if configure_gps >/dev/null 2>&1; then
+  pass "explicit GPS_BAUD preset configures GPS"
+else
+  fail "explicit GPS_BAUD preset configures GPS"
+fi
+assert_eq "explicit GPS_BAUD remains unchanged" "115200" "${GPS_BAUD:-}"
+unset -f prompt_or_probe_baud
+
+# ── Unicore web preset without GPS_BAUD can auto-detect baud ──────────────
+section "unicore web preset auto-detects GPS_BAUD"
+
+repo="$SANDBOX/repo_unicore_web_auto_baud"
+sandbox_repo "$repo"
+harness_init "$repo"
+
+export PRESET_LOADED=true
+export STATE_ACTIVE_PRESET_COUNT=1
+STATE_PARSED_KEYS=(GNSS_BACKEND)
+STATE_PARSED_VALUES=(unicore)
+
+GNSS_BACKEND=unicore
+unset GPS_CONNECTION GPS_PROTOCOL GPS_BAUD GPS_BY_ID 2>/dev/null || true
+
+prompt_count=0
+prompt() {
+  prompt_count=$((prompt_count + 1))
+  case "$prompt_count" in
+    1) REPLY="1" ;; # connection: USB
+    2) REPLY="1" ;; # protocol: UBX
+    *) REPLY="${2:-}" ;;
+  esac
+}
+pick_serial_by_id() {
+  REPLY="$serial_dir/usb-Unicore_UM980"
+}
+probe_args_file="$SANDBOX/unicore-probe-args"
+serial_probe_baud() {
+  printf '%s\n%s\n' "$1" "$2" > "$probe_args_file"
+  printf '921600\n'
+}
+
+if configure_gps >/dev/null 2>&1; then
+  pass "unicore web preset without GPS_BAUD configures GPS"
+else
+  fail "unicore web preset without GPS_BAUD configures GPS"
+fi
+mapfile -t probe_args < "$probe_args_file"
+assert_eq "unicore baud probe uses selected by-id" "$serial_dir/usb-Unicore_UM980" "${probe_args[0]:-}"
+assert_eq "unicore baud probe uses backend" "unicore" "${probe_args[1]:-}"
+assert_eq "unicore web preset writes detected GPS_BAUD" "921600" "${GPS_BAUD:-}"
+
 # ── Invalid GNSS backend name should fail ──────────────────────────────────
 section "Invalid gnss backend is rejected"
 

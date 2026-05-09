@@ -72,6 +72,7 @@ configure_gps() {
   : "${GNSS_BACKEND:=gps}"
   local gnss_preconfigured=false
   local gps_preconfigured=false
+  local gps_baud_preconfigured=false
 
   if [[ "${GNSS_BACKEND:-}" == "nmea" ]]; then
     warn_legacy_nmea_backend_once
@@ -85,11 +86,13 @@ configure_gps() {
       if preset_key_loaded GPS_CONNECTION && preset_key_loaded GPS_PROTOCOL; then
         gps_preconfigured=true
       fi
+      preset_key_loaded GPS_BAUD && gps_baud_preconfigured=true
     else
       [ -n "${GNSS_BACKEND:-}" ] && gnss_preconfigured=true
       if [ -n "${GPS_CONNECTION:-}" ] && [ -n "${GPS_PROTOCOL:-}" ]; then
         gps_preconfigured=true
       fi
+      [ -n "${GPS_BAUD:-}" ] && gps_baud_preconfigured=true
     fi
   fi
 
@@ -130,6 +133,21 @@ configure_gps() {
       pick_uart_port "${GPS_UART_DEVICE:-/dev/ttyAMA4}"
       GPS_UART_DEVICE="$REPLY"
     fi
+
+    if [[ "$gps_baud_preconfigured" != "true" ]]; then
+      local probe_port=""
+      if [[ "${GPS_CONNECTION}" == "uart" ]]; then
+        probe_port="${GPS_UART_DEVICE:-}"
+      elif [[ "${GPS_CONNECTION}" == "usb" ]]; then
+        probe_port="${GPS_BY_ID:-${GPS_PORT:-}}"
+      fi
+
+      if [ -n "$probe_port" ]; then
+        prompt_or_probe_baud "$probe_port" "${GNSS_BACKEND:-gps}" "${GPS_PROTOCOL:-UBX}" "${GPS_BAUD:-460800}" "auto"
+        GPS_BAUD="$REPLY"
+      fi
+    fi
+
     if [[ "${GPS_DEBUG_ENABLED}" == "true" ]]; then
       pick_uart_port "${GPS_DEBUG_UART_DEVICE:-/dev/ttyS0}"
       GPS_DEBUG_UART_DEVICE="$REPLY"
@@ -231,12 +249,20 @@ configure_gps() {
         ;;
     esac
 
-    # Generic GPS in NMEA mode prompts for baud since NMEA receivers vary
-    # widely (9600 default, 38400/115200 common for higher rates).
+    local probe_port=""
+    local default_baud="${GPS_BAUD:-460800}"
     if [ "$GNSS_BACKEND" = "gps" ] && [ "$GPS_PROTOCOL" = "NMEA" ]; then
-      echo ""
-      echo "NMEA baud rate (typical: 9600, 38400, 115200):"
-      prompt "$MSG_CHOICE" "9600"
+      default_baud="9600"
+    fi
+
+    if [[ "${GPS_CONNECTION}" == "uart" ]]; then
+      probe_port="${GPS_UART_DEVICE:-}"
+    elif [[ "${GPS_CONNECTION}" == "usb" ]]; then
+      probe_port="${GPS_BY_ID:-${GPS_PORT:-}}"
+    fi
+
+    if [ -n "$probe_port" ]; then
+      prompt_or_probe_baud "$probe_port" "${GNSS_BACKEND:-gps}" "${GPS_PROTOCOL:-UBX}" "$default_baud" "ask"
       GPS_BAUD="$REPLY"
     fi
 
@@ -263,17 +289,6 @@ configure_gps() {
     local gps_debug_kernel
     gps_debug_kernel="$(basename "$GPS_DEBUG_UART_DEVICE")"
     GPS_DEBUG_UART_RULE="KERNEL==\"${gps_debug_kernel}\", SYMLINK+=\"gps_debug\", MODE=\"0666\""
-  fi
-
-  # Unicore UART → 460800. The Mowgli PCB UART path (ttyAMA4) is wired
-  # for 460800 (matches the F9P UBX rate), and the operator is expected
-  # to configure the UM982 receiver to the same speed. The UBX/NMEA
-  # protocol selector above is irrelevant for the Unicore driver — it
-  # speaks Unicore-NMEA extensions natively — so we override whatever
-  # baud the protocol path chose. USB is left alone (CDC-ACM doesn't
-  # care about the configured rate).
-  if [ "${GNSS_BACKEND:-}" = "unicore" ] && [ "${GPS_CONNECTION:-}" = "uart" ]; then
-    GPS_BAUD="460800"
   fi
 
   echo ""

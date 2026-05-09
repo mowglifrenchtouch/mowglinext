@@ -82,6 +82,8 @@ harness_init() {
   # shellcheck source=/dev/null
   source "$lib_dir/env.sh"
   # shellcheck source=/dev/null
+  source "$lib_dir/serial_probe.sh"
+  # shellcheck source=/dev/null
   source "$lib_dir/gps.sh"
   # shellcheck source=/dev/null
   source "$lib_dir/lidar.sh"
