@@ -1401,7 +1401,7 @@ TEST_F(CoverageCellScenarioTest, PerimeterRingFiresAfterInRowExhaust)
     pt.y = static_cast<float>(p.second);
     obs.points.push_back(pt);
   }
-  ASSERT_TRUE(node_->apply_promoted_obstacle(0, obs));
+  ASSERT_TRUE(node_->apply_promoted_obstacle_for_test(0, obs));
 
   {
     std::lock_guard<std::mutex> lock(node_->map_mutex());

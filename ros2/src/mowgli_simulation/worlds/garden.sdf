@@ -847,7 +847,18 @@
     </model>
     <model name="obs_mid">
       <static>true</static>
-      <pose>3.0 0.0 0.5 0 0 0</pose>
+      <!-- Moved (3,0) → (-2,0): the previous (3,0) was 1 m past the
+           east boundary of the mowing polygon (-7,-3)..(2,3).
+           obstacle_tracker correctly rejects out-of-polygon clusters
+           so it never auto-promoted, but the inflation around it in
+           the costmap still bled back into our polygon and froze
+           every FollowStrip that approached the east boundary
+           (MPPI's ObstaclesCritic refused to drive that close).
+           (-2,0) is well inside the polygon, so the obstacle gets
+           tracked and auto-promoted, the strip planner skips the
+           cells it covers, and we actually exercise the headland-turn
+           path. -->
+      <pose>-2.0 0.0 0.5 0 0 0</pose>
       <link name="link">
         <collision name="c"><geometry><cylinder><radius>0.30</radius><length>1.0</length></cylinder></geometry></collision>
         <visual name="v"><geometry><cylinder><radius>0.30</radius><length>1.0</length></cylinder></geometry>

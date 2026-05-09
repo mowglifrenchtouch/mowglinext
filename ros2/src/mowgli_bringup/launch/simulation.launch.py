@@ -162,8 +162,13 @@ def generate_launch_description() -> LaunchDescription:
         "/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan "
         # IMU
         "/imu/data@sensor_msgs/msg/Imu[gz.msgs.IMU "
-        # Wheel odometry (Gazebo → ROS2)
-        "/wheel_odom@nav_msgs/msg/Odometry[gz.msgs.Odometry "
+        # Wheel odometry (Gazebo → ROS2). Bridge as /wheel_odom_raw so
+        # sim_wheel_slip.py can intercept, stamp production-grade twist
+        # covariance (vy=1e-4 non-holo constraint, vx σ=0.1 m/s,
+        # wz σ=0.03 rad/s — see hardware_bridge_node.cpp:1228-1237) and
+        # optionally inject slip events, then republish on /wheel_odom
+        # for the EKF / fusion_graph.
+        "/wheel_odom_raw@nav_msgs/msg/Odometry[gz.msgs.Odometry "
         # cmd_vel (ROS2 → Gazebo)
         "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist"
     )

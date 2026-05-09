@@ -290,8 +290,12 @@ def generate_launch_description() -> LaunchDescription:
                 "output_topic": "/gps/fix",
                 # Realistic mowing scenario: 90 s RTK-Fixed (open sky),
                 # 30 s RTK-Float (light tree cover), 10 s no-fix (dense
-                # canopy / multipath). Set to "" for always-FIXED.
-                "quality_pattern": "90,RTK_FIXED;30,RTK_FLOAT;10,NO_FIX",
+                # canopy / multipath). Empty pattern → always RTK_FIXED
+                # (σ=3 mm, no Python noise injection — sensor only sees
+                # the SDF GPS plugin's intrinsic ~2 cm noise). Bias
+                # disabled while debugging fusion_graph; restore the
+                # cycle pattern once the baseline is clean.
+                "quality_pattern": "",
                 "noise_seed": 42,
             }
         ],
@@ -327,6 +331,77 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ------------------------------------------------------------------
+    # 11.6 twist_mux + cmd_vel TwistStamped→Twist relay (sim only)
+    #
+    # In production, mowgli.launch.py runs twist_mux with output remapped
+    # to /cmd_vel (TwistStamped) directly into hardware_bridge. The sim
+    # path skips mowgli.launch.py and the Gazebo cmd_vel bridge consumes
+    # plain geometry_msgs/Twist (gz.msgs.Twist has no stamped variant), so
+    # we need both pieces here:
+    #   1. twist_mux output goes to /cmd_vel_stamped (TwistStamped)
+    #   2. sim_cmd_vel_unstamp relays /cmd_vel_stamped → /cmd_vel (Twist)
+    #      which gz_ros2_bridge then forwards to Gazebo's diff-drive plugin.
+    # ------------------------------------------------------------------
+    twist_mux_params = os.path.join(bringup_dir, "config", "twist_mux.yaml")
+    twist_mux_node = Node(
+        package="twist_mux",
+        executable="twist_mux",
+        name="twist_mux",
+        output="screen",
+        parameters=[
+            twist_mux_params,
+            {"use_sim_time": True},
+        ],
+        remappings=[("cmd_vel_out", "/cmd_vel_stamped")],
+    )
+
+    cmd_vel_unstamp_node = Node(
+        package="mowgli_simulation",
+        executable="sim_cmd_vel_unstamp.py",
+        name="sim_cmd_vel_unstamp",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": True,
+                "input_topic": "/cmd_vel_stamped",
+                "output_topic": "/cmd_vel",
+            }
+        ],
+    )
+
+    # ------------------------------------------------------------------
+    # 11.7 Sim wheel-odom adapter — relays /wheel_odom_raw → /wheel_odom
+    #      and stamps the production-grade twist covariance that the
+    #      real hardware_bridge_node sets (vy variance = 1e-4 enforces
+    #      the non-holonomic constraint, vx σ ≈ 0.1 m/s, wz σ ≈ 0.03
+    #      rad/s). gz-sim's diff-drive plugin publishes default zero
+    #      covariance, which lets GPS lateral noise leak into the EKF
+    #      as apparent sideways drift and broke strip tracking in sim
+    #      runs (boundary violations, COVERAGE_FAILED loops). Also
+    #      injects modest periodic slip events so EKF/fusion_graph see
+    #      realistic encoder/GPS divergence.
+    # ------------------------------------------------------------------
+    sim_wheel_slip_node = Node(
+        package="mowgli_simulation",
+        executable="sim_wheel_slip.py",
+        name="sim_wheel_slip",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": True,
+                "input_topic": "/wheel_odom_raw",
+                "output_topic": "/wheel_odom",
+                "slip_period_s": 30.0,
+                "slip_duration_s": 1.0,
+                # Bias temporarily zeroed for fusion_graph debugging —
+                # we want to isolate algorithm behaviour from sensor
+                # noise. Reset to 0.05 once the baseline is clean.
+                "slip_vx_bias": 0.0,
+            }
+        ],
+    )
+
+    # ------------------------------------------------------------------
     # 12. Sim IMU noise injector
     #     Adds gyro/accel bias-random-walk + white noise to Gazebo's
     #     perfect IMU stream (/imu/data_gz from bridge) and republishes
@@ -343,13 +418,20 @@ def generate_launch_description() -> LaunchDescription:
                 "use_sim_time": True,
                 "input_topic": "/imu/data_gz",
                 "output_topic": "/imu/data",
-                # MPU-9250 / LIS6DSL-class MEMS defaults.
-                "gyro_white_std": 0.005,
-                "gyro_bias_walk_std": 1.0e-4,
-                "gyro_bias_init_std": 1.0e-3,
-                "accel_white_std": 0.05,
-                "accel_bias_walk_std": 1.0e-3,
-                "accel_bias_init_std": 0.05,
+                # All bias + white noise temporarily zeroed for
+                # fusion_graph debugging — combined with the SDF gyro/
+                # accel/GPS/LiDAR noise also zeroed (model.sdf), this
+                # gives a perfect-sensor sim so we can isolate
+                # algorithm behaviour from sensor noise. Restore the
+                # MPU-9250 / LIS6DSL defaults once the baseline is
+                # clean (gyro_white_std=0.005, walk=1e-4, init=1e-3;
+                # accel_white_std=0.05, walk=1e-3, init=0.05).
+                "gyro_white_std": 0.0,
+                "gyro_bias_walk_std": 0.0,
+                "gyro_bias_init_std": 0.0,
+                "accel_white_std": 0.0,
+                "accel_bias_walk_std": 0.0,
+                "accel_bias_init_std": 0.0,
                 "noise_seed": 42,
             }
         ],
@@ -376,6 +458,9 @@ def generate_launch_description() -> LaunchDescription:
             fake_hardware_bridge_node,
             sim_navsat_rtk_fix_node,
             navsat_converter_node,
+            twist_mux_node,
+            cmd_vel_unstamp_node,
+            sim_wheel_slip_node,
             sim_imu_noise_node,
             behavior_tree_node,
             map_server_node,

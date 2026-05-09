@@ -882,6 +882,179 @@ bool MapServerNode::find_next_segment(size_t area_index,
   const double row_pitch = mower_width_ > 1e-3 ? mower_width_ : (resolution_ * 2.0);
   // Step length along u: the resolution gives us per-cell granularity.
   const double step = resolution_;
+
+  // ── 0. Headland-first emission ──────────────────────────────────────
+  // Before the boustrophedon row planner runs, emit a single perimeter
+  // pass so the robot mows the area's outer ring first. That ring
+  // becomes the lane the robot pivots into at every subsequent
+  // strip-end headland turn — without it, every U-turn happens right
+  // at the polygon edge where the controller can't safely rotate.
+  // The pass is offset inward by mower_width/2 + boundary margin so
+  // the mower brush kisses the recorded boundary.
+  // One-shot per area; reset by area edits / reset_mow_progress.
+  if (headland_emitted_areas_.find(area_index) == headland_emitted_areas_.end())
+  {
+    headland_emitted_areas_.insert(area_index);
+
+    const double inset = strip_boundary_margin_m_ + 0.5 * row_pitch;
+
+    // Build inset perimeter using edge-bisector offset: for each
+    // vertex, compute the inward bisector of the two adjacent edges
+    // and push the vertex along it by `inset / sin(α/2)` so the
+    // resulting offset polygon stays parallel to every original edge
+    // at exactly `inset` distance. Centroid-radial shrink (the
+    // earlier attempt) over-insets corners on a rectangle — e.g. a
+    // 9×6 polygon's SE corner shrinks 1.07 m on x but 0.72 m on y,
+    // producing a diamond-ish ring that wanders away from the
+    // polygon edge near corners and confuses the row planner.
+    //
+    // Determine "inward" normal direction: a positive cross product
+    // (edge_in × edge_out) indicates a CCW polygon; the inward
+    // normal is the left-hand 90° rotation of each edge. We average
+    // the two edge normals at each vertex to get the bisector.
+    auto signed_area = [&]() -> double
+    {
+      double a = 0.0;
+      const size_t n = poly.points.size();
+      for (size_t i = 0; i < n; ++i)
+      {
+        const auto& p0 = poly.points[i];
+        const auto& p1 = poly.points[(i + 1) % n];
+        a += static_cast<double>(p0.x) * static_cast<double>(p1.y) -
+             static_cast<double>(p1.x) * static_cast<double>(p0.y);
+      }
+      return 0.5 * a;
+    };
+    const double sign = signed_area() >= 0.0 ? 1.0 : -1.0;  // +1 = CCW, inward = left
+
+    std::vector<std::pair<double, double>> inset_ring;
+    const size_t n_v = poly.points.size();
+    inset_ring.reserve(n_v + 1);
+    for (size_t i = 0; i < n_v; ++i)
+    {
+      const auto& prev = poly.points[(i + n_v - 1) % n_v];
+      const auto& curr = poly.points[i];
+      const auto& next = poly.points[(i + 1) % n_v];
+
+      // Edge vectors and their lengths.
+      const double e1x = curr.x - prev.x;
+      const double e1y = curr.y - prev.y;
+      const double e2x = next.x - curr.x;
+      const double e2y = next.y - curr.y;
+      const double l1 = std::hypot(e1x, e1y);
+      const double l2 = std::hypot(e2x, e2y);
+      if (l1 < 1e-6 || l2 < 1e-6)
+      {
+        inset_ring.emplace_back(curr.x, curr.y);
+        continue;
+      }
+      // Inward unit normals (left-hand rotation × sign).
+      const double n1x = -sign * e1y / l1;
+      const double n1y = sign * e1x / l1;
+      const double n2x = -sign * e2y / l2;
+      const double n2y = sign * e2x / l2;
+      // Bisector and inset distance along it.
+      double bx = n1x + n2x;
+      double by = n1y + n2y;
+      const double bl = std::hypot(bx, by);
+      if (bl < 1e-6)
+      {
+        // Straight 180° vertex (degenerate); just offset by n1.
+        inset_ring.emplace_back(curr.x + inset * n1x, curr.y + inset * n1y);
+        continue;
+      }
+      bx /= bl;
+      by /= bl;
+      // sin(α/2) = (n1·b + n2·b) / 2 = (bl)/2 since b = (n1+n2)/bl
+      const double sin_half = 0.5 * bl;
+      // Clamp to avoid huge offsets at near-zero-angle vertices.
+      const double scale = inset / std::max(sin_half, 0.2);
+      inset_ring.emplace_back(curr.x + bx * scale, curr.y + by * scale);
+    }
+
+    if (inset_ring.size() >= 3)
+    {
+      // Pick the inset vertex closest to the robot as the headland
+      // start, walking the ring in whichever direction is the shorter
+      // approach. Via points are the remaining vertices in order; the
+      // path-builder in on_get_next_segment will linearly interpolate
+      // the ring corners at `resolution_` granularity, giving FTC /
+      // DWB a continuous headland strip.
+      size_t start_idx = 0;
+      double best_d = std::numeric_limits<double>::infinity();
+      for (size_t i = 0; i < inset_ring.size(); ++i)
+      {
+        const double dx2 = inset_ring[i].first - robot_x;
+        const double dy2 = inset_ring[i].second - robot_y;
+        const double d2 = dx2 * dx2 + dy2 * dy2;
+        if (d2 < best_d)
+        {
+          best_d = d2;
+          start_idx = i;
+        }
+      }
+
+      // Pick direction: forward (next vertex) vs backward — whichever
+      // matches the robot's current yaw better, so the entry into
+      // the ring doesn't require an immediate 180° pivot.
+      const auto& v_start = inset_ring[start_idx];
+      const auto& v_fwd = inset_ring[(start_idx + 1) % inset_ring.size()];
+      const auto& v_bwd =
+          inset_ring[(start_idx + inset_ring.size() - 1) % inset_ring.size()];
+      const double yaw_fwd =
+          std::atan2(v_fwd.second - v_start.second, v_fwd.first - v_start.first);
+      const double yaw_bwd =
+          std::atan2(v_bwd.second - v_start.second, v_bwd.first - v_start.first);
+      const bool reverse =
+          std::fabs(wrap_pi(yaw_bwd - robot_yaw)) <
+          std::fabs(wrap_pi(yaw_fwd - robot_yaw));
+
+      out_seg.start_x = v_start.first;
+      out_seg.start_y = v_start.second;
+      const size_t n = inset_ring.size();
+      // Visit all `n-1` other vertices in order, ending at the
+      // vertex JUST BEFORE start (so the path is open, not a closed
+      // loop). Closing the loop would put the goal pose AT the start
+      // pose, and Nav2's goal-checker fires immediately on tick 1
+      // because the robot has not moved away from the start yet —
+      // the entire perimeter pass collapses to "Reached the goal!"
+      // after one cycle and 0.2 % coverage. Leaving the path open
+      // forces DWB to actually drive all the way around. The final
+      // ~mower_width gap between the path end and the start is
+      // closed organically by the brush radius on subsequent strips.
+      const size_t n_via = n - 1;  // skip the final wrap-around back to start
+      for (size_t k = 1; k <= n_via; ++k)
+      {
+        const size_t i = reverse ? (start_idx + n - k) % n : (start_idx + k) % n;
+        out_seg.via_points.emplace_back(inset_ring[i].first, inset_ring[i].second);
+      }
+      // End at the LAST distinct vertex visited (= last via point),
+      // not back at start.
+      out_seg.end_x = out_seg.via_points.back().first;
+      out_seg.end_y = out_seg.via_points.back().second;
+      // via_points already contains the end point (it's the last
+      // vertex in the walk); pop it so the path-builder doesn't draw
+      // a zero-length leg from end back to end.
+      out_seg.via_points.pop_back();
+      out_seg.cell_count = static_cast<int>(n);
+      out_seg.termination_reason = "headland_pass";
+      // FALSE so the BT routes this through FollowStrip
+      // (NavigateThroughPoses with the full via-point list) instead of
+      // TransitToStrip (NavigateToPose to just the end pose, which
+      // throws away the perimeter walk and lets Smac plan a straight
+      // line to the strip start). Headland's whole point is to walk
+      // the perimeter first; if we send it as long_transit, Nav2
+      // re-plans direct-to-end and the headland is effectively skipped
+      // — observed in run 50 as TRANSIT → RETURNING_HOME within 17 s
+      // because Nav2 took the shortest path, the BT thought the
+      // segment was done after one Nav2 goal, and AreaLoop unwound
+      // when GetNextSegment then returned all-cells-mowed.
+      out_seg.is_long_transit = false;
+      return true;
+    }
+    // Degenerate polygon (<3 inset vertices after shrink) — fall through
+    // to the regular boustrophedon path.
+  }
   // Default cap when caller passes 0 — keeps each FollowSegment short
   // enough that obstacle changes get reflected by the next call.
   const double cap = max_segment_length_m > 0.0 ? max_segment_length_m : 3.0;
@@ -1156,6 +1329,52 @@ bool MapServerNode::find_next_segment(size_t area_index,
   }
   if (reason.empty())
     reason = walked >= cap ? "max_length" : "row_end";
+
+  // Zero-progress recovery: when the walk in `dir` produces no cells
+  // (e.g. the chosen start cell is right at a blocker in that
+  // direction), try the opposite direction once before bailing. This
+  // catches the common case where the row-search (block at line 1021)
+  // picks a cell at the row's boundary edge — boustrophedon picked
+  // dir=+1 but the only unmowed run extends the other way, or vice
+  // versa. Without it find_next_segment returns success+empty path
+  // and the BT escalates to COVERAGE_FAILED_DOCKING after only a few
+  // strips even though many rows remain.
+  if (cells == 0 && std::hypot(end_x - start_x, end_y - start_y) < 1e-6)
+  {
+    dir = -dir;
+    // Re-snap to the actual start position's u (we may have moved
+    // walk_u during row-search in step 5).
+    double snap_v;
+    project_to_basis(B, start_x, start_y, walk_u, snap_v);
+    end_x = start_x;
+    end_y = start_y;
+    via_points.clear();
+    reason.clear();
+    walked = 0.0;  // reset budget for the opposite-direction walk
+    while (walked < cap)
+    {
+      const double next_u = walk_u + dir * step;
+      double cx, cy;
+      basis_to_map(B, next_u, row_v, cx, cy);
+      if (is_blocking(cx, cy, reason))
+        break;
+      end_x = cx;
+      end_y = cy;
+      ++cells;
+      walked += step;
+      walk_u = next_u;
+    }
+    if (reason.empty())
+      reason = walked >= cap ? "max_length" : "row_end";
+
+    // Both directions yielded zero progress → the start cell is
+    // genuinely isolated. Falling through with cells==0 results in
+    // an empty path; the BT's GetSegmentRetry will re-query and the
+    // row-search at line ~1021 will pick a different cell next time.
+    // We deliberately do NOT declare coverage_complete here — that
+    // misfires when the area still has reachable rows further out
+    // (run 32 collapsed to 100% complete after 1 strip).
+  }
 
   out_seg.end_x = end_x;
   out_seg.end_y = end_y;

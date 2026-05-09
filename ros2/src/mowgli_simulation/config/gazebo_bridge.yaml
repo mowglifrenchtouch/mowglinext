@@ -14,11 +14,22 @@
   gz_type_name: gz.msgs.Twist
   direction: ROS_TO_GZ
 
-- ros_topic_name: /wheel_odom
+- ros_topic_name: /wheel_odom_raw
   gz_topic_name: /odom
   ros_type_name: nav_msgs/msg/Odometry
   gz_type_name: gz.msgs.Odometry
   direction: GZ_TO_ROS
+  # Bridge gz /odom → /wheel_odom_raw (NOT /wheel_odom). sim_wheel_slip.py
+  # subscribes to /wheel_odom_raw and republishes on /wheel_odom with
+  # production-grade twist covariance — most importantly cov[7]=1e-4
+  # (vy non-holonomic constraint) which the gz-sim DiffDrive plugin
+  # leaves at default 0. Without that floor, the EKF accepts arbitrary
+  # lateral velocity from GPS noise as real motion, fusion_graph yaw
+  # drifts/oscillates, and DWB never converges on a stable carrot
+  # heading. Bridging directly to /wheel_odom bypassed sim_wheel_slip
+  # entirely (zero publishers on /wheel_odom_raw, slip relay inactive),
+  # leaving the EKF starved of the constraint — which is what made
+  # cmd_vel oscillate ±0.32 rad/s during every sim run.
 
 - ros_topic_name: /scan
   gz_topic_name: /scan

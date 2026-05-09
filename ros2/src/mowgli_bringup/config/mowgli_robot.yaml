@@ -26,8 +26,8 @@ mowgli:
     chassis_height: 0.19
     chassis_mass_kg: 8.76
 
-    # Drive wheels (rear)
-    wheel_radius: 0.04475
+    # Drive wheels (rear) — physical wheel diameter 186 mm → radius 0.093 m
+    wheel_radius: 0.093
     wheel_width: 0.04
     wheel_track: 0.325         # centre-to-centre (from OpenMower).
                                # Read by hardware_bridge_node and URDF.
@@ -58,8 +58,8 @@ mowgli:
     mag_yaw_variance: 0.0027
     # Dock seeding (consumed by dock_yaw_to_set_pose)
     dock_pose_yaw_sigma_rad: 0.035
-    # Informational only — circumference 2π·0.04475 = 0.281 m, so
-    # 300 ticks/m × 0.281 m/rev ≈ 84 ticks per revolution. Kept as a
+    # Informational only — circumference 2π·0.093 = 0.584 m, so
+    # 300 ticks/m × 0.584 m/rev ≈ 175 ticks per revolution. Kept as a
     # cross-check for future wheel-size changes.
     ticks_per_meter: 300.0
 
@@ -104,7 +104,7 @@ mowgli:
     # robots equipped with LiDAR + RTK GPS where you want
     # scan-matching-driven map-frame consistency through RTK-Float
     # gaps.
-    use_fusion_graph: false
+    use_fusion_graph: true
 
     # use_magnetometer (default false): subscribe to /imu/mag_yaw and
     # let it influence the map-frame yaw. The chassis motor field
@@ -119,7 +119,7 @@ mowgli:
     # rmse-scaled covariance — bounded drift between consecutive
     # nodes even without GPS. Required for "robot keeps mowing
     # through GPS dropouts" scenarios.
-    use_scan_matching: false
+    use_scan_matching: true
 
     # use_loop_closure (default false; only effective when
     # use_scan_matching is also true): on every new node, search
@@ -128,7 +128,7 @@ mowgli:
     # that snaps the trajectory back to consistency with previously-
     # seen places. Resets accumulated drift across multi-minute GPS-
     # less stretches at the cost of one ICP per candidate per tick.
-    use_loop_closure: false
+    use_loop_closure: true
 
     # -----------------------------------------------------------------
     # GPS / Positioning
@@ -219,5 +219,5 @@ mowgli:
     # controller declare 'reached' on tick 1 — the BT loops
     # GetNextSegment forever without moving the robot. Field-broken
     # 2026-05-08 with the old 0.5 m default.
-    coverage_xy_tolerance: 0.10    # metres — strict, below mower_width
+    coverage_xy_tolerance: 0.05    # metres — tight to force path tracing
     progress_timeout_sec: 60.0     # seconds without progress before recovery

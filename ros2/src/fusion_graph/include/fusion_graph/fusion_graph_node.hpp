@@ -129,6 +129,16 @@ private:
   std::string odom_frame_ = "odom";
   std::string base_frame_ = "base_footprint";
 
+  // Forward-stamps the published map→odom TF by this many seconds so that
+  // controllers/costmaps querying lookupTransform at clock_->now() always
+  // find a TF stamp in the buffer that is >= their request time, letting
+  // tf2 interpolate back instead of throwing ExtrapolationException. Only
+  // needed under sim_time, where Nav2 cycles can fall a few ms ahead of
+  // the latest publish; safe on real hardware too because map→odom moves
+  // very slowly relative to typical lead times (~100 ms = sub-cm error
+  // even at full transit speed).
+  double tf_publish_lead_s_ = 0.0;
+
   // Subscriptions.
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_wheel_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;

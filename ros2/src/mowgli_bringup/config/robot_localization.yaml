@@ -43,7 +43,14 @@ ekf_odom_node:
     frequency: 25.0
     sensor_timeout: 0.5
     two_d_mode: true            # forces Z=0, roll=0, pitch=0
-    transform_time_offset: 0.0
+    # Forward-stamp the published TF by 100 ms so Nav2 lookups at
+    # clock_->now() always find a TF stamp >= the request time. Without
+    # this, sim_time can advance 1-3 ms past the latest publish and tf2
+    # raises ExtrapolationException ("Lookup would require extrapolation
+    # into the future"), freezing controller_server. Safe under real
+    # hardware: 100 ms of extrapolation is sub-cm error even at 0.3 m/s
+    # transit speed, well inside Nav2's transform_tolerance.
+    transform_time_offset: 0.1
     transform_timeout: 0.1
     print_diagnostics: false
     debug: false
@@ -132,7 +139,14 @@ ekf_map_node:
     frequency: 10.0
     sensor_timeout: 0.5
     two_d_mode: true
-    transform_time_offset: 0.0
+    # Forward-stamp the published TF by 100 ms so Nav2 lookups at
+    # clock_->now() always find a TF stamp >= the request time. Without
+    # this, sim_time can advance 1-3 ms past the latest publish and tf2
+    # raises ExtrapolationException ("Lookup would require extrapolation
+    # into the future"), freezing controller_server. Safe under real
+    # hardware: 100 ms of extrapolation is sub-cm error even at 0.3 m/s
+    # transit speed, well inside Nav2's transform_tolerance.
+    transform_time_offset: 0.1
     transform_timeout: 0.1
     print_diagnostics: false
     debug: false

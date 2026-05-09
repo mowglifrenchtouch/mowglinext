@@ -569,11 +569,65 @@ void MapServerNode::on_odom(nav_msgs::msg::Odometry::ConstSharedPtr /*msg*/)
 
 void MapServerNode::on_obstacles(mowgli_interfaces::msg::ObstacleArray::ConstSharedPtr msg)
 {
-  // Snapshot ONLY — the avoidance path no longer reacts to tracker
-  // observations. The cache lets ~/promote_obstacle resolve a tracker
-  // id without a round-trip through the GUI.
-  std::lock_guard<std::mutex> lock(map_mutex_);
-  last_tracker_snapshot_ = msg->obstacles;
+  // 1. Always cache the latest snapshot so ~/promote_obstacle can
+  //    resolve a tracker id → polygon without a round-trip through the
+  //    GUI. (Pre-existing behavior; the GUI flow stays unchanged.)
+  // 2. Auto-promote PERSISTENT obstacles that the tracker has reached
+  //    high confidence about into the classification layer of whichever
+  //    mowing (non-navigation) area contains the obstacle's centroid.
+  //    This makes the strip planner skip cells that overlap real,
+  //    confirmed obstacles instead of generating strips through them
+  //    and relying on FollowStrip to abort + IncrementSkippedSwaths.
+  //    Each tracker id is auto-promoted at most once per node lifetime.
+  //    User-driven ~/promote_obstacle still owns persistence to areas.dat.
+  std::vector<std::pair<size_t, geometry_msgs::msg::Polygon>> to_promote;
+  {
+    std::lock_guard<std::mutex> lock(map_mutex_);
+    last_tracker_snapshot_ = msg->obstacles;
+
+    for (const auto& obs : msg->obstacles)
+    {
+      if (obs.status != mowgli_interfaces::msg::TrackedObstacle::PERSISTENT)
+        continue;
+      if (auto_promoted_obstacle_ids_.count(obs.id))
+        continue;
+      if (obs.polygon.points.size() < 3)
+        continue;
+
+      geometry_msgs::msg::Point32 centroid32;
+      centroid32.x = static_cast<float>(obs.centroid.x);
+      centroid32.y = static_cast<float>(obs.centroid.y);
+
+      for (size_t i = 0; i < areas_.size(); ++i)
+      {
+        if (areas_[i].is_navigation_area)
+          continue;
+        if (point_in_polygon(centroid32, areas_[i].polygon))
+        {
+          to_promote.emplace_back(i, obs.polygon);
+          auto_promoted_obstacle_ids_.insert(obs.id);
+          RCLCPP_INFO(get_logger(),
+                      "auto-promoting tracker obstacle #%u (centroid %.2f,%.2f) "
+                      "into area %zu — strip planner will skip overlapping cells",
+                      obs.id, obs.centroid.x, obs.centroid.y, i);
+          break;
+        }
+      }
+    }
+  }
+
+  // apply_promoted_obstacle takes map_mutex_ itself, so call outside the
+  // lock above. Failures are logged but non-fatal: the tracker id stays
+  // in auto_promoted_obstacle_ids_ either way to prevent retry storms.
+  for (const auto& [area_idx, poly] : to_promote)
+  {
+    if (!apply_promoted_obstacle(area_idx, poly))
+    {
+      RCLCPP_WARN(get_logger(),
+                  "auto-promotion to area %zu rejected (polygon validation failed)",
+                  area_idx);
+    }
+  }
 }
 
 void MapServerNode::on_costmap(nav_msgs::msg::OccupancyGrid::ConstSharedPtr msg)

@@ -79,6 +79,7 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
   map_frame_ = declare_parameter<std::string>("map_frame", "map");
   odom_frame_ = declare_parameter<std::string>("odom_frame", "odom");
   base_frame_ = declare_parameter<std::string>("base_frame", "base_footprint");
+  tf_publish_lead_s_ = declare_parameter<double>("tf_publish_lead_s", 0.0);
 
   graph_ = std::make_unique<GraphManager>(gp);
 
@@ -1082,7 +1083,12 @@ void FusionGraphNode::PublishOutputs(const TickOutput& out)
   const tf2::Transform T_map_odom = T_map_base * T_odom_base.inverse();
 
   geometry_msgs::msg::TransformStamped t_map_odom;
-  t_map_odom.header.stamp = this->now();
+  // Forward-stamp by tf_publish_lead_s_ so Nav2 controller_server /
+  // RotationShim queries at clock_->now() find a TF in the buffer that
+  // is >= the request time and tf2 interpolates back instead of raising
+  // ExtrapolationException. Default 0 (real hardware); sim sets ~0.1s.
+  t_map_odom.header.stamp =
+      this->now() + rclcpp::Duration::from_seconds(tf_publish_lead_s_);
   t_map_odom.header.frame_id = map_frame_;
   t_map_odom.child_frame_id = odom_frame_;
   t_map_odom.transform = tf2::toMsg(T_map_odom);

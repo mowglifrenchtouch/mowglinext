@@ -28,16 +28,42 @@ map_server_node:
     # but stops the planner from drafting big detours outside the area.
     keepout_nav_margin: 0.3
 
-    # Strip inset: distance from polygon edge to strip endpoints.
-    # Set so the recorded boundary sits ~40 cm outside the actual mowed
-    # strips, leaving room for FTC tracking error and pose drift before
-    # the robot crosses the polygon.
-    strip_boundary_margin_m: 0.40
+    # /local_costmap published values are 0–100 (OccupancyGrid units, with
+    # the Nav2 costmap_2d → OccupancyGrid mapping: internal 254/253 →
+    # OG 100/99, inflation 100..252 → OG ~80, free → 0).  Default 80 was
+    # too sensitive: ordinary inflation around the LiDAR-detected
+    # obstacles triggered `is_costmap_blocked`, which is_costmap_blocked
+    # callers use to gate strip cells. Combined with the 3 s reachability
+    # recompute, this caused 1000+-cell DEAD/LAWN flips every cycle and
+    # made GetNextSegment return empty paths after a few strips. 99
+    # restricts the keepout to lethal-or-inscribed cells only — the
+    # robot footprint genuinely cannot fit there — and matches the FTC's
+    # checkCollision threshold.
+    costmap_obstacle_threshold: 99
+
+    # Strip inset: distance from polygon edge to strip endpoints. Must
+    # exceed the worst-case overshoot of the active controller. With
+    # RotationShim+DWB (current setup) the rollout sim_time=1.0 s at
+    # max_vel_x=0.30 m/s means DWB can project the robot up to 0.30 m
+    # past the strip endpoint before the goal-checker fires; carrot
+    # lookaheads add ~0.6 m more in the worst case. 1.20 m absorbs all
+    # that with margin and stops the robot from clipping the polygon
+    # edge on every headland turn (the 4 boundary violations we saw on
+    # run 31 with 0.80 m). Effective mowable area is still ~ polygon -
+    # 2.4 m on each axis (e.g. 9×6 polygon → 6.6×3.6 m of strips =
+    # 24 m², well above the dock-only minimum).
+    strip_boundary_margin_m: 1.20
 
     # Mowing strip angle in degrees. NaN (default) = auto-compute from
     # polygon shape (minimum bounding rectangle — strips align with the
     # longest axis to minimise turns). 0 = north-south, 90 = east-west.
-    mow_angle_deg: .nan
+    # 90 explicit: garden polygon (-7,-3)..(2,3) has its long axis on
+    # X (9 m vs 6 m on Y). Auto-compute was returning a diagonal angle
+    # in some configurations, producing oblique strips that fragmented
+    # at every polygon edge crossing. 90° forces clean east-west rows
+    # — full polygon-width strips with the minimum number of headland
+    # turns. Restore .nan once auto-compute is debugged.
+    mow_angle_deg: 90.0
 
     # Inner-boundary margin. Cells INSIDE a mowing area but within this
     # distance of the nearest edge are marked LETHAL in the keepout mask.

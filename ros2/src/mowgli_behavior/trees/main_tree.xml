@@ -441,10 +441,45 @@
                   <GetNextUnmowedArea area_index="{current_area_index}"/>
                   <Repeat num_cycles="2000" name="SegmentLoop">
                     <Sequence name="GetAndMowSegment">
-                      <GetNextSegment
-                          area_index="{current_area_index}"
-                          boustrophedon="true"
-                          max_segment_length_m="3.0"/>
+                      <!-- Retry GetNextSegment a few times before giving
+                           up: the planner can return an empty path
+                           transiently while the keepout/reachability
+                           recompute is mid-flight (3 s timer + LiDAR
+                           obstacle observations flipping cells), or
+                           immediately after a swath was marked DEAD by
+                           MarkSegmentBlocked. Without the retry, one
+                           transient empty path collapses the whole
+                           AreaLoop and the BT escalates to
+                           COVERAGE_FAILED_DOCKING after ~50 s of run
+                           time — long before the area is anywhere near
+                           covered. 5 × 1.5 s = 7.5 s gives one full
+                           reachability cycle plus margin. -->
+                      <RetryUntilSuccessful num_attempts="5" name="GetSegmentRetry">
+                        <Fallback>
+                          <!-- 30 m cap: large enough to let a full
+                               polygon-width strip be returned as a
+                               single segment (typical area side ≤25 m
+                               for a residential lawn). The previous
+                               3 m cap fragmented a single end-to-end
+                               row into 3 short segments, each one
+                               broken at row boundaries / mowed-cell
+                               edges, so strips looked stuttery and
+                               the BT spent extra time on
+                               GetNextSegment + FollowStrip handshakes
+                               instead of mowing. The walk still stops
+                               at any hard blocker (obstacle, polygon
+                               edge), so the cap doesn't make the
+                               robot drive into anything. -->
+                          <GetNextSegment
+                              area_index="{current_area_index}"
+                              boustrophedon="true"
+                              max_segment_length_m="30.0"/>
+                          <Sequence>
+                            <WaitForDuration duration_sec="1.5"/>
+                            <AlwaysFailure/>
+                          </Sequence>
+                        </Fallback>
+                      </RetryUntilSuccessful>
                       <Fallback name="MowOrSkip">
                         <RetryUntilSuccessful num_attempts="2" name="SegmentRetry">
                           <Fallback name="ShortOrTransit">

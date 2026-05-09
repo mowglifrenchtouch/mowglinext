@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//ros2_ws/**)",
+      "Read(//ros2_ws/src/**)",
+      "Bash(make build *)",
+      "Bash(make clean *)",
+      "Bash(apt list *)",
+      "Bash(dpkg -l)",
+      "Bash(ldconfig -p)",
+      "Read(//opt/**)",
+      "Bash(find / -name \"GTSAMConfig.cmake\")",
+      "Bash(sudo -n true)",
+      "Bash(apt-get update *)",
+      "Bash(apt-get install *)"
+    ]
+  }
+}

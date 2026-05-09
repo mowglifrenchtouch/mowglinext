@@ -93,7 +93,7 @@ def generate_launch_description() -> LaunchDescription:
     chassis_width    = float(robot_params.get("chassis_width", 0.40))
     chassis_height   = float(robot_params.get("chassis_height", 0.19))
     chassis_center_x = float(robot_params.get("chassis_center_x", 0.18))
-    wheel_radius     = float(robot_params.get("wheel_radius", 0.04475))
+    wheel_radius     = float(robot_params.get("wheel_radius", 0.093))
     wheel_width      = float(robot_params.get("wheel_width", 0.04))
     wheel_track      = float(robot_params.get("wheel_track", 0.325))
     wheel_x_offset   = float(robot_params.get("wheel_x_offset", 0.0))

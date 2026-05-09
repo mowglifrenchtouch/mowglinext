@@ -157,6 +157,15 @@ public:
                                 bool& out_coverage_complete,
                                 std::vector<std::pair<double, double>>* out_via_points = nullptr) const;
 
+  /// Test-only: forward to the private apply_promoted_obstacle.
+  /// Lets `test_map_server` exercise obstacle promotion without going
+  /// through the ROS service plumbing.
+  bool apply_promoted_obstacle_for_test(size_t area_index,
+                                        const geometry_msgs::msg::Polygon& polygon)
+  {
+    return apply_promoted_obstacle(area_index, polygon);
+  }
+
   /// Test-only: directly invoke the add_area service handler.
   void add_area_for_test(const mowgli_interfaces::srv::AddMowingArea::Request::SharedPtr req,
                          mowgli_interfaces::srv::AddMowingArea::Response::SharedPtr res);
@@ -482,6 +491,18 @@ private:
     bool is_navigation_area{false};
   };
 
+  /// One-shot per-area flag (mutable so the const find_next_segment
+  /// can record it): false means find_next_segment will emit a
+  /// perimeter (headland) pass on its next call for that area before
+  /// falling back to the boustrophedon row planner. The headland
+  /// path mows ~one mower-width inside the polygon edge so the robot
+  /// has a free lane to turn into at every subsequent strip end —
+  /// without this, the boustrophedon strips run all the way to the
+  /// inset boundary and headland turns happen right at the polygon
+  /// edge where the robot can't safely pivot. Reset by
+  /// reset_mow_progress / area edits.
+  mutable std::set<size_t> headland_emitted_areas_;
+
   // ── Parameters ────────────────────────────────────────────────────────────
   double resolution_;
   double map_size_x_;
@@ -604,6 +625,12 @@ private:
   /// classification — promote_obstacle is the only path that mutates
   /// permanent keepouts.
   std::vector<mowgli_interfaces::msg::TrackedObstacle> last_tracker_snapshot_;
+
+  /// Tracker ids whose polygons we have already pushed into the
+  /// classification layer via the auto-promotion path (on_obstacles).
+  /// Bounded growth: each PERSISTENT obstacle id is auto-promoted at
+  /// most once per node lifetime. Cleared on `~/clear_obstacles`.
+  std::set<uint32_t> auto_promoted_obstacle_ids_;
 
   /// Docking point in map frame.
   geometry_msgs::msg::Pose docking_pose_;
