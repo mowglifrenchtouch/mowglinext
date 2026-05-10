@@ -214,6 +214,56 @@ fi
 assert_eq "explicit GPS_BAUD remains unchanged" "115200" "${GPS_BAUD:-}"
 unset -f prompt_or_probe_baud
 
+# ── Generic GPS UBX can upgrade to 921600 when confirmed as u-blox ────────
+section "generic gps UBX auto-detected baud can be upgraded"
+
+repo="$SANDBOX/repo_gps_ubx_upgrade"
+sandbox_repo "$repo"
+harness_init "$repo"
+
+export PRESET_LOADED=true
+export STATE_ACTIVE_PRESET_COUNT=1
+STATE_PARSED_KEYS=(GNSS_BACKEND)
+STATE_PARSED_VALUES=(gps)
+
+GNSS_BACKEND=gps
+unset GPS_CONNECTION GPS_PROTOCOL GPS_BAUD GPS_BY_ID 2>/dev/null || true
+
+prompt_count=0
+prompt() {
+  prompt_count=$((prompt_count + 1))
+  case "$prompt_count" in
+    1) REPLY="2" ;; # connection: UART
+    2) REPLY="1" ;; # protocol: UBX
+    3) REPLY="1" ;; # baud: auto-detect
+    *) REPLY="${2:-}" ;;
+  esac
+}
+serial_probe_baud() {
+  printf '9600\n'
+}
+serial_port_exists() {
+  return 0
+}
+ublox_upgrade_args_file="$SANDBOX/ublox-upgrade-args"
+maybe_upgrade_ublox_baud() {
+  printf '%s\n%s\n%s\n' "$1" "$2" "$3" > "$ublox_upgrade_args_file"
+  GPS_BAUD="921600"
+  return 0
+}
+
+if configure_gps >/dev/null 2>&1; then
+  pass "generic gps UBX auto-detected upgrade configures GPS"
+else
+  fail "generic gps UBX auto-detected upgrade configures GPS"
+fi
+mapfile -t ublox_upgrade_args < "$ublox_upgrade_args_file"
+assert_eq "generic gps UBX upgrade uses selected UART" "/dev/ttyAMA4" "${ublox_upgrade_args[0]:-}"
+assert_eq "generic gps UBX upgrade uses detected baud" "9600" "${ublox_upgrade_args[1]:-}"
+assert_eq "generic gps UBX upgrade keeps auto mode" "ask" "${ublox_upgrade_args[2]:-}"
+assert_eq "generic gps UBX upgrade success writes GPS_BAUD=921600" "921600" "${GPS_BAUD:-}"
+unset -f maybe_upgrade_ublox_baud serial_probe_baud serial_port_exists
+
 # ── Unicore web preset without GPS_BAUD can auto-detect baud ──────────────
 section "unicore web preset auto-detects GPS_BAUD"
 

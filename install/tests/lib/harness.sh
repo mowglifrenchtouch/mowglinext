@@ -87,6 +87,8 @@ harness_init() {
   # shellcheck source=/dev/null
   source "$lib_dir/unicore_config.sh"
   # shellcheck source=/dev/null
+  source "$lib_dir/ublox_config.sh"
+  # shellcheck source=/dev/null
   source "$lib_dir/gps.sh"
   # shellcheck source=/dev/null
   source "$lib_dir/lidar.sh"
