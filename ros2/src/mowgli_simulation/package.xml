@@ -12,6 +12,10 @@
   <license>GPL-3.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- ament_cmake_python is needed to install the `mowgli_simulation`
+       Python package (kinematic drive plugin loaded by
+       webots_ros2_driver). Phase 2.2 of the Webots migration. -->
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <!-- C++ node dependencies -->
   <depend>rclcpp</depend>
@@ -20,6 +24,9 @@
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>mowgli_interfaces</depend>
+
+  <!-- Python plugin runtime deps (mowgli_simulation.kinematic_drive) -->
+  <exec_depend>rclpy</exec_depend>
 
   <!-- Webots integration -->
   <exec_depend>webots_ros2_driver</exec_depend>

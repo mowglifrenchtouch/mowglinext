@@ -97,6 +97,21 @@ def generate_launch_description() -> LaunchDescription:
         description="Enable LiDAR-dependent nodes (obstacle tracker, fusion_graph scan-matching). Set to false for GPS-only.",
     )
 
+    # Webots execution mode. ``fast`` is the default — Webots steps as
+    # fast as the host can, which is essential for E2E test runtime
+    # (RecordArea, MOWING, etc. progressing in reasonable wall time).
+    # The kinematic_drive plugin's wall-clock cmd_vel timeout (see
+    # mowgli_simulation/kinematic_drive.py) keeps the body driven by
+    # the latest cmd_vel even between sparse 10-Hz wall publishes from
+    # twist_mux / behavior_server, so Nav2 BackUp / FollowPath finish
+    # cleanly under fast mode. Override with ``mode:=realtime`` to
+    # match wall-clock pacing for visual debugging.
+    mode_arg = DeclareLaunchArgument(
+        "mode",
+        default_value="fast",
+        description="Webots execution mode: realtime | fast | pause.",
+    )
+
     # use_fusion_graph + use_magnetometer come from
     # mowgli_robot.yaml via navigation.launch.py — no need to declare
     # them here. CLI override still propagates.
@@ -108,6 +123,7 @@ def generate_launch_description() -> LaunchDescription:
     world = LaunchConfiguration("world")
     use_rviz = LaunchConfiguration("use_rviz")
     use_lidar = LaunchConfiguration("use_lidar")
+    mode = LaunchConfiguration("mode")
 
     # ------------------------------------------------------------------
     # Config paths
@@ -128,11 +144,10 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             "world": world,
             "use_sim_time": "true",
-            # Headless physics-only — no GUI render wait, simulation runs
-            # as fast as the host can step. Critical for E2E tests where
-            # we need wall-clock progress in the BT (Nav2 lifecycle
-            # activation, RecordArea, MOWING) within reasonable time.
-            "mode": "fast",
+            # See the comment on ``mode_arg`` above. Defaults to ``fast``
+            # which is what the E2E test commands and the human-in-the-
+            # loop iteration loop both use.
+            "mode": mode,
         }.items(),
     )
 
@@ -413,6 +428,7 @@ def generate_launch_description() -> LaunchDescription:
             use_rviz_arg,
             headless_arg,
             use_lidar_arg,
+            mode_arg,
             # Subsystem includes
             simulation_launch,
             navigation_launch,

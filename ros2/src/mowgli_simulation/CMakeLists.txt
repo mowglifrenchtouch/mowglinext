@@ -8,6 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(ament_cmake REQUIRED)
+# Phase 2.2: ament_cmake_python is needed to install the
+# `mowgli_simulation` Python package, which holds the kinematic
+# drivetrain plugin loaded by webots_ros2_driver.
+find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -50,6 +54,14 @@ install(
     scripts/sim_wheel_slip.py
   DESTINATION lib/${PROJECT_NAME}
 )
+
+# ---------------------------------------------------------------------------
+# Webots driver plugins (Python — loaded in-process by webots_ros2_driver)
+# ---------------------------------------------------------------------------
+# Installs the `mowgli_simulation/` Python package into PYTHON_INSTALL_DIR
+# so that webots_ros2_driver can resolve `mowgli_simulation.<module>.<Class>`
+# plugin paths declared in urdf_webots/mowgli_webots.urdf.
+ament_python_install_package(${PROJECT_NAME})
 
 # ---------------------------------------------------------------------------
 # Install data directories

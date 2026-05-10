@@ -74,7 +74,11 @@ MowgliMower {
   name "MowgliMower"
   controller "<extern>"
   controllerArgs [ "" ]
-  supervisor FALSE
+  # Phase 2.2: supervisor mode is required so the kinematic_drive plugin
+  # (loaded by webots_ros2_driver — see urdf_webots/mowgli_webots.urdf)
+  # can call Supervisor.getSelf() and write the translation + rotation
+  # fields to teleport the body each tick from the integrated /cmd_vel.
+  supervisor TRUE
   extensionSlot [
     # IMU trio (mounted on chassis top).
     InertialUnit { name "inertial_unit" }

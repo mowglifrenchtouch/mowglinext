@@ -1,19 +1,33 @@
 #VRML_SIM R2025a utf8
 # license: GPL-3.0
-# Mowgli mower PROTO for Webots — Phase 2.1 of the Webots migration.
+# Mowgli mower PROTO for Webots.
 #
-# **STATUS: PARTIAL.** This PROTO replaces the inline Robot {} that
-# was in worlds_webots/mowgli_garden.wbt and resolves the most
-# egregious failure modes (chassis flips, wheels never touch the
-# floor) but still suffers from ~80–90 % wheel-floor slip under
-# `cmd_vel`, with the chassis settling at ~12° forward pitch. Phase 1
-# reproduction (a forward 0.10 m/s command for 5 s) results in:
+# **STATUS: Phase 2.2 — kinematic drivetrain.** The wheel-friction
+# pathology described below was bypassed (rather than fixed) by
+# switching to a kinematic body driver: a Python plugin loaded by
+# webots_ros2_driver teleports the Robot's translation/rotation
+# fields each tick from an integrated /cmd_vel, while the
+# diff_drive_controller still drives the wheel motors so wheel
+# encoders + /wheel_odom_raw + ekf_odom_node see realistic motion.
+# See ``mowgli_simulation/kinematic_drive.py`` for the full rationale
+# and tradeoffs. The PROTO is kept *physical* (mass, friction, hinge
+# joints, bounding boxes) so collisions with static obstacles still
+# register — but body translation is no longer derived from
+# wheel-floor friction.
+#
+# ── Phase 2.1 history (left here as a record) ─────────────────────
+# Phase 2.1 PROTO replaced the inline Robot {} that was in
+# worlds_webots/mowgli_garden.wbt and resolved the most egregious
+# failure modes (chassis flips, wheels never touch the floor) but
+# still suffered from ~80–90 % wheel-floor slip under `cmd_vel`,
+# with the chassis settling at ~12° forward pitch. Phase 1
+# reproduction (a forward 0.10 m/s command for 5 s) resulted in:
 #
 #   wheel-encoder integration: 0.49 m  (close to 0.50 m expected)
 #   GPS-grounded body motion:  0.05 m  (10 % of expected)
 #   chassis pitch at end:      +12° forward
 #
-# Root cause is not understood. Things that did NOT fix it:
+# Root cause was never identified. Things that did NOT fix it:
 #   * Adopting TurtleBot3Burger's 2-wheel + 1-caster layout
 #     (originally with rear caster, then front caster — both pitched).
 #   * Adopting ROSbot's `dampingConstant 5.0` + `staticFriction 1.0`

@@ -182,6 +182,16 @@
     </plugin>
 
     <plugin type="webots_ros2_control::Ros2Control" />
+
+    <!-- Phase 2.2: kinematic drivetrain. Replaces wheel-friction body
+         coupling with Supervisor.setVelocity() driven directly from
+         /cmd_vel. Without this plugin the chassis pitches ~12° forward
+         under cmd_vel and only ~10 % of the commanded velocity reaches
+         the body (90 % wheel-floor slip). See
+         mowgli_simulation/kinematic_drive.py for the full rationale. -->
+    <plugin type="mowgli_simulation.kinematic_drive.KinematicDrive">
+      <cmdVelTopic>/cmd_vel</cmdVelTopic>
+    </plugin>
   </webots>
 
   <!-- ── ros2_control joint declarations ───────────────────────────── -->
