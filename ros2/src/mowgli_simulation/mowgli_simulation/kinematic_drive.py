@@ -278,6 +278,34 @@ class KinematicDrive:
         # motion. (Future: ride a heightmap by reading z from a lookup.)
         self.__translation_field.setSFVec3f([self.__x, self.__y, self.__z])
         self.__rotation_field.setSFRotation([0.0, 0.0, 1.0, self.__yaw])
+
+        # Zero the chassis ODE velocity each tick.
+        #
+        # WHY THIS IS LOAD-BEARING: without it, ODE accumulates a
+        # downward velocity from gravity between teleports. The teleport
+        # rewrites the position back to z=z₀ but does NOT reset the
+        # velocity, so the next ODE substep starts from a non-zero
+        # downward velocity and integrates the chassis (with the lidar
+        # rigidly attached) below z=0 BEFORE the next teleport runs.
+        # Sensors (Lidar in particular) sample after the physics step
+        # but before the plugin teleport, so they see the chassis at
+        # whatever sunken Z position ODE last computed. After a few
+        # hundred ticks the implied terminal velocity is large enough
+        # that the lidar samples from BELOW the floor, which makes
+        # every ray clip against the underside of the floor and return
+        # +inf — that is the “/scan all-inf” bug Phase 2.2 ran into.
+        #
+        # `Supervisor.setVelocity()` operates only on THIS Solid's ODE
+        # state; it does NOT recurse into children. So unlike
+        # resetPhysics() (which would also zero the wheel HingeJoint
+        # angular velocities and silently kill the diff_drive_controller's
+        # motor commands — see the long comment further down), this is
+        # safe to call every step. The wheels keep spinning under the
+        # controller's setpoints; only the chassis's drift is cancelled.
+        self.__robot_node.setVelocity(
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        )
+
         # We deliberately do NOT call resetPhysics() here every step.
         #
         # resetPhysics() recursively zeroes the internal ODE solver
