@@ -18,7 +18,7 @@ section "Compose wiring"
 
 compose_content="$(cat "$compose_file")"
 assert_not_contains "compose does not pass GPS_BAUD to dedicated ublox backend" 'ublox_baud_rate:=' "$compose_content"
-assert_contains "compose still passes device serial string" 'ublox_device_serial_string:=${GPS_PORT:-/dev/gps}' "$compose_content"
+assert_contains "compose passes dedicated u-blox serial string" 'ublox_device_serial_string:=${UBLOX_DEVICE_SERIAL_STRING}' "$compose_content"
 assert_contains "compose documents dedicated ublox backend transport" 'GNSS_BACKEND=ublox uses the dedicated USB/libusb u-blox driver.' "$compose_content"
 
 section "Launch wiring"

@@ -5,9 +5,8 @@
 # Serial UBX receivers should use GNSS_BACKEND=gps with GPS_PROTOCOL=UBX.
 #
 # The launch file injects DEVICE_FAMILY / DEVICE_SERIAL_STRING / FRAME_ID
-# dynamically from docker-compose and launch arguments. Keep this file minimal
-# so docker/.env remains the single source of truth for backend selection and
-# device targeting.
+# dynamically from docker-compose and launch arguments. docker/.env is the
+# installer/compose source of truth; this generated ROS config stays minimal.
 ublox_dgnss:
   ros__parameters: {}
 

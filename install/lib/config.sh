@@ -636,6 +636,9 @@ write_config() {
   : "${GPS_PORT:=/dev/gps}"
   : "${GPS_BAUD:=921600}"
 
+  # docker/.env is the installer/compose source of truth. This generated yaml
+  # is the ROS-side runtime config materialised from the current env values.
+  #
   # Seed from the comprehensive template if the runtime yaml doesn't
   # exist yet. We never overwrite an existing file — that would wipe
   # GUI-managed values like chassis dims, IMU calibration, fusion

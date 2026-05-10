@@ -165,6 +165,7 @@ main() {
   echo -e "${CYAN}${BOLD}══ System Health Check ══${NC}"
 
   check_devices
+  check_generated_gps_yaml_alignment
   check_containers
   check_firmware
   check_gps

@@ -35,6 +35,7 @@ harness_init() {
         GPS_UART_DEVICE GPS_BY_ID GPS_DEBUG_ENABLED GPS_DEBUG_PORT \
         GPS_DEBUG_UART_DEVICE GPS_DEBUG_BAUD \
         UNICORE_COM_PORT UNICORE_TARGET_BAUD \
+        UBLOX_DEVICE_FAMILY UBLOX_DEVICE_SERIAL_STRING \
         LIDAR_ENABLED LIDAR_TYPE LIDAR_MODEL LIDAR_CONNECTION \
         LIDAR_PORT LIDAR_UART_DEVICE LIDAR_BAUD LIDAR_IMAGE \
         MOWGLI_ROS2_IMAGE GPS_IMAGE UNICORE_IMAGE MAVROS_IMAGE GUI_IMAGE \
@@ -148,6 +149,7 @@ harness_init() {
   GPS_PROTOCOL="${GPS_PROTOCOL:-UBX}"
   GPS_BAUD="${GPS_BAUD:-921600}"
   GPS_UART_DEVICE="${GPS_UART_DEVICE:-/dev/ttyAMA4}"
+  UBLOX_DEVICE_FAMILY="${UBLOX_DEVICE_FAMILY:-F9P}"
   GPS_DEBUG_ENABLED="${GPS_DEBUG_ENABLED:-false}"
   LIDAR_ENABLED="${LIDAR_ENABLED:-true}"
   LIDAR_TYPE="${LIDAR_TYPE:-ldlidar}"
@@ -181,6 +183,12 @@ harness_set_preset() {
         ;;
       gnss)
         GNSS_BACKEND="$val"
+        if [ "$val" = "ublox" ]; then
+          GPS_CONNECTION="usb"
+          GPS_PROTOCOL="UBX"
+          GPS_UART_DEVICE=""
+          UBLOX_DEVICE_SERIAL_STRING="${UBLOX_DEVICE_SERIAL_STRING:-ublox-test-serial}"
+        fi
         ;;
       gps)
         proto="${val%%-*}"; conn="${val##*-}"

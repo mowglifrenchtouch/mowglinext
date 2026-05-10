@@ -91,9 +91,12 @@ section "gnss=ublox (F9P / ublox_dgnss launch)"
 repo="$SANDBOX/repo_ublox"
 sandbox_repo "$repo"
 harness_init "$repo"
-harness_set_preset gnss=ublox gps=ubx-uart lidar=none tfluna=none
+harness_set_preset gnss=ublox lidar=none tfluna=none
 if harness_run; then pass "harness_run ublox"; else fail "harness_run ublox"; fi
 assert_eq "ublox: GNSS_BACKEND=ublox" "ublox" "$(env_value "$repo" GNSS_BACKEND)"
+assert_eq "ublox: GPS_CONNECTION forced to usb" "usb" "$(env_value "$repo" GPS_CONNECTION)"
+assert_eq "ublox: GPS_PROTOCOL forced to UBX" "UBX" "$(env_value "$repo" GPS_PROTOCOL)"
+assert_eq "ublox: dedicated serial string stored" "ublox-test-serial" "$(env_value "$repo" UBLOX_DEVICE_SERIAL_STRING)"
 
 # Compose selection must include the ublox fragment and exclude the legacy gps fragment.
 ublox_fragments=$(selected_fragments_in_current_run)

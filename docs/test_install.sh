@@ -193,7 +193,7 @@ EOF
   fi
 
   # Write preset based on GPS flag
-  if [[ -n "$gps_flag" ]]; then
+  if [[ -n "$gps_flag" && "$gnss_flag" != "ublox" ]]; then
     case "$gps_flag" in
       ubx-usb)
         cat >> "$preset_file" <<'EOF'
@@ -232,6 +232,8 @@ GPS_DEBUG_ENABLED=false
 EOF
         ;;
     esac
+  elif [[ -n "$gps_flag" && "$gnss_flag" == "ublox" ]]; then
+    :
   fi
 
   # Write preset based on LiDAR flag
@@ -492,6 +494,11 @@ preset_out=$(test_preset "mowgli" "unicore" "" "" "")
 assert_contains "GNSS unicore preset writes GNSS_BACKEND" "GNSS_BACKEND=unicore" "$preset_out"
 assert_not_contains "GNSS unicore preset omits GPS_PROTOCOL" "GPS_PROTOCOL=" "$preset_out"
 assert_not_contains "GNSS unicore preset omits GPS_CONNECTION" "GPS_CONNECTION=" "$preset_out"
+
+preset_out=$(test_preset "mowgli" "ublox" "ubx-uart" "" "")
+assert_contains "GNSS ublox preset writes GNSS_BACKEND" "GNSS_BACKEND=ublox" "$preset_out"
+assert_not_contains "GNSS ublox preset omits GPS_PROTOCOL" "GPS_PROTOCOL=" "$preset_out"
+assert_not_contains "GNSS ublox preset omits GPS_CONNECTION" "GPS_CONNECTION=" "$preset_out"
 
 # =============================================================================
 # Test 7: Combined presets

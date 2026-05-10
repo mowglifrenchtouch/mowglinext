@@ -28,6 +28,9 @@ setup_env() {
   # GPS_BY_ID, GPS_UART_DEVICE, and UNICORE_COM_PORT are installer/support
   # variables kept for compatibility and installer re-runs; they do not model
   # separate runtime GPS devices.
+  #
+  # Dedicated GNSS_BACKEND=ublox uses the vendor USB/libusb driver and selects
+  # the receiver via UBLOX_DEVICE_SERIAL_STRING instead of /dev/gps.
   : "${GNSS_BACKEND:=gps}"
   : "${GPS_CONNECTION:=uart}"
   : "${GPS_PROTOCOL:=UBX}"
@@ -36,6 +39,8 @@ setup_env() {
   : "${GPS_UART_DEVICE:=/dev/ttyAMA4}"
   : "${GPS_BAUD:=921600}"
   : "${UNICORE_COM_PORT:=COM1}"
+  : "${UBLOX_DEVICE_FAMILY:=F9P}"
+  : "${UBLOX_DEVICE_SERIAL_STRING:=}"
 
   : "${GPS_DEBUG_ENABLED:=false}"
   : "${GPS_DEBUG_PORT:=/dev/gps_debug}"
@@ -121,6 +126,8 @@ setup_env() {
   upsert_env_key "$env_file" "GPS_UART_DEVICE" "$GPS_UART_DEVICE"
   upsert_env_key "$env_file" "GPS_BAUD" "$GPS_BAUD"
   upsert_env_key "$env_file" "UNICORE_COM_PORT" "$UNICORE_COM_PORT"
+  upsert_env_key "$env_file" "UBLOX_DEVICE_FAMILY" "$UBLOX_DEVICE_FAMILY"
+  upsert_env_key "$env_file" "UBLOX_DEVICE_SERIAL_STRING" "$UBLOX_DEVICE_SERIAL_STRING"
   upsert_env_key "$env_file" "GPS_DEBUG_ENABLED" "$GPS_DEBUG_ENABLED"
   upsert_env_key "$env_file" "GPS_DEBUG_PORT" "$GPS_DEBUG_PORT"
   upsert_env_key "$env_file" "GPS_DEBUG_UART_DEVICE" "$GPS_DEBUG_UART_DEVICE"

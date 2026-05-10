@@ -24,6 +24,6 @@ services:
       ros2 launch mowgli_bringup ublox_gnss.launch.py
       ublox_device_family:=${UBLOX_DEVICE_FAMILY:-F9P}
       ublox_frame_id:=gps_link
-      ublox_device_serial_string:=${GPS_PORT:-/dev/gps}
+      ublox_device_serial_string:=${UBLOX_DEVICE_SERIAL_STRING}
 
     restart: unless-stopped
