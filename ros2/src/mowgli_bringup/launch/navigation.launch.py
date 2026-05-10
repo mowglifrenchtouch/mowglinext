@@ -192,6 +192,12 @@ def generate_launch_description() -> LaunchDescription:
         description="Auto-set: true when use_fusion_graph is yes AND a persisted graph exists on disk (fusion_graph drives Nav2). False otherwise (fusion_graph runs in observer mode building a graph for next session, ekf_map_node drives Nav2).",
     )
 
+    cog_stationary_seed_rate_hz_arg = DeclareLaunchArgument(
+        "cog_stationary_seed_rate_hz",
+        default_value="2.0",
+        description="cog_to_imu stationary anchor rate (Hz). Real hardware: 2.0 (anchors fusion_graph). Sim with kinematic teleport: set to 0.0 — the stale anchor pins ekf_map yaw against gyro integration during PRE_ROTATE (issue #200).",
+    )
+
     # ------------------------------------------------------------------
     # Resolved substitutions
     # ------------------------------------------------------------------
@@ -619,6 +625,16 @@ def generate_launch_description() -> LaunchDescription:
     # observation. Once the session is seeded and the robot is driving
     # forward faster than min_speed_ms with RTK-Fixed, this node corrects
     # gyro drift every /gps/absolute_pose sample.
+    # cog_to_imu publishes a stationary "anchor" yaw at
+    # stationary_seed_rate_hz Hz when GPS COG cannot be derived
+    # (robot not moving forward). On real hardware this anchors the
+    # fusion_graph yaw across long stationary periods. In sim with
+    # KinematicDrive (which teleports without forward GPS motion),
+    # the anchor pins ekf_map_node's yaw to a stale value and fights
+    # the gyro integration, so a robot in PRE_ROTATE never closes
+    # large heading errors (issue #200). Default 2.0 Hz, overridden
+    # to 0.0 in sim_full_system.launch.py.
+    cog_stationary_rate = LaunchConfiguration("cog_stationary_seed_rate_hz")
     cog_to_imu = Node(
         package="mowgli_localization",
         executable="cog_to_imu",
@@ -629,7 +645,8 @@ def generate_launch_description() -> LaunchDescription:
              "datum_lat": datum_lat,
              "datum_lon": datum_lon,
              "enable_mag_cal": enable_mag_cal,
-             "mag_calibration_path": mag_cal_path},
+             "mag_calibration_path": mag_cal_path,
+             "stationary_seed_rate_hz": cog_stationary_rate},
         ],
     )
 
@@ -698,6 +715,7 @@ def generate_launch_description() -> LaunchDescription:
             use_scan_matching_arg,
             use_loop_closure_arg,
             primary_mode_arg,
+            cog_stationary_seed_rate_hz_arg,
             # robot_localization dual EKF + helpers
             static_gps_link_alias,
             ekf_odom_node,

@@ -164,6 +164,14 @@ def generate_launch_description() -> LaunchDescription:
             "use_sim_time": "true",
             "use_ekf": "True",
             "use_lidar": use_lidar,
+            # Disable cog_to_imu's stationary anchor in sim. KinematicDrive
+            # teleports the chassis without forward GPS motion, so the
+            # anchor publishes a stale yaw at 2 Hz that pins ekf_map yaw
+            # against gyro integration during PRE_ROTATE. With the anchor
+            # off, gyro_z is the only yaw signal and the EKF tracks the
+            # robot's actual rotation correctly. Real hardware keeps
+            # the default 2.0 (anchors fusion_graph). See issue #200.
+            "cog_stationary_seed_rate_hz": "0.0",
         }.items(),
     )
 
