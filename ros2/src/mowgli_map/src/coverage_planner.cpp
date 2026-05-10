@@ -187,7 +187,19 @@ void MapServerNode::ensure_strip_layout(size_t area_index)
   }
 
   // ── 3. Inset and scan ─────────────────────────────────────────────────────
-  double inset = strip_boundary_margin_m_;
+  // Strips must sit INSIDE the headland walk's mower coverage. The
+  // headland-walk path is at inset = strip_boundary_margin_m + mower_width/2
+  // (see emit_perimeter_ring), so its mower covers from
+  // strip_boundary_margin_m to strip_boundary_margin_m + mower_width
+  // away from the polygon edge. For the first strip's mower coverage
+  // to start at the same depth (continuous coverage with no gap and no
+  // strip-extending-past-headland), the strip-row inset is shifted in
+  // by one full mower_width — strip path at strip_boundary_margin +
+  // mower_width, mower then covers strip_boundary_margin + 0.5*mower_width
+  // to strip_boundary_margin + 1.5*mower_width. The 0.5*mower_width
+  // overlap with the headland is intentional: it absorbs RTK lateral
+  // jitter so a slightly off-track strip still tiles seamlessly.
+  double inset = strip_boundary_margin_m_ + mower_width_;
   double inner_min_x = min_x + inset;
   double inner_max_x = max_x - inset;
 

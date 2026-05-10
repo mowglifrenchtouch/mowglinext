@@ -86,6 +86,11 @@ public:
   {
     // ── Sample-pair gating thresholds ────────────────────────────────
     min_abs_wheel_ = declare_parameter<double>("min_abs_wheel_ms", 0.05);
+    // Above this |ω| (rad/s, wheel odom angular.z), the latched COG
+    // anchor is suppressed — the previous forward-motion yaw is
+    // stale within tens of ms once the robot starts pivoting. Default
+    // 0.05 rad/s ≈ 3°/s.
+    min_omega_for_anchor_ = declare_parameter<double>("min_omega_for_anchor_rps", 0.05);
     max_pos_accuracy_ = declare_parameter<double>("max_pos_accuracy_m", 0.05);
     min_dt_ = declare_parameter<double>("min_sample_dt_s", 0.05);
     max_dt_ = declare_parameter<double>("max_sample_dt_s", 0.50);
@@ -183,6 +188,7 @@ private:
   void on_wheel(const nav_msgs::msg::Odometry& msg)
   {
     wheel_vx_ = msg.twist.twist.linear.x;
+    wheel_omega_ = msg.twist.twist.angular.z;
   }
 
   void on_mag_raw(const sensor_msgs::msg::MagneticField& msg)
@@ -339,6 +345,18 @@ private:
       return;
     }
     if (std::abs(wheel_vx_) >= min_abs_wheel_)
+    {
+      return;
+    }
+    // Also skip the republish while the robot is *rotating in place*.
+    // The latched yaw is the absolute heading from the last forward
+    // motion segment — once the robot pivots, that anchor becomes
+    // stale at ω rad/s. Republishing it as a tight-covariance EKF
+    // measurement would pin the EKF's yaw against the gyro
+    // integration that's correctly tracking the rotation. Threshold
+    // 0.05 rad/s ≈ 3°/s is well above wheel-encoder noise but well
+    // below any deliberate pivot. Empty wheel_omega → 0 → no gate.
+    if (std::abs(wheel_omega_) >= min_omega_for_anchor_)
     {
       return;
     }
@@ -635,6 +653,7 @@ private:
 
   // ── State ─────────────────────────────────────────────────────────
   double min_abs_wheel_{};
+  double min_omega_for_anchor_{};
   double max_pos_accuracy_{};
   double min_dt_{}, max_dt_{};
   double max_yaw_var_{}, min_yaw_var_{};
@@ -673,6 +692,7 @@ private:
   double last_sample_t_{};
   bool have_last_sample_{false};
   double wheel_vx_{0.0};
+  double wheel_omega_{0.0};
   double min_baseline_displacement_m_{};
 
   struct LatchedYaw
