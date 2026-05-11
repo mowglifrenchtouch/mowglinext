@@ -10,6 +10,7 @@ set -euo pipefail
 
 WEBOTS_MODE="${WEBOTS_MODE:-realtime}"
 WEBOTS_WORLD="${WEBOTS_WORLD:-mowgli_garden.wbt}"
+ENABLE_FOXGLOVE="${ENABLE_FOXGLOVE:-true}"
 XVFB_DISPLAY="${XVFB_DISPLAY:-:99}"
 XVFB_SCREEN="${XVFB_SCREEN:-1280x720x24}"
 XVFB_PID=""
@@ -70,10 +71,12 @@ echo "  DISPLAY=${DISPLAY}"
 echo "  WEBOTS_HOME=${WEBOTS_HOME}"
 echo "  world=${WEBOTS_WORLD}"
 echo "  mode=${WEBOTS_MODE}"
+echo "  enable_foxglove=${ENABLE_FOXGLOVE}"
 
 ros2 launch mowgli_bringup sim_full_system.launch.py \
     world:=${WEBOTS_WORLD} \
     mode:=${WEBOTS_MODE} \
+    enable_foxglove:=${ENABLE_FOXGLOVE} \
     headless:=true \
     use_rviz:=false &
 LAUNCH_PID=$!

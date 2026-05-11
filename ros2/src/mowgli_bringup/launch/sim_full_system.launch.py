@@ -97,6 +97,12 @@ def generate_launch_description() -> LaunchDescription:
         description="Enable LiDAR-dependent nodes (obstacle tracker, fusion_graph scan-matching). Set to false for GPS-only.",
     )
 
+    enable_foxglove_arg = DeclareLaunchArgument(
+        "enable_foxglove",
+        default_value="true",
+        description="Launch foxglove_bridge inside sim_full_system.",
+    )
+
     # Webots execution mode. ``realtime`` is the default — sim time
     # advances at wall-clock rate (1×). Required because controller_server
     # at 20 Hz sim time gets CPU-starved under fast mode (sim runs ~5×
@@ -123,6 +129,7 @@ def generate_launch_description() -> LaunchDescription:
     use_rviz = LaunchConfiguration("use_rviz")
     use_lidar = LaunchConfiguration("use_lidar")
     mode = LaunchConfiguration("mode")
+    enable_foxglove = LaunchConfiguration("enable_foxglove")
 
     # ------------------------------------------------------------------
     # Config paths
@@ -219,6 +226,7 @@ def generate_launch_description() -> LaunchDescription:
     #    Connect via: ws://localhost:8765 (Foxglove WebSocket protocol)
     # ------------------------------------------------------------------
     foxglove_bridge_node = Node(
+        condition=IfCondition(enable_foxglove),
         package="foxglove_bridge",
         executable="foxglove_bridge",
         name="foxglove_bridge",
@@ -432,6 +440,7 @@ def generate_launch_description() -> LaunchDescription:
             use_rviz_arg,
             headless_arg,
             use_lidar_arg,
+            enable_foxglove_arg,
             mode_arg,
             # Subsystem includes
             simulation_launch,

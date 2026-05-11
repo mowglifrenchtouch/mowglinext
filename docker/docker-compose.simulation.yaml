@@ -1,10 +1,10 @@
 # Mowgli ROS2 — Simulation environment
 # Usage:
-#   docker compose -f docker-compose.simulation.yaml build
-#   docker compose -f docker-compose.simulation.yaml up dev-sim
+#   docker compose -f docker-compose.simulation.yaml build simulation
+#   docker compose -f docker-compose.simulation.yaml up -d
 #
 # Foxglove Studio: ws://localhost:8765
-# noVNC (Gazebo GUI): http://localhost:6080
+# noVNC (Webots minimal GUI): http://localhost:6080
 #
 # Run E2E test:
 #   docker compose -f docker-compose.simulation.yaml exec dev-sim \
@@ -25,6 +25,7 @@ services:
   # No Nav2, BT, map server, or fake hardware bridge.
   # -------------------------------------------------------------------------
   webots-minimal:
+    profiles: ["minimal"]
     container_name: mowgli_webots_minimal
     image: mowgli-simulation:latest
     build:
@@ -51,7 +52,7 @@ services:
         max-size: 10m
 
   # -------------------------------------------------------------------------
-  # Headless simulation — Gazebo + full Nav2 + BT + coverage + Foxglove
+  # Headless simulation — Webots + full Nav2 + BT + coverage.
   # No GUI, lowest resource usage. Good for CI and automated E2E tests.
   # -------------------------------------------------------------------------
   simulation:
@@ -67,6 +68,7 @@ services:
       <<: *ros2-env
       DISPLAY: ":99"
       WEBOTS_MODE: realtime
+      ENABLE_FOXGLOVE: "false"
     command: /ros2_ws/scripts/start_webots_full_system.sh
     volumes:
       - ./config/cyclonedds.xml:/cyclonedds.xml:ro
@@ -79,10 +81,40 @@ services:
         max-size: 10m
 
   # -------------------------------------------------------------------------
+  # Foxglove Bridge — isolated WebSocket bridge for the simulation stack.
+  # Connect Foxglove Studio to ws://<IP_VM>:8765
+  # -------------------------------------------------------------------------
+  foxglove:
+    container_name: mowgli_sim_foxglove
+    image: mowgli-simulation:latest
+    build:
+      context: ../ros2
+      dockerfile: Dockerfile
+      target: simulation
+    network_mode: host
+    ipc: host
+    depends_on:
+      - simulation
+    environment:
+      <<: *ros2-env
+    command: >
+      ros2 launch mowgli_bringup foxglove_bridge.launch.py
+      port:=8765
+    volumes:
+      - ./config/cyclonedds.xml:/cyclonedds.xml:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m
+
+  # -------------------------------------------------------------------------
   # Development simulation — live bind-mounts for config/launch/trees
   # Edit config → restart container → changes take effect (no rebuild).
   # -------------------------------------------------------------------------
   dev-sim:
+    profiles: ["dev"]
     container_name: mowgli_dev_sim
     build:
       context: ../ros2
@@ -122,10 +154,10 @@ services:
         max-size: 10m
 
   # -------------------------------------------------------------------------
-  # Simulation with VNC GUI — Gazebo visible via browser at :6080
-  # Useful for visual debugging and watching the robot mow.
+  # Simulation with VNC GUI — alternate visual debugging entrypoint.
   # -------------------------------------------------------------------------
   simulation-gui:
+    profiles: ["gui"]
     container_name: mowgli_sim_gui
     build:
       context: ../ros2
