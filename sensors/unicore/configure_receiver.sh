@@ -302,6 +302,7 @@ apply_receiver_configuration() {
     # Constellation enables. Mowgli mowers are typically in mid-latitude
     # open sky, so we want everything except QZSS (regional, doesn't help
     # in EU/NA).
+    "MASK 10"
     "UNMASK GPS"
     "UNMASK GLO"
     "UNMASK GAL"
