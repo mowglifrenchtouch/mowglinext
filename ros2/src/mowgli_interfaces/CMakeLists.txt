@@ -40,11 +40,15 @@ set(srv_files
   "srv/SetDockingPoint.srv"
   "srv/TriggerReplan.srv"
   "srv/GetNextStrip.srv"
+  "srv/GetNextSegment.srv"
+  "srv/MarkSegmentBlocked.srv"
   "srv/GetCoverageStatus.srv"
+  "srv/GetRemainingAreaPolygon.srv"
   "srv/AreaRecording.srv"
   "srv/CalibrateImuYaw.srv"
   "srv/GetRecoveryPoint.srv"
   "srv/StartInArea.srv"
+  "srv/PromoteObstacle.srv"
 )
 
 # Declare action files

@@ -170,6 +170,7 @@
             </Sequence>
           </Fallback>
           <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
+          <EndSession/>
           <ClearCommand/>
         </Sequence>
 
@@ -267,7 +268,7 @@
                    given distance. 1 m gives RTK ~5 s × 0.2 m/s of clean
                    displacement for CalibrateHeadingFromUndock to resolve
                    the initial heading accurately. -->
-              <BackUp backup_dist="1.0" backup_speed="0.20"/>
+              <BackUp backup_dist="1.0" backup_speed="0.15"/>
               <!-- Wait for RTK Fixed after undock. The dock often has a
                    metal canopy that attenuates GPS; once the robot is 2 m
                    out the F9P should re-acquire quickly. Timeout proceeds
@@ -366,7 +367,7 @@
                        uses geometric distance to dock pose which fails with
                        RTK drift near the dock canopy. BackUp reliably reverses
                        off the dock via Nav2 behavior_server. -->
-                        <BackUp backup_dist="1.5" backup_speed="0.20"/>
+                        <BackUp backup_dist="1.5" backup_speed="0.15"/>
                         <Sequence>
                           <RecordResumeUndockFailure/>
                           <ClearCommand/>
@@ -415,7 +416,7 @@
                    uses geometric distance to dock pose which fails with
                    RTK drift near the dock canopy. BackUp reliably reverses
                    off the dock via Nav2 behavior_server. -->
-              <BackUp backup_dist="1.5" backup_speed="0.20"/>
+              <BackUp backup_dist="1.5" backup_speed="0.15"/>
                     <Sequence>
                       <RecordResumeUndockFailure/>
                       <ClearCommand/>
@@ -426,64 +427,91 @@
                 </Sequence>
               </Fallback>
 
-              <!-- Multi-area coverage loop.
+              <!-- Multi-area coverage loop (opennav_coverage migration).
                    Outer loop: iterate through all mowing areas.
-                   Inner loop: mow all strips in the current area.
-                   GetNextUnmowedArea returns FAILURE when all areas are done.
-                   GetNextStrip returns FAILURE when current area is done → next area. -->
+                   Per area: PlanCoverageArea calls F2C on the remaining
+                   un-mowed polygon (mow_progress excluded as holes), and
+                   FollowStrip feeds the resulting path to FTCController.
+                   On follow failure (collision wedge, FTC abort), the
+                   recovery branches force a replan by returning FAILURE
+                   to RetryUntilSuccessful; F2C re-plans on whatever is
+                   left of the area, naturally resuming from where we
+                   stopped.
+                   GetNextUnmowedArea returns FAILURE when all areas are
+                   done. PlanCoverageArea on a fully-mowed area emits an
+                   empty path → FollowStrip FAILURE → 5 retries → outer
+                   AreaUnreachable → AreaLoop advances. -->
               <Repeat num_cycles="100" name="AreaLoop">
                 <Sequence name="MowOneArea">
                   <GetNextUnmowedArea area_index="{current_area_index}"/>
-                  <Repeat num_cycles="500" name="StripLoop">
-                    <Sequence name="GetAndMowStrip">
-                      <GetNextStrip area_index="{current_area_index}"/>
-                      <Fallback name="MowOrDetourOrSkip">
-                        <!-- Try up to 3 times to reach and mow this strip -->
-                        <RetryUntilSuccessful num_attempts="3" name="StripRetry">
-                          <Sequence name="MowOneStrip">
-                            <PublishHighLevelStatus state="2" state_name="TRANSIT"/>
-                            <TransitToStrip/>
-                            <PublishHighLevelStatus state="2" state_name="MOWING"/>
-                            <FollowStrip/>
-                          </Sequence>
-                        </RetryUntilSuccessful>
-                        <!-- 3 attempts failed because something keeps blocking the
-                             strip (commonly: a person standing in the path, FTC
-                             aborts on lookahead-collision). Drop the blade, drive
-                             a short side-step via the global planner so the
-                             obstacle layer can route around the obstruction,
-                             then fail this branch so SkipStrip moves on. The
-                             next GetNextStrip will hand us a fresh strip; the
-                             mow_progress layer prevents re-cutting. -->
-                        <Sequence name="DetourThenSkip">
-                          <PublishHighLevelStatus state="2" state_name="DETOURING"/>
+                  <!-- ONE PlanCoverageArea per area per session (no
+                       replan), but multiple FollowStrip retries on the
+                       SAME path. On a FollowStrip abort (collision_monitor
+                       wedge, FTC goal-approach timeout, etc.), the next
+                       FollowStrip tick re-sends ctx->current_strip_path
+                       to FTCController, which picks the closest pose
+                       to the robot via setPlan's nearest-pose search —
+                       effectively "continue from where you left off"
+                       without re-planning.
+                       PlanCoverageArea FAILURE (empty path = area
+                       already fully mowed) is captured by the outer
+                       Fallback's AreaUnreachable branch so AreaLoop
+                       advances cleanly. -->
+                  <Fallback name="MowOrSkipArea">
+                    <Sequence name="PlanThenFollow">
+                      <PublishHighLevelStatus state="2" state_name="PLANNING"/>
+                      <PlanCoverageArea
+                          area_index="{current_area_index}"
+                          operation_width_m="0.20"
+                          headland_width_m="0.20"/>
+                      <RetryUntilSuccessful num_attempts="5" name="FollowStripRetry">
+                        <Fallback name="MowOrRecover">
+                        <Sequence name="MowPath">
+                          <PublishHighLevelStatus state="2" state_name="MOWING"/>
+                          <FollowStrip/>
+                        </Sequence>
+                        <!-- Obstacle wedge recovery: BackUp + ClearCostmap
+                             then bubble up FAILURE so RetryUntilSuccessful
+                             re-ticks FollowStrip on the SAME path. FTC
+                             will resync to the closest pose. -->
+                        <Sequence name="StuckBackoff">
+                          <IsObstacleStuck min_duration_sec="4.0"
+                                           max_count="3"
+                                           cooldown_sec="8.0"/>
+                          <PublishHighLevelStatus state="2"
+                                                  state_name="OBSTACLE_BACKOFF"/>
                           <SetMowerEnabled enabled="false"/>
+                          <BackUp backup_dist="0.40" backup_speed="0.15"/>
                           <ClearCostmap/>
-                          <DetourAroundObstacle forward_m="0.8" lateral_m="0.6"/>
                           <AlwaysFailure/>
                         </Sequence>
-                        <!-- Detour failed (or refused) — fall through to skip. -->
-                        <Sequence name="SkipStrip">
-                          <PublishHighLevelStatus state="2" state_name="SKIP_STRIP"/>
+                        <!-- Dynamic-obstacle clear gate: ClearCostmap +
+                             brief wait, then re-tick FollowStrip on the
+                             same path. -->
+                        <Sequence name="DynamicObstacleSkip">
+                          <WasRecentlyInCollisionStop max_age_sec="10.0"/>
+                          <PublishHighLevelStatus state="2"
+                                                  state_name="DYNAMIC_OBSTACLE_CLEARED"/>
                           <SetMowerEnabled enabled="false"/>
                           <StopMoving/>
-                          <!-- Previously did a blind 0.3 m BackUp to 'unstick'
-                               the robot. But the backup direction is always
-                               body-x-negative, with no awareness of the
-                               mowing polygon — if the robot is near the
-                               boundary facing inward, the 30 cm reverse
-                               pushes it straight out of the area, straight
-                               into a boundary violation. ClearCostmap below
-                               is enough to let the next TransitToStrip
-                               replan from the current pose. -->
                           <ClearCostmap/>
-                          <IncrementSkippedSwaths/>
-                          <WaitForDuration duration_sec="2.0"/>
-                          <PublishHighLevelStatus state="2" state_name="MOWING"/>
+                          <WaitForDuration duration_sec="1.0"/>
+                          <AlwaysFailure/>
                         </Sequence>
-                      </Fallback>
+                        </Fallback>
+                      </RetryUntilSuccessful>
                     </Sequence>
-                  </Repeat>
+                    <!-- Fallback to here on PlanCoverageArea FAILURE
+                         (empty path / planning error) OR after the 5
+                         FollowStrip retries are exhausted. Either way,
+                         mark the area attempted and advance. -->
+                    <Sequence name="AreaUnreachable">
+                      <PublishHighLevelStatus state="2" state_name="AREA_UNREACHABLE"/>
+                      <SetMowerEnabled enabled="false"/>
+                      <StopMoving/>
+                      <AlwaysSuccess/>
+                    </Sequence>
+                  </Fallback>
                 </Sequence>
               </Repeat>
 
@@ -501,6 +529,7 @@
                 </Sequence>
               </Fallback>
               <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
+              <EndSession/>
               <ClearCommand/>
             </Sequence>
           </Fallback>
@@ -512,6 +541,7 @@
           <SaveObstacles/>
           <DockRobot dock_id="home_dock" dock_type="simple_charging_dock"/>
           <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
+          <EndSession/>
           <ClearCommand/>
         </Sequence>
 
@@ -554,6 +584,7 @@
               </Sequence>
             </ReactiveFallback>
             <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
+            <EndSession/>
             <ClearCommand/>
           </Sequence>
         </ReactiveSequence>
@@ -603,6 +634,7 @@
             record_rate_hz="2.0"
             is_exclusion_zone="false"/>
           <PublishHighLevelStatus state="1" state_name="RECORDING_COMPLETE"/>
+          <EndSession/>
           <ClearCommand/>
         </ReactiveSequence>
 

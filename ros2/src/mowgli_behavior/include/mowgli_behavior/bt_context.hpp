@@ -20,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -82,6 +83,13 @@ struct BTContext
   /// requested area is complete, the BT exits MowingSequence and docks
   /// rather than rolling over to other areas.
   std::optional<int> target_area_index;
+
+  /// Areas already dispatched to PlanCoverageArea+FollowStrip in the
+  /// current session. GetNextUnmowedArea skips any index in this set
+  /// when iterating, so each area gets at most one PlanCoverageArea
+  /// call per session — no replan loops, even if FollowStrip aborts or
+  /// only partially mows. Cleared by EndSession.
+  std::set<uint32_t> attempted_areas;
 
   // -----------------------------------------------------------------------
   // Derived / convenience fields (computed from latest_* messages)
@@ -149,6 +157,35 @@ struct BTContext
   bool undock_start_recorded{false};
 
   // -----------------------------------------------------------------------
+  // Obstacle-stuck recovery (collision_monitor wedging)
+  // -----------------------------------------------------------------------
+
+  /// Latest action_type from /collision_monitor_state
+  /// (nav2_msgs/CollisionMonitorState). 0 = DO_NOTHING, 1 = STOP,
+  /// 2 = SLOWDOWN, 3 = APPROACH, 4 = LIMIT.
+  uint8_t collision_action_type{0};
+
+  /// Time at which collision_monitor first transitioned into STOP and
+  /// has remained in STOP continuously since. Default-constructed value
+  /// flags "not currently in STOP".
+  std::chrono::steady_clock::time_point collision_stop_since{};
+
+  /// Time of the most recent STOP→non-STOP transition. Default-constructed
+  /// = no STOP has ever ended this session. Used by WasRecentlyInCollisionStop
+  /// so transient obstacles that clear between FollowStrip retry attempts
+  /// don't fall through to MarkBlockedAndSkip and get permanently DEAD-marked.
+  std::chrono::steady_clock::time_point last_collision_stop_end{};
+
+  /// Number of obstacle-backoff recoveries already attempted in the
+  /// current session. Reset by EndSession.
+  int obstacle_backoff_count{0};
+
+  /// Time of the most recent obstacle-backoff success-tick. Used to
+  /// enforce a cooldown so we don't re-fire on the same wedge while
+  /// the BackUp + costmap clear is still settling.
+  std::chrono::steady_clock::time_point last_obstacle_backoff_time{};
+
+  // -----------------------------------------------------------------------
   // Per-session flags reset by ClearCommand at session end
   // -----------------------------------------------------------------------
 
@@ -194,11 +231,33 @@ struct BTContext
   // Cell-based strip coverage state
   // -----------------------------------------------------------------------
 
-  /// Current strip path to mow (set by GetNextStrip, consumed by FollowStrip).
+  /// Current strip / segment path to mow. Populated by GetNextStrip
+  /// (legacy) or GetNextSegment (Path C cell-based coverage), consumed
+  /// by FollowStrip and MarkSegmentBlocked.
   nav_msgs::msg::Path current_strip_path;
 
-  /// Transit goal to reach strip start (set by GetNextStrip, consumed by TransitToStrip).
+  /// Transit goal to reach strip / segment start (populated by
+  /// GetNextStrip or GetNextSegment, consumed by TransitToStrip).
   geometry_msgs::msg::PoseStamped current_transit_goal;
+
+  /// Path C: true when the current segment requires transit
+  /// (>~0.5 m gap or large turn) so the BT must disengage the blade
+  /// before the move and re-engage at the start of the next FollowStrip.
+  /// false → blade stays on for a continuous mowing flow between
+  /// adjacent segments. Updated by GetNextSegment; read by the
+  /// IsShortSegment condition node in the BT XML.
+  bool current_segment_is_long_transit{false};
+
+  /// Path C: free-form tag set by GetNextSegment for diagnostics
+  /// ("interior" / "transit" / "complete").
+  std::string current_segment_phase{};
+
+  /// Path C: termination reason returned by the segment selector for
+  /// the current segment ("boundary" / "obstacle" / "dead_zone" /
+  /// "max_length" / "row_end"). Used by MarkSegmentBlocked decisions —
+  /// e.g. don't bump fail_count when the segment ended at a known
+  /// "obstacle" because that's not a robot failure.
+  std::string current_segment_termination_reason{};
 
   /// Latest coverage percentage.
   float coverage_percent{0.0f};

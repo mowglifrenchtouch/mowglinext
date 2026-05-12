@@ -46,6 +46,8 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<IsChargingProgressing>("IsChargingProgressing");
   factory.registerNodeType<PreFlightCheck>("PreFlightCheck");
   factory.registerNodeType<Nav2Active>("Nav2Active");
+  factory.registerNodeType<IsObstacleStuck>("IsObstacleStuck");
+  factory.registerNodeType<WasRecentlyInCollisionStop>("WasRecentlyInCollisionStop");
 
   // Action nodes
   factory.registerNodeType<SetMowerEnabled>("SetMowerEnabled");
@@ -58,6 +60,7 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<NavigateInsideBoundary>("NavigateInsideBoundary");
   factory.registerNodeType<BackUp>("BackUp");
   factory.registerNodeType<ClearCommand>("ClearCommand");
+  factory.registerNodeType<EndSession>("EndSession");
   factory.registerNodeType<IncrementSkippedSwaths>("IncrementSkippedSwaths");
   factory.registerNodeType<SaveObstacles>("SaveObstacles");
   factory.registerNodeType<SetNavMode>("SetNavMode");
@@ -76,6 +79,14 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<FollowStrip>("FollowStrip");
   factory.registerNodeType<TransitToStrip>("TransitToStrip");
   factory.registerNodeType<DetourAroundObstacle>("DetourAroundObstacle");
+  // Path C — cell-based coverage (segment-by-segment dynamic coverage).
+  factory.registerNodeType<GetNextSegment>("GetNextSegment");
+  factory.registerNodeType<IsShortSegment>("IsShortSegment");
+  factory.registerNodeType<MarkSegmentBlocked>("MarkSegmentBlocked");
+
+  // opennav_coverage migration — F2C-backed full-area planner.
+  // Output goes into ctx->current_strip_path; FollowStrip consumes it.
+  factory.registerNodeType<PlanCoverageArea>("PlanCoverageArea");
 
   // Area recording node
   factory.registerNodeType<RecordArea>("RecordArea");
