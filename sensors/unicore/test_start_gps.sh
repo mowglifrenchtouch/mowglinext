@@ -64,15 +64,80 @@ assert_contains "normal disables hardware diagnostics" "enable_hw_status:=false"
 assert_contains "normal disables jamming diagnostics" "enable_jamming_status:=false" "$NORMAL_ARGS"
 assert_contains "normal disables raw observation diagnostics" "enable_raw_observation_diag:=false" "$NORMAL_ARGS"
 assert_contains "normal keeps binary transport disabled" "enable_unicore_binary:=false" "$NORMAL_ARGS"
+assert_contains "normal keeps binary nav disabled" "use_binary_nav:=false" "$NORMAL_ARGS"
+assert_contains "normal keeps binary RTK disabled" "use_binary_rtk_diag:=false" "$NORMAL_ARGS"
+assert_contains "normal keeps binary RTCM disabled" "use_binary_rtcm_diag:=false" "$NORMAL_ARGS"
+assert_contains "normal keeps binary satellite diag disabled" "use_binary_satellite_diag:=false" "$NORMAL_ARGS"
 
 DEBUG_ARGS="$(run_profile debug)"
 assert_contains "debug enables satellite diagnostics" "enable_satellite_status:=true" "$DEBUG_ARGS"
 assert_contains "debug enables RF diagnostics" "enable_rf_status:=true" "$DEBUG_ARGS"
 assert_contains "debug enables hardware diagnostics" "enable_hw_status:=true" "$DEBUG_ARGS"
 assert_contains "debug enables jamming diagnostics" "enable_jamming_status:=true" "$DEBUG_ARGS"
+assert_contains "debug ascii keeps binary nav disabled" "use_binary_nav:=false" "$DEBUG_ARGS"
+assert_contains "debug ascii keeps binary RTK disabled" "use_binary_rtk_diag:=false" "$DEBUG_ARGS"
 
 HYBRID_ARGS="$(run_profile debug hybrid)"
 assert_contains "hybrid output enables binary transport" "enable_unicore_binary:=true" "$HYBRID_ARGS"
+assert_contains "debug hybrid still keeps binary nav disabled by default" "use_binary_nav:=false" "$HYBRID_ARGS"
+
+DEBUG_HYBRID_BINARY_RTK_ARGS="$(
+  PATH="$WORKDIR/bin:$PATH" \
+  ROS2_LOG_PATH="$WORKDIR/debug_hybrid_binary_rtk.log" \
+  MOWGLI_CONFIG_PATH="$WORKDIR/mowgli_robot.yaml" \
+  UNICORE_PROFILE="debug" \
+  UNICORE_OUTPUT_FORMAT="hybrid" \
+  UNICORE_USE_BINARY_RTK_DIAG="true" \
+  "$SCRIPT_DIR/start_gps.sh" >/dev/null 2>&1 || true
+  cat "$WORKDIR/debug_hybrid_binary_rtk.log"
+)"
+assert_contains "debug hybrid explicit binary RTK is forwarded" "use_binary_rtk_diag:=true" "$DEBUG_HYBRID_BINARY_RTK_ARGS"
+
+SURVEY_HYBRID_ARGS="$(
+  PATH="$WORKDIR/bin:$PATH" \
+  ROS2_LOG_PATH="$WORKDIR/survey_hybrid.log" \
+  MOWGLI_CONFIG_PATH="$WORKDIR/mowgli_robot.yaml" \
+  UNICORE_PROFILE="survey" \
+  UNICORE_OUTPUT_FORMAT="hybrid" \
+  "$SCRIPT_DIR/start_gps.sh" >/dev/null 2>&1 || true
+  cat "$WORKDIR/survey_hybrid.log"
+)"
+assert_contains "survey hybrid enables binary transport" "enable_unicore_binary:=true" "$SURVEY_HYBRID_ARGS"
+assert_contains "survey hybrid keeps nav on ascii by default" "use_binary_nav:=false" "$SURVEY_HYBRID_ARGS"
+assert_contains "survey hybrid enables binary RTK diag" "use_binary_rtk_diag:=true" "$SURVEY_HYBRID_ARGS"
+assert_contains "survey hybrid enables binary RTCM diag" "use_binary_rtcm_diag:=true" "$SURVEY_HYBRID_ARGS"
+assert_contains "survey hybrid enables binary satellite diag" "use_binary_satellite_diag:=true" "$SURVEY_HYBRID_ARGS"
+assert_contains "survey hybrid enables binary RF diag" "use_binary_rf_diag:=true" "$SURVEY_HYBRID_ARGS"
+assert_contains "survey hybrid enables binary hardware diag" "use_binary_hw_diag:=true" "$SURVEY_HYBRID_ARGS"
+assert_contains "survey hybrid enables binary jamming diag" "use_binary_jamming_diag:=true" "$SURVEY_HYBRID_ARGS"
+
+HIGH_PRECISION_HYBRID_ARGS="$(
+  PATH="$WORKDIR/bin:$PATH" \
+  ROS2_LOG_PATH="$WORKDIR/high_precision_hybrid.log" \
+  MOWGLI_CONFIG_PATH="$WORKDIR/mowgli_robot.yaml" \
+  UNICORE_PROFILE="high_precision" \
+  UNICORE_OUTPUT_FORMAT="hybrid" \
+  "$SCRIPT_DIR/start_gps.sh" >/dev/null 2>&1 || true
+  cat "$WORKDIR/high_precision_hybrid.log"
+)"
+assert_contains "high_precision hybrid enables binary nav by default" "use_binary_nav:=true" "$HIGH_PRECISION_HYBRID_ARGS"
+
+DEBUG_BINARY_ARGS="$(
+  PATH="$WORKDIR/bin:$PATH" \
+  ROS2_LOG_PATH="$WORKDIR/debug_binary.log" \
+  MOWGLI_CONFIG_PATH="$WORKDIR/mowgli_robot.yaml" \
+  UNICORE_PROFILE="debug" \
+  UNICORE_OUTPUT_FORMAT="binary" \
+  "$SCRIPT_DIR/start_gps.sh" >/dev/null 2>&1 || true
+  cat "$WORKDIR/debug_binary.log"
+)"
+assert_contains "debug binary forces binary nav" "use_binary_nav:=true" "$DEBUG_BINARY_ARGS"
+assert_contains "debug binary forces binary satellite diag" "use_binary_satellite_diag:=true" "$DEBUG_BINARY_ARGS"
+assert_contains "debug binary forces binary RTK diag" "use_binary_rtk_diag:=true" "$DEBUG_BINARY_ARGS"
+assert_contains "debug binary forces binary RTCM diag" "use_binary_rtcm_diag:=true" "$DEBUG_BINARY_ARGS"
+assert_contains "debug binary forces binary RF diag" "use_binary_rf_diag:=true" "$DEBUG_BINARY_ARGS"
+assert_contains "debug binary forces binary hardware diag" "use_binary_hw_diag:=true" "$DEBUG_BINARY_ARGS"
+assert_contains "debug binary forces binary jamming diag" "use_binary_jamming_diag:=true" "$DEBUG_BINARY_ARGS"
 
 SURVEY_RAW_ARGS="$(
   PATH="$WORKDIR/bin:$PATH" \

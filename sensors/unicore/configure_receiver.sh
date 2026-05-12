@@ -53,6 +53,10 @@ UNICORE_ENABLE_JAMMING="${UNICORE_ENABLE_JAMMING:-}"
 UNICORE_ENABLE_HARDWARE="${UNICORE_ENABLE_HARDWARE:-}"
 UNICORE_ENABLE_RAW_OBSERVATIONS="${UNICORE_ENABLE_RAW_OBSERVATIONS:-}"
 
+unicore_warn() {
+  log "WARN: $*"
+}
+
 log() {
   echo "[configure_receiver.sh] $*" >&2
 }
@@ -103,6 +107,105 @@ unicore_normalize_output_format() {
 unicore_binary_enabled_from_output_format() {
   case "$(unicore_normalize_output_format "${1:-ascii}")" in
     binary|hybrid)
+      printf '%s\n' "true"
+      ;;
+    *)
+      printf '%s\n' "false"
+      ;;
+  esac
+}
+
+unicore_output_has_ascii() {
+  case "$(unicore_normalize_output_format "${1:-ascii}")" in
+    ascii|hybrid)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+unicore_output_has_binary() {
+  case "$(unicore_normalize_output_format "${1:-ascii}")" in
+    binary|hybrid)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+unicore_profile_supports_raw() {
+  case "$(unicore_normalize_profile "${1:-normal}")" in
+    survey|high_precision)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+unicore_clamp_min_period() {
+  local value="${1:?unicore_clamp_min_period: missing value}"
+  local minimum="${2:?unicore_clamp_min_period: missing minimum}"
+
+  awk -v value="$value" -v minimum="$minimum" 'BEGIN {
+    numeric = value + 0.0
+    if (numeric < minimum) {
+      if (minimum == int(minimum)) {
+        printf("%d\n", int(minimum))
+      } else {
+        printf("%.3f\n", minimum)
+      }
+    } else {
+      print value
+    }
+  }'
+}
+
+unicore_emit_ascii_only_log() {
+  local message="${1:?unicore_emit_ascii_only_log: missing message}"
+  local period="${2:?unicore_emit_ascii_only_log: missing period}"
+
+  if unicore_output_has_ascii "$UNICORE_OUTPUT_FORMAT"; then
+    printf '%s\n' "LOG ${message} ONTIME ${period}"
+  fi
+}
+
+unicore_emit_paired_log() {
+  local ascii_message="${1:?unicore_emit_paired_log: missing ascii message}"
+  local binary_message="${2:?unicore_emit_paired_log: missing binary message}"
+  local period="${3:?unicore_emit_paired_log: missing period}"
+
+  if unicore_output_has_ascii "$UNICORE_OUTPUT_FORMAT"; then
+    printf '%s\n' "LOG ${ascii_message} ONTIME ${period}"
+  fi
+  if unicore_output_has_binary "$UNICORE_OUTPUT_FORMAT"; then
+    printf '%s\n' "LOG ${binary_message} ONTIME ${period}"
+  fi
+}
+
+unicore_profile_default_binary_consumer() {
+  local profile="${1:?unicore_profile_default_binary_consumer: missing profile}"
+  local consumer="${2:?unicore_profile_default_binary_consumer: missing consumer}"
+  local output_format="${3:-$UNICORE_OUTPUT_FORMAT}"
+
+  if ! unicore_output_has_binary "$output_format"; then
+    printf '%s\n' "false"
+    return 0
+  fi
+
+  case "$(unicore_normalize_profile "$profile"):$consumer" in
+    survey:nav)
+      printf '%s\n' "false"
+      ;;
+    survey:rtk|survey:satellite|survey:rtcm|survey:rf|survey:hw|survey:jamming)
+      printf '%s\n' "true"
+      ;;
+    high_precision:nav|high_precision:rtk|high_precision:satellite|high_precision:rtcm|high_precision:rf|high_precision:hw|high_precision:jamming)
       printf '%s\n' "true"
       ;;
     *)
@@ -183,6 +286,21 @@ unicore_apply_profile_defaults() {
   UNICORE_ENABLE_JAMMING="${UNICORE_ENABLE_JAMMING:-$(unicore_profile_default_flag "$UNICORE_PROFILE" jamming)}"
   UNICORE_ENABLE_HARDWARE="${UNICORE_ENABLE_HARDWARE:-$(unicore_profile_default_flag "$UNICORE_PROFILE" hardware)}"
   UNICORE_ENABLE_RAW_OBSERVATIONS="${UNICORE_ENABLE_RAW_OBSERVATIONS:-false}"
+
+  if unicore_is_truthy "$UNICORE_ENABLE_RAW_OBSERVATIONS" &&
+     ! unicore_profile_supports_raw "$UNICORE_PROFILE"; then
+    unicore_warn "raw observations are only supported in survey/high_precision; disabling for profile=${UNICORE_PROFILE}."
+    UNICORE_ENABLE_RAW_OBSERVATIONS="false"
+  fi
+
+  if unicore_is_truthy "$UNICORE_ENABLE_RAW_OBSERVATIONS"; then
+    local clamped_raw_period
+    clamped_raw_period="$(unicore_clamp_min_period "$UNICORE_RAW_LOG_PERIOD" "1")"
+    if [ "$clamped_raw_period" != "$UNICORE_RAW_LOG_PERIOD" ]; then
+      unicore_warn "raw log period ${UNICORE_RAW_LOG_PERIOD}s is too fast; clamping to ${clamped_raw_period}s."
+      UNICORE_RAW_LOG_PERIOD="$clamped_raw_period"
+    fi
+  fi
 }
 
 require_serial_port() {
@@ -360,45 +478,44 @@ signalgroup_for_model() {
 }
 
 build_log_commands() {
-  # ASCII remains the default transport, but selected survey/debug streams can
-  # switch to binary when `UNICORE_OUTPUT_FORMAT=hybrid|binary`.
-  printf '%s\n' "LOG GPGGA ONTIME ${UNICORE_MAIN_LOG_PERIOD}"
-  printf '%s\n' "LOG PVTSLNA ONTIME ${UNICORE_MAIN_LOG_PERIOD}"
-  printf '%s\n' "LOG BESTNAVA ONTIME ${UNICORE_BESTNAV_LOG_PERIOD}"
-  printf '%s\n' "LOG GNHPR ONTIME ${UNICORE_MAIN_LOG_PERIOD}"
-  printf '%s\n' "LOG RTKSTATUSA ONTIME ${UNICORE_DIAGNOSTIC_LOG_PERIOD}"
-  printf '%s\n' "LOG RTCMSTATUSA ONTIME ${UNICORE_DIAGNOSTIC_LOG_PERIOD}"
+  unicore_emit_ascii_only_log "GPGGA" "${UNICORE_MAIN_LOG_PERIOD}"
+  unicore_emit_paired_log "PVTSLNA" "PVTSLNB" "${UNICORE_MAIN_LOG_PERIOD}"
+  unicore_emit_paired_log "BESTNAVA" "BESTNAVB" "${UNICORE_BESTNAV_LOG_PERIOD}"
+  unicore_emit_ascii_only_log "GNHPR" "${UNICORE_MAIN_LOG_PERIOD}"
+  unicore_emit_paired_log "RTKSTATUSA" "RTKSTATUSB" "${UNICORE_DIAGNOSTIC_LOG_PERIOD}"
+  unicore_emit_paired_log "RTCMSTATUSA" "RTCMSTATUSB" "${UNICORE_DIAGNOSTIC_LOG_PERIOD}"
 
   if unicore_is_truthy "$UNICORE_ENABLE_SATELLITES"; then
-    printf '%s\n' "LOG BESTSATA ONTIME ${UNICORE_SATELLITE_LOG_PERIOD}"
-    printf '%s\n' "LOG SATSINFOA ONTIME ${UNICORE_SATELLITE_LOG_PERIOD}"
-    printf '%s\n' "LOG GPGSV ONTIME ${UNICORE_SATELLITE_LOG_PERIOD}"
-    printf '%s\n' "LOG GLGSV ONTIME ${UNICORE_SATELLITE_LOG_PERIOD}"
-    printf '%s\n' "LOG GAGSV ONTIME ${UNICORE_SATELLITE_LOG_PERIOD}"
-    printf '%s\n' "LOG GBGSV ONTIME ${UNICORE_SATELLITE_LOG_PERIOD}"
+    unicore_emit_paired_log "BESTSATA" "BESTSATB" "${UNICORE_SATELLITE_LOG_PERIOD}"
+    unicore_emit_paired_log "SATSINFOA" "SATSINFOB" "${UNICORE_SATELLITE_LOG_PERIOD}"
+    unicore_emit_ascii_only_log "GPGSV" "${UNICORE_SATELLITE_LOG_PERIOD}"
+    unicore_emit_ascii_only_log "GLGSV" "${UNICORE_SATELLITE_LOG_PERIOD}"
+    unicore_emit_ascii_only_log "GAGSV" "${UNICORE_SATELLITE_LOG_PERIOD}"
+    unicore_emit_ascii_only_log "GBGSV" "${UNICORE_SATELLITE_LOG_PERIOD}"
   fi
 
   if unicore_is_truthy "$UNICORE_ENABLE_RF"; then
-    printf '%s\n' "LOG AGCA ONTIME ${UNICORE_RF_LOG_PERIOD}"
+    unicore_emit_paired_log "AGCA" "AGCB" "${UNICORE_RF_LOG_PERIOD}"
   fi
 
   if unicore_is_truthy "$UNICORE_ENABLE_HARDWARE"; then
-    printf '%s\n' "LOG HWSTATUSA ONTIME ${UNICORE_RF_LOG_PERIOD}"
+    unicore_emit_paired_log "HWSTATUSA" "HWSTATUSB" "${UNICORE_RF_LOG_PERIOD}"
   fi
 
   if unicore_is_truthy "$UNICORE_ENABLE_JAMMING"; then
-    printf '%s\n' "LOG JAMSTATUSA ONTIME ${UNICORE_RF_LOG_PERIOD}"
-    printf '%s\n' "LOG FREQJAMSTATUSA ONTIME ${UNICORE_RF_LOG_PERIOD}"
+    unicore_emit_paired_log "JAMSTATUSA" "JAMSTATUSB" "${UNICORE_RF_LOG_PERIOD}"
+    unicore_emit_paired_log "FREQJAMSTATUSA" "FREQJAMSTATUSB" "${UNICORE_RF_LOG_PERIOD}"
   fi
 
   if unicore_is_truthy "$UNICORE_ENABLE_RAW_OBSERVATIONS" &&
      { [ "$UNICORE_PROFILE" = "survey" ] || [ "$UNICORE_PROFILE" = "high_precision" ]; }; then
-    if unicore_is_truthy "$(unicore_binary_enabled_from_output_format "$UNICORE_OUTPUT_FORMAT")"; then
-      printf '%s\n' "LOG OBSVMCMPB ONTIME ${UNICORE_RAW_LOG_PERIOD}"
-    else
-      # ASCII OBSVMCMP remains useful for offline captures, but ROS-side
-      # summaries added in PR6E only decode the binary OBSVMCMPB payload.
+    if unicore_output_has_ascii "$UNICORE_OUTPUT_FORMAT"; then
+      # ASCII OBSVMCMP remains useful for offline captures even when the ROS
+      # raw summary is driven by the binary backend in hybrid mode.
       printf '%s\n' "LOG OBSVMCMPA ONTIME ${UNICORE_RAW_LOG_PERIOD}"
+    fi
+    if unicore_output_has_binary "$UNICORE_OUTPUT_FORMAT"; then
+      printf '%s\n' "LOG OBSVMCMPB ONTIME ${UNICORE_RAW_LOG_PERIOD}"
     fi
   fi
 }

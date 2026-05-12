@@ -159,6 +159,8 @@ assert_not_contains "normal excludes BESTSATA" "BESTSATA" "$NORMAL_LOGS"
 assert_not_contains "normal excludes SATSINFOA" "SATSINFOA" "$NORMAL_LOGS"
 assert_not_contains "normal excludes AGCA" "AGCA" "$NORMAL_LOGS"
 assert_not_contains "normal excludes JAMSTATUSA" "JAMSTATUSA" "$NORMAL_LOGS"
+assert_contains "normal keeps PVTSLNA" "PVTSLNA" "$NORMAL_LOGS"
+assert_not_contains "normal excludes PVTSLNB" "PVTSLNB" "$NORMAL_LOGS"
 
 reset_profile_env
 UNICORE_PROFILE="debug"
@@ -170,6 +172,30 @@ assert_contains "debug includes AGCA" "AGCA" "$DEBUG_LOGS"
 assert_contains "debug includes HWSTATUSA" "HWSTATUSA" "$DEBUG_LOGS"
 assert_contains "debug includes JAMSTATUSA" "JAMSTATUSA" "$DEBUG_LOGS"
 assert_contains "debug includes FREQJAMSTATUSA" "FREQJAMSTATUSA" "$DEBUG_LOGS"
+assert_not_contains "debug ascii excludes BESTSATB" "BESTSATB" "$DEBUG_LOGS"
+assert_not_contains "debug ascii excludes PVTSLNB" "PVTSLNB" "$DEBUG_LOGS"
+
+reset_profile_env
+UNICORE_PROFILE="debug"
+UNICORE_OUTPUT_FORMAT="hybrid"
+unicore_apply_profile_defaults
+DEBUG_HYBRID_LOGS="$(build_log_commands)"
+assert_contains "debug hybrid includes PVTSLNA" "PVTSLNA" "$DEBUG_HYBRID_LOGS"
+assert_contains "debug hybrid includes PVTSLNB" "PVTSLNB" "$DEBUG_HYBRID_LOGS"
+assert_contains "debug hybrid includes BESTSATA" "BESTSATA" "$DEBUG_HYBRID_LOGS"
+assert_contains "debug hybrid includes BESTSATB" "BESTSATB" "$DEBUG_HYBRID_LOGS"
+assert_contains "debug hybrid keeps GPGGA" "GPGGA" "$DEBUG_HYBRID_LOGS"
+
+reset_profile_env
+UNICORE_PROFILE="debug"
+UNICORE_OUTPUT_FORMAT="binary"
+unicore_apply_profile_defaults
+DEBUG_BINARY_LOGS="$(build_log_commands)"
+assert_not_contains "debug binary excludes PVTSLNA" "PVTSLNA" "$DEBUG_BINARY_LOGS"
+assert_contains "debug binary includes PVTSLNB" "PVTSLNB" "$DEBUG_BINARY_LOGS"
+assert_not_contains "debug binary excludes BESTSATA" "BESTSATA" "$DEBUG_BINARY_LOGS"
+assert_contains "debug binary includes BESTSATB" "BESTSATB" "$DEBUG_BINARY_LOGS"
+assert_not_contains "debug binary excludes GPGGA" "GPGGA" "$DEBUG_BINARY_LOGS"
 
 reset_profile_env
 UNICORE_PROFILE="survey"
@@ -192,7 +218,21 @@ UNICORE_ENABLE_RAW_OBSERVATIONS="true"
 unicore_apply_profile_defaults
 SURVEY_RAW_BINARY_LOGS="$(build_log_commands)"
 assert_contains "survey raw hybrid includes OBSVMCMPB" "OBSVMCMPB" "$SURVEY_RAW_BINARY_LOGS"
-assert_not_contains "survey raw hybrid excludes OBSVMCMPA" "OBSVMCMPA" "$SURVEY_RAW_BINARY_LOGS"
+assert_contains "survey raw hybrid keeps OBSVMCMPA" "OBSVMCMPA" "$SURVEY_RAW_BINARY_LOGS"
+
+reset_profile_env
+UNICORE_PROFILE="normal"
+UNICORE_ENABLE_RAW_OBSERVATIONS="true"
+unicore_apply_profile_defaults
+assert_eq "normal refuses raw observations" "false" "$UNICORE_ENABLE_RAW_OBSERVATIONS"
+assert_not_contains "normal raw refusal emits no OBSVMCMP" "OBSVMCMP" "$(build_log_commands)"
+
+reset_profile_env
+UNICORE_PROFILE="survey"
+UNICORE_ENABLE_RAW_OBSERVATIONS="true"
+UNICORE_RAW_LOG_PERIOD="0.2"
+unicore_apply_profile_defaults
+assert_eq "survey raw period is clamped" "1" "$UNICORE_RAW_LOG_PERIOD"
 
 reset_profile_env
 UNICORE_PROFILE="high_precision"
@@ -200,6 +240,16 @@ unicore_apply_profile_defaults
 HIGH_PRECISION_COMMANDS="$(build_profile_commands)"
 assert_contains "high_precision enables PVTALG MULTI" "CONFIG PVTALG MULTI" "$HIGH_PRECISION_COMMANDS"
 assert_contains "high_precision enables RTCMDECAUTO" "CONFIG RTCMDECAUTO ENABLE" "$HIGH_PRECISION_COMMANDS"
+
+reset_profile_env
+UNICORE_PROFILE="high_precision"
+UNICORE_OUTPUT_FORMAT="binary"
+UNICORE_ENABLE_RAW_OBSERVATIONS="true"
+unicore_apply_profile_defaults
+HIGH_PRECISION_BINARY_LOGS="$(build_log_commands)"
+assert_contains "high_precision binary includes BESTNAVB" "BESTNAVB" "$HIGH_PRECISION_BINARY_LOGS"
+assert_contains "high_precision binary includes OBSVMCMPB" "OBSVMCMPB" "$HIGH_PRECISION_BINARY_LOGS"
+assert_not_contains "high_precision binary excludes BESTNAVA" "BESTNAVA" "$HIGH_PRECISION_BINARY_LOGS"
 
 reset_profile_env
 UNICORE_OUTPUT_FORMAT="hybrid"
