@@ -39,6 +39,42 @@ RUN cd gtsam && mkdir build && cd build && \
  && make -j$(nproc) install
 
 # =============================================================================
+# Stage 0b: fields2cover-builder
+# Builds Fields2Cover 2.0.0 from source into /opt/fields2cover-200. The
+# upstream repo (https://github.com/Fields2Cover/Fields2Cover) has no
+# debian package for v2 on Noble. mowgli_coverage's CMakeLists pins
+#   find_package(Fields2Cover 2.0.0 REQUIRED PATHS /opt/fields2cover-200)
+# so the install prefix matters. Runtime stages COPY /opt/fields2cover-200
+# across; libgdal/libgeos/libortools/libtinyxml2 are installed in `base`.
+# =============================================================================
+FROM ros:kilted-ros-base AS fields2cover-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential cmake git pkg-config \
+      libeigen3-dev libgdal-dev libgeos++-dev libgeos-dev libgsl-dev \
+      libtinyxml2-dev libpython3-dev python3-dev \
+      ros-kilted-ortools-vendor \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+RUN git clone --depth 1 -b v2.0.0 https://github.com/Fields2Cover/Fields2Cover.git f2c
+
+RUN . /opt/ros/kilted/setup.sh && \
+    cd f2c && mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/opt/fields2cover-200 \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_PYTHON=OFF \
+        -DBUILD_TUTORIALS=OFF \
+        -DBUILD_DOC=OFF \
+        -DALLOW_PARALLELIZATION=ON \
+        -DBUILD_SHARED_LIBS=ON \
+ && make -j$(nproc) install
+
+# =============================================================================
 # Stage 1: base
 # Installs all runtime ROS2 dependencies. Both runtime and simulation stages
 # inherit from here, keeping the image lean.
@@ -109,6 +145,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # that GTSAM's exported CMake target references at link time.
     # libboost-* runtime libs are pulled in transitively.
     libmetis-dev \
+    # Fields2Cover 2.0.0 runtime deps. libFields2Cover.so links
+    # against libgdal, libgeos_c, libortools, libtinyxml2 + bundles
+    # its own libsteering_functions and libmatplot under
+    # /opt/fields2cover-200/lib. -dev variants are needed because
+    # mowgli_coverage's find_package pulls in transitive headers via
+    # the exported Fields2Cover CMake target.
+    libgdal-dev libgeos++-dev libtinyxml2-dev \
+    ros-kilted-ortools-vendor \
     # Utilities
     python3-argcomplete \
  && rm -rf /var/lib/apt/lists/*
@@ -120,6 +164,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=gtsam-builder /opt/gtsam /opt/gtsam
 RUN echo '/opt/gtsam/lib' > /etc/ld.so.conf.d/gtsam.conf && ldconfig
 ENV CMAKE_PREFIX_PATH=/opt/gtsam:${CMAKE_PREFIX_PATH}
+
+# Pull source-built Fields2Cover 2.0.0 into /opt/fields2cover-200.
+# mowgli_coverage's CMakeLists pins PATHS /opt/fields2cover-200 in
+# find_package(Fields2Cover 2.0.0 REQUIRED), so the install prefix is
+# what matters — no CMAKE_PREFIX_PATH change needed. Register its
+# /opt/fields2cover-200/lib with ldconfig so the runtime loader
+# resolves libFields2Cover.so + libsteering_functions.so + libmatplot.so.1.
+COPY --from=fields2cover-builder /opt/fields2cover-200 /opt/fields2cover-200
+RUN echo '/opt/fields2cover-200/lib' > /etc/ld.so.conf.d/fields2cover-200.conf && ldconfig
 
 # =============================================================================
 # Stage 2: deps
