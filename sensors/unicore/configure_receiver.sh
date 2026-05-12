@@ -477,6 +477,32 @@ signalgroup_for_model() {
   esac
 }
 
+build_base_config_commands() {
+  local model="${1:?build_base_config_commands: missing model}"
+  local signalgroup
+
+  signalgroup="$(signalgroup_for_model "$model")" || return 1
+
+  printf '%s\n' \
+    "MODE ROVER SURVEY MOW" \
+    "CONFIG NMEAVERSION V411" \
+    "CONFIG RTK TIMEOUT 10" \
+    "CONFIG RTK RELIABILITY 3 1" \
+    "CONFIG DGPS TIMEOUT 600" \
+    "CONFIG UNDULATION AUTO" \
+    "${signalgroup}" \
+    "CONFIG SBAS DISABLE" \
+    "CONFIG AGNSS DISABLE" \
+    "CONFIG PPS DISABLE" \
+    "MASK 10" \
+    "UNMASK GPS" \
+    "UNMASK GLO" \
+    "UNMASK GAL" \
+    "UNMASK BDS" \
+    "MASK QZSS" \
+    "MASK IRNSS"
+}
+
 build_log_commands() {
   unicore_emit_ascii_only_log "GPGGA" "${UNICORE_MAIN_LOG_PERIOD}"
   unicore_emit_paired_log "PVTSLNA" "PVTSLNB" "${UNICORE_MAIN_LOG_PERIOD}"
@@ -571,17 +597,12 @@ apply_receiver_configuration() {
   local port="${1:?apply_receiver_configuration: missing port}"
   local detected_baud="${2:?apply_receiver_configuration: missing detected baud}"
   local model="${3:?apply_receiver_configuration: missing model}"
-  local signalgroup
   local cmds=()
+  local base_cmds=()
   local log_cmds=()
   local profile_cmds=()
 
   unicore_apply_profile_defaults
-
-  signalgroup="$(signalgroup_for_model "$model")" || {
-    log "WARN: model '${model}' not clearly identified; refusing to apply SIGNALGROUP." >&2
-    return 1
-  }
 
   if [ "$detected_baud" != "$TARGET_BAUD" ]; then
     log "Switching ${UNICORE_COM_PORT} from ${detected_baud} to ${TARGET_BAUD}..."
@@ -601,50 +622,14 @@ apply_receiver_configuration() {
 
   log "Receiver verified at ${TARGET_BAUD}; detected model ${model}."
 
+  mapfile -t base_cmds < <(build_base_config_commands "$model")
   mapfile -t log_cmds < <(build_log_commands)
   mapfile -t profile_cmds < <(build_profile_commands)
 
-  cmds=(
-    # Rover mode + NMEA version + RTK timeouts.
-    # SURVEY MOW = low-dynamics survey-grade rover with the mowing-specific
-    # dynamics preset. UAV (which we tried first) is for drones — assumes
-    # high vertical accelerations and hurts ambiguity resolution on a
-    # ground robot that mostly translates. AUTOMOTIVE is the next-best
-    # alternative if SURVEY MOW isn't supported on a given firmware rev.
-  #  "FRESET"
-    "MODE ROVER SURVEY MOW"
-    "CONFIG NMEAVERSION V411"
-    # 180 s tolerates short NTRIP outages without dropping back to single
-    # point. Default is 60 s on most firmware revisions.
-    "CONFIG RTK TIMEOUT 10"
-#    "CONFIG RTK MMPL 1"
-    "CONFIG RTK RELIABILITY 3 1"
-    "CONFIG DGPS TIMEOUT 600"
-    "CONFIG UNDULATION AUTO"
-    "${signalgroup}"
-    "CONFIG SBAS DISABLE"
-    "CONFIG AGNSS DISABLE"
-#    "CONFIG PVTALG MULTI"
-#    "CONFIG MMP ENABLE"
-#    "CONFIG PSRVELDRPOS ENABLE"
-#    "CONFIG PPP DATUM WGS84"
-#    "CONFIG ANTIJAM AUTO"
-    "CONFIG PPS DISABLE"
-
-    # Constellation enables. Mowgli mowers are typically in mid-latitude
-    # open sky, so we want everything except QZSS (regional, doesn't help
-    # in EU/NA).
-    "MASK 10"
-    "UNMASK GPS"
-    "UNMASK GLO"
-    "UNMASK GAL"
-    "UNMASK BDS"
-    "MASK QZSS"
-    "MASK IRNSS"
-    # Drop previously persisted output schedule on the current port so a
-    # transition from debug/survey back to normal actually becomes lighter.
-    "UNLOG"
-  )
+  cmds=( "${base_cmds[@]}" )
+  # Drop previously persisted output schedule on the current port so a
+  # transition from debug/survey back to normal actually becomes lighter.
+  cmds+=( "UNLOG" )
   cmds+=( "${profile_cmds[@]}" )
   cmds+=( "${log_cmds[@]}" )
 
