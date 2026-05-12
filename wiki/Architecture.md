@@ -1067,21 +1067,30 @@ BehaviorTreeNode (main ROS2 node, 10 Hz)
                 │
                 ├── Sequence: MowingSequence (COMMAND_START = 1)
                 │   ├── IsCommand(1)
-                │   ├── Undock (with GPS wait, SLAM save, heading calibration)
+                │   ├── Undock (with GPS wait, heading calibration via undock TF delta)
                 │   ├── Multi-area coverage loop:
-                │   │   └── Repeat(until no more areas): AreaLoop
-                │   │       ├── GetNextUnmowedArea() — fetch next unmowed area polygon
-                │   │       ├── Cell-based strip coverage loop:
-                │   │       │   ├── ReactiveSequence: MowingCommandGuard
-                │   │       │   │   ├── IsCommand(1) — abort if user cancels
-                │   │       │   │   ├── RainGuard — dock, wait, resume
-                │   │       │   │   ├── BatteryGuard — dock, charge to 95%, resume
-                │   │       │   │   └── Repeat(500): StripLoop
-                │   │       │   │       ├── GetNextStrip(current_area)
-                │   │       │   │       ├── TransitToStrip (RPP)
-                │   │       │   │       └── FollowStrip (FTCController)
-                │   │       │   └── FailedCoverageDock
-                │   │       └── Mark area as complete, continue to next area
+                │   │   └── Repeat(num_cycles=100): AreaLoop
+                │   │       ├── GetNextUnmowedArea() — picks next area with un-mowed cells
+                │   │       ├── Fallback MowOrSkipArea:
+                │   │       │   ├── Sequence PlanThenFollow:
+                │   │       │   │   ├── PlanCoverageArea(area_index, headland_width_m=0.20)
+                │   │       │   │   │   — calls map_server/get_remaining_area_polygon
+                │   │       │   │   │     (outer + mow_progress holes), then
+                │   │       │   │   │     mowgli_coverage compute_coverage_path action
+                │   │       │   │   │     (F2C v2: ConstHL → TrapezoidalDecomp →
+                │   │       │   │   │      BoustrophedonOrder → PathPlanning + Dubins
+                │   │       │   │   │      connectors). ONE plan per area per session.
+                │   │       │   │   └── RetryUntilSuccessful(num_attempts=5):
+                │   │       │   │       Fallback MowOrRecover:
+                │   │       │   │         ├── FollowStrip — sends path to
+                │   │       │   │         │   FollowCoveragePath (FTCController)
+                │   │       │   │         ├── StuckBackoff — IsObstacleStuck →
+                │   │       │   │         │   BackUp(0.40m) + ClearCostmap → re-tick
+                │   │       │   │         └── DynamicObstacleSkip —
+                │   │       │   │             WasRecentlyInCollisionStop →
+                │   │       │   │             ClearCostmap + Wait → re-tick
+                │   │       │   └── Sequence AreaUnreachable (PlanCoverageArea FAILURE
+                │   │       │       OR 5 retries exhausted) — advance AreaLoop
                 │   └── All areas complete → disable blade, save, dock → IDLE_DOCKED
                 │
                 ├── Sequence: HomeSequence (COMMAND_HOME = 2)
@@ -1365,37 +1374,59 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory) {
 
 ---
 
-### 7. Coverage Planning (mowgli_map/map_server_node)
+### 7. Coverage Planning (mowgli_map + mowgli_coverage)
 
-**Purpose:** Cell-based strip coverage planning, integrated into `map_server_node`. Strips are planned on demand via the `~/get_next_strip` service — no pre-planned full path.
+**Purpose:** Per-area F2C v2.0 coverage planning with `mow_progress` resume semantics. Two packages cooperate.
 
-**Location:** `src/mowgli_map/`
+**Locations:** `src/mowgli_map/` (area storage, mow_progress grid, remaining-polygon service), `src/mowgli_coverage/` (Fields2Cover v2.0 coverage server).
 
 **Coverage Loop (driven by BT nodes):**
 
-1. `GetNextUnmowedArea` — outer loop, iterates through all mowing areas
-2. `GetNextStrip` — inner loop, fetches the next strip for the current area
-3. `TransitToStrip` — navigates to strip start (RPP controller)
-4. `FollowStrip` — follows strip with FTCController (PID on 3 axes)
+1. `GetNextUnmowedArea` — outer loop. Picks the next area whose `mow_progress` layer still has un-mowed cells; writes its index to the blackboard. Returns FAILURE when all areas are complete.
+2. `PlanCoverageArea` (ONE per area per session) — calls `/map_server_node/get_remaining_area_polygon` to fetch `area outer ring + mow_progress holes` (Boost.Geometry difference of the area polygon and the already-mowed cells, CCW outer / CW holes), then sends a `compute_coverage_path` action goal to `mowgli_coverage`. Stores the resulting `nav_msgs/Path` on the BT blackboard.
+3. `FollowStrip` — sends the stored path to `FollowCoveragePath` (FTCController). On abort (collision wedge, FTC `WAITING_FOR_GOAL_APPROACH` timeout, etc.), `RetryUntilSuccessful(num_attempts=5)` re-ticks `FollowStrip` on the SAME path; FTC's `setPlan` resyncs to the closest pose, effectively "continue from where you left off" without re-planning. `IsObstacleStuck` and `WasRecentlyInCollisionStop` fallback branches insert `BackUp` + `ClearCostmap` between retries.
 
-Progress is tracked in the `mow_progress` grid layer (survives restarts). Coverage status is available via `~/get_coverage_status` service and `/map_server_node/coverage_cells` OccupancyGrid topic.
+Progress is tracked in the `mow_progress` grid layer (survives restarts, stamp radius `tool_width / 2`). Coverage status is available via `~/get_coverage_status` service and `/map_server_node/coverage_cells` OccupancyGrid topic.
 
-**Key Parameters (mowgli_robot.yaml):**
+The legacy on-demand strip planner (`~/get_next_strip` service + `GetNextStrip` / `TransitToStrip` BT nodes) still exists in `map_server_node` as a fallback and to drive the `mow_progress` cell stamping logic, but the live coverage path is the F2C output.
+
+**mowgli_coverage server (Fields2Cover v2.0):**
+
+- Action: `compute_coverage_path` (type `opennav_coverage_msgs/action/ComputeCoveragePath`), same interface as the legacy `opennav_coverage` server — the BT client is unchanged.
+- Backend pinned to F2C v2.0.0 at `/opt/fields2cover-200`. Legacy v1.2.1 install at `/opt/fields2cover-121` is still on the global `ld` path, so the package's `CMakeLists.txt` sets explicit `INSTALL_RPATH`s on both `libmowgli_coverage_core.so` and the executable so the loader picks v2.
+- F2C pipeline per `computeCoveragePath()` call:
+  1. **Robot setup** — `f2c::types::Robot(robot_width, op_width)`, `setMinTurningRadius`, `setMaxDiffCurv`. `op_width` is injected at launch from `mowgli_robot.yaml.tool_width`.
+  2. **Cell construction** — `goal.polygons[0]` is the outer ring; subsequent polygons are interior holes (obstacles + already-mowed islands). F2C linear rings are closed if the caller didn't.
+  3. **Headland inset** — `f2c::hg::ConstHL.generateHeadlands(cells, headland_width)`. Returns the inner planning field.
+  4. **Headland traversal** — `f2c::hg::ConstHL.generateHeadlandSwaths(cov_width, n_passes, dir_out2in=true)` emits N concentric perimeter rings; we densify each ring to 10 cm steps (sparse vertex lists leave FTC's carrot jumping between corners → PolygonStop). Prepended to the path so the perimeter strip gets mowed first.
+  5. **Trapezoidal decomposition** — `f2c::decomp::TrapezoidalDecomp.decompose(inner)` splits the inner field around interior holes into sub-cells. Without this, the routing step serialises ALL swaths north-to-south and `PathPlanning` connects non-adjacent endpoints with straight lines (`min_turning_radius=0.05 m`, no real arc) — visible as long diagonal connectors cutting across the field around obstacles. Skipped when `cell.size() == 1` (no holes).
+  6. **Per sub-cell** — `f2c::sg::BruteForce.generateBestSwaths(NSwath, cov_width, sub_cell)` → `f2c::rp::BoustrophedonOrder.genSortedSwaths()` → `f2c::pp::PathPlanning.planPath(robot, ordered, DubinsCurvesCC)`.
+  7. **Inter-cell connectors** — `pp.planPathForConnection(robot, prev_end_pt, prev_end_ang, {}, first_state.point, first_state.angle, DubinsCurvesCC)` inserts a continuous-curvature Dubins arc between the previous sub-cell's end pose and the next sub-cell's start pose (and between headland end / first sub-cell start). Without this, FTC's `WAITING_FOR_GOAL_APPROACH` state times out trying to drive between unconnected endpoints.
+  8. **Conversion** — F2C path states → `nav_msgs/Path` (`PoseStamped` per state, yaw via half-angle quaternion).
+
+**Key Parameters:**
+
+`mowgli_robot.yaml`:
 
 ```yaml
-path_spacing: 0.13          # m – distance between parallel swath centrelines
-mow_angle_offset_deg: -1    # swath angle; -1 = auto-detect optimal
-tool_width: 0.18            # m – effective cut width
+tool_width: 0.18            # m – single source: map_server stamp + F2C operation_width
+coverage_xy_tolerance: 0.05 # m – must stay < tool_width (capped at 0.15 in launch)
+mowing_speed: 0.5           # m/s – injected into FollowCoveragePath.speed_fast
 ```
 
-**Action Feedback:**
+`nav2_params.yaml`:
 
-During planning, the action publishes feedback at each phase:
-```
-Phase: headland → mbb → grid → sweep → voronoi → complete
+```yaml
+coverage_server:
+  ros__parameters:
+    default_headland_width: 0.20
+    robot_width: 0.20
+    operation_width: 0.18         # OVERRIDDEN at launch from tool_width
+    min_turning_radius: 0.05
+    linear_curv_change: 200.0
 ```
 
-Allows behavior tree to monitor progress and detect hangs.
+The mode-string params (`default_swath_angle_type: BRUTE_FORCE`, `default_route_type: BOUSTROPHEDON`, `default_path_type: DUBIN`, etc.) are declared for compatibility with the legacy `opennav_coverage` YAML schema but the v2 server uses a fixed pipeline — log line on startup tells the operator their override is being ignored.
 
 #### Multi-Area Coverage
 
@@ -1887,8 +1918,7 @@ This lets costmap, collision_monitor, fusion_graph (when enabled), and every oth
 | `/odometry/gps` | nav_msgs/Odometry | navsat_transform_node | on GPS arrival | NavSatFix converted to map-frame pose |
 | `/fusion_graph/diagnostics` | diagnostic_msgs/DiagnosticArray | fusion_graph_node | 1 Hz | Factor-graph health (when use_fusion_graph:=true) |
 | `/localization/status` | diagnostic_msgs/DiagnosticStatus | localization_monitor_node | 2 Hz | GPS quality + EKF health |
-| `/coverage_planner_node/coverage_path` | nav_msgs/Path | coverage_planner_node | Once per plan | B-RV coverage path with poses |
-| `/coverage_planner_node/coverage_outline` | nav_msgs/Path | coverage_planner_node | Once per plan | Headland outline for visualization |
+| `/coverage_server/_action/feedback` and `/coverage_server/_action/result` | opennav_coverage_msgs/ComputeCoveragePath | mowgli_coverage (coverage_server) | Per BT PlanCoverageArea call | F2C v2.0 coverage path (`result.nav_path`) — fed to FollowCoveragePath by FollowStrip BT node |
 | `/path` | nav_msgs/Path | planner_server (Nav2) | 1 Hz | Global path from Nav2 planner |
 | `/cmd_vel` | geometry_msgs/Twist | twist_mux | 10–50 Hz | Final velocity command (to hardware/Gazebo) |
 | `/diagnostics` | diagnostic_msgs/DiagnosticArray | diagnostics_node (mowgli_monitoring) | 1 Hz | System health aggregation |
@@ -1905,12 +1935,12 @@ This lets costmap, collision_monitor, fusion_graph (when enabled), and every oth
 | `/odometry/filtered_map` | nav2 (bt_navigator), BT, diagnostics_node, GUI | Localized pose for control, behavior tree, diagnostics |
 | `/map` | nav2 planner, behavior_tree (area polygons), diagnostics_node | Global navigation reference (area-polygon grid) |
 | `/gps/fix` | navsat_transform_node, navsat_to_absolute_pose_node, diagnostics_node | Sensor fusion, convert fix to local frame, monitor GPS |
-| `/encoder2/odom` | ekf_odom_node | K-ICP twist consumed as a secondary encoder |
+| (removed) | — | The legacy `/encoder2/odom` K-ICP twist topic is gone; ekf_odom_node uses only `/wheel_odom`. |
 | `/status` | behavior_tree_node, localization_monitor_node, diagnostics_node | Health checks, sensor freshness |
 | `/emergency` | behavior_tree_node, diagnostics_node | Emergency monitoring |
 | `/power` | behavior_tree_node, diagnostics_node | Battery level monitoring |
 | `/wheel_odom` | diagnostics_node | Monitor odometry freshness |
-| `/coverage_planner_node/coverage_path` | FollowCoveragePath BT node, diagnostics_node (optional) | Coverage execution |
+| `/controller_server/FollowCoveragePath/global_plan` | PathProgressGoalChecker | Coverage completion gating (>= 95% path-pose tracking + xy/yaw to goal pose) |
 
 **Services (Request-Response):**
 
@@ -1921,6 +1951,7 @@ This lets costmap, collision_monitor, fusion_graph (when enabled), and every oth
 | `/high_level_control` | HighLevelControl | behavior_tree_node | GUI | Mode commands (START=1, HOME=2, RECORD_AREA=3, S2=4, RECORD_FINISH=5, RECORD_CANCEL=6, MANUAL_MOW=7) |
 | `/map_server_node/add_area` | AddMowingArea | map_server_node | RecordArea BT node | Save recorded mowing area polygon |
 | `/map_server_node/get_next_unmowed_area` | GetNextUnmowedArea | map_server_node | behavior_tree_node (GetNextUnmowedArea BT node) | Fetch next unmowed area polygon and coverage grid |
+| `/map_server_node/get_remaining_area_polygon` | GetRemainingAreaPolygon | map_server_node | behavior_tree_node (PlanCoverageArea BT node) | Returns area outer ring + `mow_progress` holes (Boost.Geometry difference, CCW outer / CW holes) — fed to mowgli_coverage's compute_coverage_path action |
 | `/map_server_node/mark_area_complete` | MarkAreaComplete | map_server_node | behavior_tree_node | Mark area as mowing complete, persist coverage state |
 | `/navigate_to_pose` | nav2_msgs/NavigateToPose | nav2_behavior_tree_navigator | behavior_tree_node | Send goal to Nav2 |
 
@@ -1935,17 +1966,19 @@ This lets costmap, collision_monitor, fusion_graph (when enabled), and every oth
 
 ## Summary: Architectural Principles
 
-1. **12-Package Modular Design:** Separation of concerns across hardware, localization, navigation, planning, monitoring, and behavior layers.
-   - **Core:** mowgli_interfaces (message definitions)
+1. **14-Package Modular Design:** Separation of concerns across hardware, localization, navigation, planning, monitoring, and behavior layers.
+   - **Core:** mowgli_interfaces (message + service definitions, including `GetRemainingAreaPolygon.srv`)
    - **Hardware:** mowgli_hardware (STM32 bridge via COBS)
-   - **Perception:** mowgli_localization (EKF fusion, multi-sensor)
-   - **Control:** mowgli_nav2_plugins (RPP for transit, FTCController for coverage)
-   - **Planning:** mowgli_map (cell-based strip coverage planner, on-demand via `~/get_next_strip`)
-   - **Behavior:** mowgli_behavior (BehaviorTree.CPP, 10 Hz reactive control)
+   - **Perception:** mowgli_localization (EKF fusion helpers — `cog_to_imu_node`, `mag_yaw_publisher`, `navsat_to_absolute_pose_node`, `costmap_scan_filter_node`, `scan_deskew_node`)
+   - **Localization (opt-in):** fusion_graph (GTSAM iSAM2 factor graph; replaces `ekf_map_node` when `use_fusion_graph:=true`)
+   - **Control:** mowgli_nav2_plugins (FTCController for both FollowPath/FollowCoveragePath, `PathProgressGoalChecker` for coverage completion)
+   - **Planning (areas + cells):** mowgli_map (area storage, `mow_progress` grid, `~/get_remaining_area_polygon` for F2C, legacy strip planner via `~/get_next_strip`)
+   - **Planning (coverage path):** mowgli_coverage (Fields2Cover v2.0 server, action `compute_coverage_path`)
+   - **Behavior:** mowgli_behavior (BehaviorTree.CPP v4, 10 Hz reactive control; F2C-driven coverage via `PlanCoverageArea` + `FollowStrip`)
    - **Monitoring:** mowgli_monitoring (diagnostics, MQTT bridge)
-   - **Simulation:** mowgli_simulation (Gazebo Harmonic, ros_gz_bridge)
-   - **Infrastructure:** mowgli_bringup (launch, config), mowgli_description (URDF/xacro), mowgli_map (map storage)
-   - **Third-party:** opennav_coverage (Nav2 coverage server)
+   - **Simulation:** mowgli_simulation (Webots, perfect-IMU mode synthesised from `/cmd_vel`)
+   - **Infrastructure:** mowgli_bringup (launch, config), mowgli_description (URDF/xacro)
+   - **Third-party:** `opennav_coverage` git submodule for the `_msgs` action definitions only — every other subpackage is `COLCON_IGNORE`'d.
 
 2. **ROS2 Kilted + Gazebo Harmonic:** Modern robotics stack with first-class simulation support and lifecycle management.
 
@@ -1974,9 +2007,9 @@ This lets costmap, collision_monitor, fusion_graph (when enabled), and every oth
      RTK-Float windows). `ekf_odom_node` keeps `odom→base_footprint`
      flowing even when the map-frame backend stalls.
 
-6. **Coverage Path Following:** FTCController (Follow-the-Carrot) is the active controller for FollowCoveragePath, achieving <10mm lateral accuracy with 3-axis PID control and in-place rotation at swath turns. RPP remains active for FollowPath (transit and docking).
+6. **Coverage Path Following:** FTCController (Follow-the-Carrot, 3-axis PID + native obstacle deviation) is the active controller for BOTH `FollowPath` (transit) and `FollowCoveragePath` (coverage strips). Single plugin, single tuning. RPP is no longer in the active stack. Coverage completion is gated by `mowgli_nav2_plugins/PathProgressGoalChecker` (>= 95 % path-pose tracking + xy/yaw to goal pose) — `StoppedGoalChecker` and `SimpleGoalChecker` both fired on velocity stoppage during PRE_ROTATE pivots, completing the action at <2 % coverage.
 
-7. **B-RV Coverage Planning:** Grid-based boustrophedon sweep with MBB optimal direction (rotating calipers on convex hull), obstacle-aware cell skipping, and Voronoi roadmap transit (Boost.Polygon Voronoi + Dijkstra shortest path) for inter-region connections. No Fields2Cover dependency.
+7. **F2C v2 Coverage Planning:** `mowgli_coverage` server (in-tree, action `compute_coverage_path`) wraps Fields2Cover **2.0.0**: `ConstHL.generateHeadlands` insets + `generateHeadlandSwaths` emits concentric perimeter passes (densified 10 cm), `TrapezoidalDecomp` splits inner field around interior holes, then per sub-cell `BruteForce` swath generation → `BoustrophedonOrder` → `PathPlanning(DubinsCurvesCC)` with `planPathForConnection` Dubins arcs between sub-cells. `mowgli_map`'s `~/get_remaining_area_polygon` feeds it the area polygon minus already-mowed cells (Boost.Geometry difference). The legacy `opennav_coverage` upstream is kept as a git submodule for the `_msgs` package only — the server subpackages are `COLCON_IGNORE`'d (pinned to F2C 1.2.1, missing the v2 features above).
 
 8. **Reactive Behavior Trees (BehaviorTree.CPP v4):** 10 Hz non-preemptive tree execution with priority-based fallback selection:
    - Emergency guard: highest priority, interrupts all activity

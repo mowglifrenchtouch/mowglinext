@@ -90,7 +90,7 @@ AI may suggest having multiple nodes publish the same TF transforms. **Don't.** 
 
 #### 4. MPPI Controller for Coverage
 
-AI often suggests MPPI as "more advanced". For boustrophedon coverage paths with 0.18 m swath spacing, MPPI's Euclidean nearest-point matching jumps between adjacent parallel swaths. Mowgli uses **RPP** (Regulated Pure Pursuit) for transit and **FTCController** (Follow-the-Carrot, 3-axis PID) for coverage swaths — the latter gives sub-10 mm lateral error along a strip.
+AI often suggests MPPI as "more advanced". For boustrophedon coverage paths with 0.18 m swath spacing, MPPI's Euclidean nearest-point matching jumps between adjacent parallel swaths. Mowgli uses **FTCController** (Follow-the-Carrot, 3-axis PID + native obstacle deviation) for BOTH `FollowPath` (transit) and `FollowCoveragePath` (coverage swaths) — single plugin, single tuning, sub-10 mm lateral error along a strip. RPP/RotationShim are not in the active stack.
 
 #### 5. Hallucinated ROS2 APIs
 

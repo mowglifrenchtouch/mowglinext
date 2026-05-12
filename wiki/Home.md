@@ -47,7 +47,7 @@ mowglinext/
 4. **Map frame = GPS frame** — X=east, Y=north, no rotation.
 5. **Firmware is blade safety authority** — ROS2 is fire-and-forget.
 6. **Collision monitor for avoidance** — costmap obstacles disabled in planner.
-7. **Cell-based strip coverage** — no full-path pre-planning, strips fetched one at a time.
+7. **Per-area F2C v2 coverage** — `mowgli_coverage` (Fields2Cover 2.0.0) plans one path per area per session from the area polygon minus already-mowed cells (`mow_progress` holes). FTCController follows it; on abort, the BT re-ticks `FollowStrip` on the same path and FTC `setPlan` resyncs to the closest pose. Legacy cell-based strip planner kept as fallback and as the source of `mow_progress` cell stamping.
 8. **Emergency auto-reset on dock** — firmware decides whether to clear latch.
 9. **Area recording via BT** — drive boundary, Douglas-Peucker simplification, save polygon.
 10. **LiDAR feeds the map-frame estimate via fusion_graph** — opt-in via `use_fusion_graph:=true`; scan-matching between-factors and loop-closure factors keep the map-frame pose stable across multi-minute RTK-Float windows.

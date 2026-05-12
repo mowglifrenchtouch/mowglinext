@@ -303,19 +303,19 @@ The robot rectangle uses dimensions from `/robot_description` (URDF). You can ve
 
 The Settings → Navigation panel exposes:
 
-- **Transit XY Tolerance** (default 0.75 m) — RPP "we arrived" radius.
+- **Transit XY Tolerance** (default 0.75 m) — FTC FollowPath "we arrived" radius (transit and dock approach).
 - **Yaw Tolerance** (default 1.0 rad ≈ 57°) — final yaw at goal.
-- **Coverage XY Tolerance** (default 0.50 m) — FTCController per-strip arrival.
-- **Progress Timeout** (default 60 s) — Nav2 fails the action if the progress checker hasn't seen 0.15 m of motion in this window.
+- **Coverage XY Tolerance** (default 0.05 m, hard-capped at 0.15 in `navigation.launch.py`) — `PathProgressGoalChecker` xy tolerance for the goal pose. MUST stay below `tool_width` (0.18 m). Earlier site configs carrying the legacy 0.50 m value were field-broken (`SimpleGoalChecker` fired on tick 1 because the strip end was within tolerance of the robot's current pose, FTC reported SUCCEEDED before publishing any cmd_vel, the BT loop spun forever). Coverage completion is now also gated on monotonic path-pose tracking >= 95 %, so loose tolerances no longer bypass the controller — but keeping it tight prevents the goal pose from being claimed prematurely on the final approach.
+- **Progress Timeout** (default 30 s, operator-tunable via `progress_timeout_sec`) — Nav2 fails the action if `PoseProgressChecker` hasn't seen 0.15 m of translation OR 0.5 rad of rotation in this window. The angle gate keeps headland pivots from tripping "no progress".
 
-Don't tighten transit XY below 0.20 m — Nav2's RPP will oscillate.
+Don't tighten transit XY below 0.20 m — FTC's PRE_ROTATE state can oscillate at the goal.
 
 ### 3.4 Schedule, blade, rain
 
 These are operator-facing and self-explanatory in the UI:
 
 - **Schedule** — add weekly recurrences with start time + duration. Rain-aware and auto-dock-low rules apply globally.
-- **Mowing** (settings) — speed (0.20 m/s default), pattern (path spacing 0.13 m, mow angle, headland width), perimeter (outline passes count and offset).
+- **Mowing** (settings) — speed (0.50 m/s default for both transit and mowing), `tool_width` (0.18 m, single source for blade cut width and F2C swath spacing), `mow_angle_offset_deg` / `headland_width` exposed for F2C v2 coverage, perimeter (outline passes count and offset for the legacy strip planner).
 - **Battery** — voltage thresholds with hysteresis (Low Dock 20% / Resume Above 95%) — this is also enforced firmware-side.
 - **Rain** — choose Dock / Dock Until Dry / Pause Auto / Ignore behaviour, plus debounce (10 s default) and resume delay (30 min default).
 

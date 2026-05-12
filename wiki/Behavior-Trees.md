@@ -59,10 +59,21 @@ Root (ReactiveSequence) — re-evaluates all children every tick
     ├── CriticalBatteryDock (< 10%) → save, dock, clear command
     │
     ├── MowingSequence (COMMAND_START = 1)
-    │   ├── Undock (GPS wait, SLAM save, heading calibration)
-    │   ├── Strip coverage loop (reactive rain/battery guards)
-    │   │   ├── GetNextStrip → TransitToStrip → FollowStrip
-    │   │   └── Recovery: backup, clear costmap, retry
+    │   ├── Undock (GPS wait, heading calibration from undock TF delta)
+    │   ├── Multi-area coverage loop (reactive rain/battery guards):
+    │   │   AreaLoop (Repeat 100):
+    │   │     ├── GetNextUnmowedArea → current_area_index
+    │   │     ├── PlanCoverageArea(area_index, headland_width_m=0.20)
+    │   │     │   — calls map_server/get_remaining_area_polygon (outer +
+    │   │     │     mow_progress holes), then mowgli_coverage
+    │   │     │     compute_coverage_path action (F2C v2). ONE plan/area/session.
+    │   │     ├── RetryUntilSuccessful(5):
+    │   │     │   ├── FollowStrip — sends path to FollowCoveragePath (FTC).
+    │   │     │   │   On abort, FTC's setPlan resyncs to closest pose.
+    │   │     │   ├── StuckBackoff: IsObstacleStuck → BackUp(0.40m)+ClearCostmap
+    │   │     │   └── DynamicObstacleSkip: WasRecentlyInCollisionStop →
+    │   │     │       ClearCostmap + Wait
+    │   │     └── AreaUnreachable (PlanFAILURE OR retries exhausted) → advance
     │   └── Complete → disable blade, save, dock
     │
     ├── HomeSequence (COMMAND_HOME = 2) → save, dock
@@ -115,10 +126,11 @@ Root (ReactiveSequence) — re-evaluates all children every tick
 - `RecordResumeUndockFailure` — tracks resume failures
 - `ResetEmergency` — calls `/emergency_stop` with emergency=false (firmware decides whether to clear)
 
-### Coverage Nodes (cell-based strip-by-strip)
-- `GetNextStrip` — fetches next unvisited strip from `map_server_node ~/get_next_strip`
-- `TransitToStrip` — navigates to strip start (RPP controller)
-- `FollowStrip` — follows strip path (FTCController, <10mm lateral accuracy)
+### Coverage Nodes (F2C-driven, one plan per area per session)
+- `GetNextUnmowedArea` — outer loop. Picks the next area whose `mow_progress` layer still has un-mowed cells; writes `current_area_index` to the blackboard. FAILURE when all areas done.
+- `PlanCoverageArea` — calls `/map_server_node/get_remaining_area_polygon` (returns area outer ring + `mow_progress` holes via Boost.Geometry difference), then sends a `compute_coverage_path` action goal to `mowgli_coverage` (Fields2Cover v2.0). Stores the resulting path on the blackboard. ONE invocation per area per session.
+- `FollowStrip` — sends the stored path to `FollowCoveragePath` (FTCController). On abort, `RetryUntilSuccessful(5)` re-ticks on the SAME path; FTC's `setPlan` resyncs to the closest pose. Recovery branches (`IsObstacleStuck`, `WasRecentlyInCollisionStop`) insert `BackUp` + `ClearCostmap` between retries.
+- `GetNextStrip` / `TransitToStrip` — legacy on-demand strip planner BT nodes. Still registered (the strip planner in `map_server_node` is also the source of `mow_progress` cell stamping), but the live mowing path is the F2C output.
 
 ### Recording Nodes
 - `RecordArea` — records robot trajectory while user drives boundary, Douglas-Peucker simplification, saves polygon via `/map_server_node/add_area`. Publishes live trajectory preview on `~/recording_trajectory`. Listens for finish (cmd 5) or cancel (cmd 6).

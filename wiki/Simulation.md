@@ -165,11 +165,11 @@ The test runs a complete autonomous mowing cycle and tracks structured phases:
 
 | Phase | What's tested |
 |-------|--------------|
-| **UNDOCKING** | Robot undocks from charging station via opennav_docking |
-| **PLANNING** | Coverage planner generates boustrophedon path |
-| **MOWING** | Robot follows coverage swaths with RPP controller |
-| **OBSTACLE AVOIDANCE** | Spawns a 30cm obstacle on the first swath, validates robot stops and reroutes around it |
-| **DOCKING** | Robot returns to dock after mowing or on failure |
+| **UNDOCKING** | Robot undocks via Nav2 BackUp behavior (1.5 m / 0.15 m/s) — `opennav_docking` UndockRobot is unreliable with GPS drift near the dock |
+| **PLANNING** | `mowgli_coverage` (Fields2Cover v2.0) generates the per-area path (ConstHL headland + TrapezoidalDecomp + BoustrophedonOrder + Dubins connectors). One plan per area per session. |
+| **MOWING** | Robot follows coverage path with FTCController (3-axis PID, <10 mm lateral). Coverage completion gated by `PathProgressGoalChecker` (>= 95 % path-pose tracking). |
+| **OBSTACLE AVOIDANCE** | Spawns a 30 cm obstacle on the first swath. FTC's native `enable_obstacle_deviation` skirts the obstacle (lateral offset up to 1.5 m); on harder failures, the BT inserts `BackUp(0.40m) + ClearCostmap` and re-ticks `FollowStrip` on the SAME path (FTC `setPlan` resyncs to the closest pose). |
+| **DOCKING** | Robot returns to dock via `opennav_docking` DockRobot after mowing or on failure |
 
 ### Metrics collected
 

@@ -53,8 +53,8 @@ The fastest way to explore and develop MowgliNext — no local setup required:
 The devcontainer provides a complete ROS2 Kilted development environment:
 
 - Full Nav2 navigation stack, robot_localization (default dual-EKF localizer), and an opt-in GTSAM iSAM2 factor-graph localizer (`fusion_graph`) with LiDAR scan-matching and loop-closure factors
-- Gazebo Harmonic simulation (headless)
-- Cell-based strip coverage planner (`map_server_node`) + FTCController for swath following
+- Webots simulation (headless)
+- `mowgli_coverage` (Fields2Cover 2.0.0 at `/opt/fields2cover-200`) per-area path planner + FTCController for both transit and coverage following
 - Foxglove Bridge + rosbridge for visualization
 - GUI stack (Go 1.24, Node 22, yarn) so `cd gui && go build` and `cd gui/web && yarn dev` work out of the box
 - Python linting (ruff, pre-commit), C++ linting (cppcheck, clang-format), gdb, htop

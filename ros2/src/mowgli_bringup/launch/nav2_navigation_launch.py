@@ -55,6 +55,7 @@ def generate_launch_description():
         'bt_navigator',
         'waypoint_follower',
         'docking_server',
+        'coverage_server',     # opennav_coverage / Fields2Cover (F2C path planner)
     ]
 
     remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
@@ -223,6 +224,26 @@ def generate_launch_description():
                 # Remap docking_server's cmd_vel to go through twist_mux
                 # instead of competing directly on /cmd_vel with twist_mux output.
                 remappings=remappings + [('cmd_vel', 'cmd_vel_docking')],
+            ),
+            # mowgli_coverage server — Mowgli-owned action server backed
+            # directly by Fields2Cover v2.0.0 (linked via target
+            # Fields2Cover::Fields2Cover from /opt/fields2cover-200,
+            # the project Dockerfile installs the library at that
+            # prefix). Implements the same opennav_coverage_msgs
+            # action so the BT-side PlanCoverageArea client is
+            # unchanged. Replaces the legacy opennav_coverage server
+            # (which was pinned to F2C 1.2.1 — that subpackage is
+            # COLCON_IGNORE'd to keep the build clean).
+            Node(
+                package='mowgli_coverage',
+                executable='mowgli_coverage',
+                name='coverage_server',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                remappings=remappings,
             ),
             Node(
                 package='nav2_lifecycle_manager',

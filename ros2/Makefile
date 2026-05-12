@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-ROS_DISTRO    ?= jazzy
+ROS_DISTRO    ?= kilted
 BUILD_TYPE    ?= Release
 DOCKER_IMAGE  ?= mowgli-ros2
 DOCKER_TAG    ?= latest
@@ -28,7 +28,7 @@ help:
 	@echo ""
 	@echo "Simulation & testing:"
 	@echo "  sim                Launch headless simulation (auto-stops previous)"
-	@echo "  sim-stop           Kill all ROS2/Gazebo processes and clean DDS state"
+	@echo "  sim-stop           Kill all ROS2/Webots processes and clean DDS state"
 	@echo "  e2e-test           Launch sim + run E2E test + stop (self-contained)"
 	@echo ""
 	@echo "Docker images (CI / production):"

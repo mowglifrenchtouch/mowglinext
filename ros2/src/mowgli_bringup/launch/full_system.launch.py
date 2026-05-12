@@ -70,9 +70,7 @@ def generate_launch_description() -> LaunchDescription:
             with open(_runtime_cfg_path, "r") as _f:
                 _cfg = yaml.safe_load(_f) or {}
             _rp = _cfg.get("mowgli", {}).get("ros__parameters", {})
-            if "use_lidar" in _rp:
-                _early_use_lidar = "true" if bool(_rp["use_lidar"]) else "false"
-            elif "lidar_enabled" in _rp:
+            if "lidar_enabled" in _rp:
                 _early_use_lidar = "true" if bool(_rp["lidar_enabled"]) else "false"
         except yaml.YAMLError:
             pass
@@ -206,6 +204,10 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             behavior_params,
             {"use_sim_time": use_sim_time},
+            # Operator-tunable BT knobs sourced from mowgli_robot.yaml
+            # so they appear on the GUI Settings page.
+            {"tick_rate": float(robot_params.get("tick_rate", 10.0))},
+            {"bt_debug_logging": bool(robot_params.get("bt_debug_logging", False))},
         ],
     )
 
@@ -220,6 +222,24 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             map_params,
             {"use_sim_time": use_sim_time},
+            # Dock pose + body geometry from mowgli_robot.yaml. Without
+            # these the map_server uses C++ defaults (0,0,0) and builds
+            # an axis-aligned polygon at the map origin — wrong unless
+            # the dock happens to be exactly there. The hardware_bridge
+            # already receives the same dock_pose_*; here we forward to
+            # the planner / keepout-mask path too.
+            {"dock_pose_x": float(robot_params.get("dock_pose_x", 0.0))},
+            {"dock_pose_y": float(robot_params.get("dock_pose_y", 0.0))},
+            {"dock_pose_yaw": float(robot_params.get("dock_pose_yaw", 0.0))},
+            {"dock_body_length_m": float(robot_params.get("dock_body_length_m", 0.80))},
+            {"dock_body_width_m": float(robot_params.get("dock_body_width_m", 0.55))},
+            # Bypass-arc planner geometry — lifted from physical/operational
+            # sections of mowgli_robot.yaml so the cleaning-robot detour
+            # around discrete obstacles uses the correct robot footprint
+            # and the wall-vs-obstacle threshold operators tune per site.
+            {"chassis_width": float(robot_params.get("chassis_width", 0.40))},
+            {"max_obstacle_avoidance_distance":
+                float(robot_params.get("max_obstacle_avoidance_distance", 2.0))},
         ],
     )
 
@@ -348,9 +368,10 @@ def generate_launch_description() -> LaunchDescription:
 
     # Obstacle tracker — DBSCAN-clusters LiDAR obstacle returns from the
     # global costmap, promotes clusters to PERSISTENT after
-    # persistence_threshold (60 s) of stable observation, and publishes
-    # them on /obstacle_tracker/obstacles. map_server_node consumes
-    # those, marks the impacted cells OBSTACLE_PERMANENT in the
+    # `persistence_threshold` seconds (see obstacle_tracker.yaml) of
+    # stable observation, and publishes them on
+    # /obstacle_tracker/obstacles. map_server_node consumes those,
+    # marks the impacted cells OBSTACLE_PERMANENT in the
     # classification layer, republishes the keepout mask so the global
     # costmap routes around them, and triggers a replan so the BT
     # picks up new strips that avoid the obstacle. Transient obstacles
@@ -359,11 +380,12 @@ def generate_launch_description() -> LaunchDescription:
     #
     # Was disabled in launch in an earlier iteration because the
     # tracker promoted too aggressively and produced large persistent
-    # obstacles from grass/ground returns. Re-enabled now that the
-    # yaml has been retuned: min_cluster_points 5, min_obstacle_radius
-    # 8 cm, persistence_threshold 60 s, inflation_radius 10 cm. Toggle
-    # off via the use_obstacle_tracker launch arg if it misbehaves
-    # again on real grass.
+    # obstacles from grass/ground returns. Re-enabled with the
+    # currently-shipping tuning in obstacle_tracker.yaml
+    # (persistence_threshold 10 s; tightening to ≥ 30 s reduces the
+    # bystander-permanently-shapes-the-map effect at the cost of slower
+    # adaptation to real new obstacles). Toggle off via the
+    # use_obstacle_tracker launch arg if it misbehaves on real grass.
     obstacle_tracker_node = Node(
         condition=IfCondition(LaunchConfiguration("use_obstacle_tracker")),
         package="mowgli_map",

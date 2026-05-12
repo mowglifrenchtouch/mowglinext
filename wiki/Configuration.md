@@ -362,57 +362,64 @@ controller_server:
       required_movement_radius: 0.5        # m
       movement_time_allowance: 10.0        # seconds
 
-    # Goal checker: robot within tolerance of goal?
+    # Transit goal checker: robot stopped within tolerance of goal pose
     stopped_goal_checker:
       plugin: "nav2_controller::StoppedGoalChecker"
-      trans_stopped_velocity: 0.25         # m/s
-      xy_goal_tolerance: 0.25              # m
-      yaw_goal_tolerance: 0.25             # rad
+      trans_stopped_velocity: 0.10         # m/s
+      xy_goal_tolerance: 0.30              # m (overridden at launch from mowgli_robot.yaml.xy_goal_tolerance)
+      yaw_goal_tolerance: 0.5              # rad (overridden at launch)
 
-    # Coverage goal checker: for mowing pattern termination
+    # Coverage goal checker: PathProgressGoalChecker (mowgli_nav2_plugins).
+    # Subscribes to FTC's republished <plugin_name>/global_plan and only
+    # fires when the robot has monotonically tracked >= progress_threshold
+    # of the path's poses AND is within xy/yaw tolerance of the goal pose.
+    # Falls back to FAILURE when no global_plan arrives within
+    # fallback_timeout_s (default 5 s) so the BT can replan.
+    # Why not StoppedGoalChecker / SimpleGoalChecker: both fire on
+    # proximity / velocity stoppage, which matches FTC's PRE_ROTATE pivots
+    # mid-traversal — the action completes at <2 % coverage. Path-progress
+    # gating is the only definition of "done" that survives a coverage
+    # path whose start and end are both inside the headland ring.
     coverage_goal_checker:
-      plugin: "mowgli_nav2_plugins::CoverageGoalChecker"
-      coverage_radius: 0.5                 # m
-      coverage_tolerance: 0.1              # m
+      plugin: "mowgli_nav2_plugins/PathProgressGoalChecker"
+      progress_threshold: 0.95
+      xy_goal_tolerance: 0.10              # m (overridden at launch from mowgli_robot.yaml.coverage_xy_tolerance, capped at 0.15)
+      yaw_goal_tolerance: 0.30
+      plan_topic: "/controller_server/FollowCoveragePath/global_plan"
+      fallback_timeout_s: 5.0
 
     # ─────────────────────────────────────────────────────────────
-    # FollowPath: Rotation-Shim Controller wrapping Regulated Pure Pursuit
+    # FollowPath (transit) AND FollowCoveragePath (mowing strips):
+    # both use the same FTCController plugin. Single source of truth
+    # for tuning. RPP/RotationShim/MPPI are no longer in the active
+    # stack — FTC handles pivots and obstacle deviation natively.
     # ─────────────────────────────────────────────────────────────
-    FollowPath:
-      plugin: "mowgli_nav2_plugins::RotationShimController"
-      desired_linear_vel: 0.3              # m/s
-      max_linear_vel: 0.5                  # m/s
-      max_angular_vel: 1.0                 # rad/s
-      use_regulated_linear_velocity_scaling: true
-      lookahead_dist: 0.6                  # m
-      min_lookahead_dist: 0.3              # m
-      max_lookahead_dist: 0.9              # m
-      lookahead_time: 1.5                  # seconds
-      rotate_to_heading_angular_vel: 1.57  # rad/s (90°/s)
-      transform_tolerance: 0.1             # seconds
-      use_cost_regulated_linear_velocity_scaling: false
+    FollowPath: &FTC
+      plugin: "mowgli_nav2_plugins/FTCController"
+      speed_fast: 0.20                     # m/s (overridden at launch from transit_speed / mowing_speed)
+      speed_slow: 0.12
+      speed_angular: 45.0                  # deg/s
+      acceleration: 0.2
+      kp_lon: 1.0
+      kp_lat: 2.0
+      kd_lat: 1.0
+      kp_ang: 1.5
+      max_cmd_vel_speed: 0.30
+      max_cmd_vel_ang: 0.8
+      max_goal_distance_error: 0.10
+      max_goal_angle_error: 15.0           # deg
+      goal_timeout: 10.0
+      max_follow_distance: 2.0
+      forward_only: false
+      check_obstacles: true
+      obstacle_lookahead: 30               # ~1.5 m at F2C 0.05 m sampling
+      obstacle_footprint: true
+      enable_obstacle_deviation: true
+      max_lateral_deviation: 1.5
+      deviation_step: 0.05
+      deviation_blend_rate: 0.5
 
-    # ─────────────────────────────────────────────────────────────
-    # FollowCoveragePath: Regulated Pure Pursuit for mowing patterns
-    # Note: FTCController plugin exists in mowgli_nav2_plugins but is
-    # not activated. RPP is used for both FollowPath and FollowCoveragePath
-    # because MPPI's Euclidean nearest-point matching jumps between
-    # adjacent parallel boustrophedon swaths.
-    # ─────────────────────────────────────────────────────────────
-    FollowCoveragePath:
-      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-
-      desired_linear_vel: 0.3              # m/s
-      max_linear_vel: 0.5                  # m/s
-      max_angular_vel: 1.0                 # rad/s
-      use_regulated_linear_velocity_scaling: true
-      lookahead_dist: 0.6                  # m
-      min_lookahead_dist: 0.3              # m
-      max_lookahead_dist: 0.9              # m
-      lookahead_time: 1.5                  # seconds
-      max_robot_pose_search_dist: 5.0      # m (prevents jumping to adjacent swaths)
-      transform_tolerance: 0.1             # seconds
-      use_cost_regulated_linear_velocity_scaling: false
+    FollowCoveragePath: *FTC
 ```
 
 #### planner_server Configuration
@@ -559,49 +566,40 @@ velocity_smoother:
 
 ---
 
-## 4. coverage_planner.yaml
+## 4. coverage_server (mowgli_coverage / Fields2Cover v2.0)
 
-**File:** `src/mowgli_bringup/config/coverage_planner.yaml`
-
-**Purpose:** Configure the B-RV autonomous mowing coverage planner (mowgli_brv_planner).
-
-**Full Configuration:**
+**Config:** `coverage_server` block inside `src/mowgli_bringup/config/nav2_params.yaml`.
+**Action:** `compute_coverage_path` (type `opennav_coverage_msgs/action/ComputeCoveragePath`).
+**Backend:** Fields2Cover **v2.0.0** at `/opt/fields2cover-200`. Legacy v1.2.1 at `/opt/fields2cover-121` is kept on the global `ld` path while the migration finishes; `mowgli_coverage`'s `CMakeLists.txt` sets explicit `INSTALL_RPATH`s on both `libmowgli_coverage_core.so` and the executable so the loader picks v2.
 
 ```yaml
-coverage_planner_node:
+coverage_server:
   ros__parameters:
-    # Tool and grid parameters
-    tool_width: 0.18                       # m (mowing blade width and grid cell size)
-
-    # Headland (boundary pass) parameters
-    headland_passes: 2                     # Number of passes around the perimeter
-    headland_width: 0.18                   # m (offset per pass)
-
-    # Coordinate frame
-    map_frame: "map"
+    use_sim_time: false
+    default_headland_width: 0.20         # m – headland inset width
+    robot_width: 0.20                    # m – physical chassis width (collision)
+    operation_width: 0.18                # m – F2C swath spacing (Robot::setCovWidth)
+    # OVERRIDDEN at launch from mowgli_robot.yaml.tool_width — single source
+    # of truth for blade cut width. The previous static 0.20 left thin un-mowed
+    # strips between adjacent F2C swaths because map_server's stamp radius
+    # (tool_width / 2) was narrower than F2C's spacing.
+    min_turning_radius: 0.05             # m – differential drive pivots in place
+    linear_curv_change: 200.0
+    coordinates_in_cartesian_frame: true
+    # Mode-string params declared for compatibility with the legacy
+    # opennav_coverage YAML schema. The v2 server uses a fixed pipeline
+    # (BruteForce → BoustrophedonOrder → DubinsCurvesCC + connectors)
+    # and logs a line on startup if the operator overrode any of these.
+    default_swath_angle_type: "BRUTE_FORCE"
+    default_swath_type: "LENGTH"
+    default_route_type: "BOUSTROPHEDON"
+    default_path_type: "DUBIN"
+    default_path_continuity_type: "DISCONTINUOUS"
 ```
 
-### Key Parameters
+**Pipeline:** `f2c::hg::ConstHL.generateHeadlands` (inset) + `generateHeadlandSwaths(cov_width, n_passes, dir_out2in=true)` (concentric perimeter passes, densified to 10 cm steps in our wrapper) → `f2c::decomp::TrapezoidalDecomp.decompose(inner)` (split around interior holes) → per sub-cell `f2c::sg::BruteForce.generateBestSwaths` → `f2c::rp::BoustrophedonOrder.genSortedSwaths` → `f2c::pp::PathPlanning.planPath(robot, ordered, DubinsCurvesCC)` + `pp.planPathForConnection(...)` Dubins arcs between sub-cells. The result is converted to `nav_msgs/Path` and returned via the action result.
 
-#### `tool_width`
-
-- **Type:** double (m)
-- **Default:** `0.18`
-- **Description:** Physical width of mowing blade; also used as grid cell size for the B-RV discretization
-- **Impact:** Determines sweep lane spacing and coverage resolution
-
-#### `headland_passes`
-
-- **Type:** integer
-- **Default:** `2`
-- **Description:** Number of passes around yard perimeter before mowing interior
-- **Rationale:** Ensures boundary coverage and creates safety margin before interior work
-
-#### `headland_width`
-
-- **Type:** double (m)
-- **Default:** `0.18`
-- **Description:** Offset distance per headland pass (typically matches tool_width)
+The BT side (`PlanCoverageArea`) feeds it the area outer ring + `mow_progress` holes via `/map_server_node/get_remaining_area_polygon`. The legacy `opennav_coverage` upstream is a git submodule for the `_msgs` action definitions only — every server subpackage is `COLCON_IGNORE`'d.
 
 ---
 
@@ -646,13 +644,22 @@ twist_mux:
         timeout: 0.2                 # Tighter timeout for safety-critical
         priority: 100                # Highest velocity priority
 
-    # Locks: hard stops that disable all velocity output
-    # Regardless of velocity topics, output is zero if any lock is active
-    locks:
-      emergency_stop:
-        topic: /emergency_stop       # Must be boolean or std_msgs/Bool
-        timeout: 0.0                 # 0 = never timeout (stay locked until explicit release)
-        priority: 255                # Absolute: highest possible priority
+    # No `locks:` block.
+    #
+    # Emergency stop is enforced by the STM32 firmware (CLAUDE.md
+    # invariant 9 — firmware is the sole safety authority). An earlier
+    # configuration declared an /emergency_stop std_msgs/Bool lock with
+    # priority 255, but no node in the codebase ever published to that
+    # topic — the lock was dead and gave a false sense of software-side
+    # redundancy. Real e-stops travel via the
+    # /hardware_bridge/emergency_stop service which sets the firmware
+    # latch; the firmware then refuses to forward cmd_vel to the motors.
+    #
+    # If a software-side mux lock is ever wanted in future, wire a
+    # publisher in hardware_bridge_node first, then re-add the locks
+    # block. The key is intentionally OMITTED (not `locks: {}`) because
+    # ROS2 cannot infer the type of an empty YAML mapping at lifecycle
+    # bring-up.
 ```
 
 ### Priority Resolution
@@ -672,22 +679,27 @@ Time 2: Emergency publishes cmd_vel_emergency (0.3 m/s)
 Time 3: All sources timeout or become stale
   → Output: 0 m/s (no active source, robot stops)
 
-Time 4: Emergency stop lock engaged
-  → Output: 0 m/s (lock overrides all, even with active velocity sources)
-  → Must call service to unlock before any motion possible
+Time 4: Emergency latch asserted at the firmware via
+        /hardware_bridge/emergency_stop service
+  → Firmware refuses to forward cmd_vel to motors regardless of what
+    twist_mux outputs. (twist_mux itself has no software lock — see
+    "No `locks:` block" note above.)
 ```
 
 ### Service Interface
 
 ```bash
-# Check current mux state
-ros2 service call /twist_mux/get_status std_srvs/GetBool
+# Assert the firmware emergency latch (the only e-stop path).
+# The latch is held inside the STM32 firmware; ROS2 publishing on
+# /cmd_vel cannot move the motors while it's asserted.
+ros2 service call /hardware_bridge/emergency_stop \
+  mowgli_interfaces/srv/EmergencyStop "{emergency: true}"
 
-# Lock the mux (emergency stop)
-ros2 service call /emergency_stop std_srvs/SetBool "{data: true}"
-
-# Unlock the mux
-ros2 service call /emergency_stop std_srvs/SetBool "{data: false}"
+# Release the latch. The firmware only actually clears the latch if
+# the physical trigger (lift / tilt / e-stop button) is no longer
+# asserted — firmware is the sole safety authority.
+ros2 service call /hardware_bridge/emergency_stop \
+  mowgli_interfaces/srv/EmergencyStop "{emergency: false}"
 ```
 
 ### Typical Deployments
