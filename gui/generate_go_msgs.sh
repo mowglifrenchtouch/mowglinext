@@ -279,6 +279,10 @@ ros_to_go() {
                 prefix="visualization."
             fi ;;
 
+        mowgli_interfaces/*)
+            gotype="${rostype#mowgli_interfaces/}"
+            ;;
+
         # Bare type name — same package
         *)  gotype="$rostype" ;;
     esac

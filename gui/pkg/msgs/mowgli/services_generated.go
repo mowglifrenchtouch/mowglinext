@@ -179,7 +179,7 @@ type GetRemainingAreaPolygonReq struct {
 type GetRemainingAreaPolygonRes struct {
 	Success                   bool                           `json:"success"`
 	Error                     string                         `json:"error"`
-	Pieces                    []mowgli_interfaces/MapArea    `json:"pieces"`
+	Pieces                    []MapArea                      `json:"pieces"`
 }
 
 // HighLevelControlReq for mowgli_interfaces/srv/HighLevelControl request.

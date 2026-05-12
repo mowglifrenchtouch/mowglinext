@@ -168,6 +168,12 @@ COPY src/fusion_graph/package.xml         src/fusion_graph/package.xml
 COPY src/fusion_graph/CMakeLists.txt      src/fusion_graph/CMakeLists.txt
 # fusion_graph is the opt-in factor-graph replacement for ekf_map_node;
 # depends on libgtsam-dev installed in the base stage.
+COPY src/mowgli_coverage/package.xml      src/mowgli_coverage/package.xml
+COPY src/mowgli_coverage/CMakeLists.txt   src/mowgli_coverage/CMakeLists.txt
+# opennav_coverage submodule provides opennav_coverage_msgs (action types
+# consumed by mowgli_coverage). Pulled by checkout submodules: recursive.
+COPY src/opennav_coverage/opennav_coverage_msgs/package.xml    src/opennav_coverage/opennav_coverage_msgs/package.xml
+COPY src/opennav_coverage/opennav_coverage_msgs/CMakeLists.txt src/opennav_coverage/opennav_coverage_msgs/CMakeLists.txt
 
 # Resolve rosdep dependencies (cached until package.xml changes)
 RUN rosdep update --rosdistro kilted \
