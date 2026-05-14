@@ -698,8 +698,20 @@ BT::NodeStatus SetNavMode::tick()
 
   if (!param_client->wait_for_service(std::chrono::milliseconds(200)))
   {
-    RCLCPP_WARN(ctx->node->get_logger(), "SetNavMode: controller_server param service unavailable");
-    return BT::NodeStatus::FAILURE;
+    // controller_server's lifecycle ramp is ~15-20 s on this hardware; if
+    // COMMAND_START arrives during that window the BT used to return
+    // FAILURE here, the parent GPSModeSelector Fallback would fail, and
+    // the BT would silently hold in IDLE — operator-visible symptom was
+    // "I clicked Start, nothing happened" (issue #197). Returning SUCCESS
+    // without latching current_nav_mode means the next BT tick re-enters
+    // SetNavMode and retries; the controller server has no inflight motion
+    // during this boot window so the deferred mode swap is harmless. We
+    // log once per process via WARN_ONCE to avoid spamming the boot log.
+    RCLCPP_WARN_ONCE(ctx->node->get_logger(),
+                     "SetNavMode: controller_server param service not ready yet — "
+                     "deferring '%s' (BT will retry on next tick)",
+                     mode.c_str());
+    return BT::NodeStatus::SUCCESS;
   }
 
   std::vector<rclcpp::Parameter> params;
