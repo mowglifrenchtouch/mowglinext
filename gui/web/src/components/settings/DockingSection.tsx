@@ -74,6 +74,16 @@ export const DockingSection: React.FC<Props> = ({ values, onChange }) => {
                                     />
                                 </Form.Item>
                             </Col>
+                            <Col xs={12} sm={8}>
+                                <Form.Item label="Charging Threshold" tooltip="Battery current (A) at which SimpleChargingDock considers the cradle reached. Higher = the robot drives further into the contacts before stopping; lower = stops sooner. ~0.3 A is a stable seat on the YardForce charger.">
+                                    <InputNumber
+                                        value={values.dock_charging_threshold}
+                                        onChange={(v) => onChange("dock_charging_threshold", v)}
+                                        min={0.05} max={1.0} step={0.05} precision={2}
+                                        style={{ width: "100%" }} addonAfter="A"
+                                    />
+                                </Form.Item>
+                            </Col>
                         </Row>
                     </Form>
                 </Space>

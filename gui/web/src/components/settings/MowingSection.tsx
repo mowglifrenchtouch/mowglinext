@@ -199,6 +199,26 @@ export const MowingSection: React.FC<Props> = ({ values, onChange }) => {
                                     </Form.Item>
                                 </Col>
                                 <Col xs={12}>
+                                    <Form.Item label="Headland Passes" tooltip="Number of concentric perimeter rings before the inner field. 0 = auto (ceil(headland_width / tool_width)). >0 forces exactly that count regardless of headland_width. Wired to coverage_server.num_headland_passes.">
+                                        <InputNumber
+                                            value={values.num_headland_passes}
+                                            onChange={(v) => onChange("num_headland_passes", v)}
+                                            min={0} max={5} step={1} precision={0}
+                                            style={{ width: "100%" }}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={12}>
+                                    <Form.Item label="Chassis Safety Inset" tooltip="Pre-shrink the operator polygon by this many metres before F2C plans. Defaults to chassis_width / 2 so the chassis edge stays inside the polygon under perfect tracking. Wired to coverage_server.chassis_safety_inset.">
+                                        <InputNumber
+                                            value={values.chassis_safety_inset}
+                                            onChange={(v) => onChange("chassis_safety_inset", v)}
+                                            min={0} max={0.5} step={0.01} precision={2}
+                                            style={{ width: "100%" }} addonAfter="m"
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={12}>
                                     <Form.Item label="Min Turning Radius" tooltip="F2C Robot::setMinTurningRadius — bounds the Dubins arc radius between swaths. Diff-drive mowers: keep small (~0.05 m). Wired to coverage_server.min_turning_radius.">
                                         <InputNumber
                                             value={values.min_turning_radius}

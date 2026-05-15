@@ -356,6 +356,11 @@ def generate_launch_description() -> LaunchDescription:
     # operational change because docking_server kept its hardcoded
     # -1.5 m default. See issue #192.
     dock_approach_distance = 1.5
+    # SimpleChargingDock charging-current threshold (amps). 0.3 is the
+    # production default (see nav2_params.yaml for the "0.1 stops too
+    # early, 0.5 over-presses" rationale). Operator-overridable via
+    # mowgli_robot.yaml so sites with different chargers can tune.
+    dock_charging_threshold = 0.3
     # Phantom-tuning knobs surfaced through mowgli_robot.yaml so the GUI
     # can edit them without an SSH session. Defaults match the C++ node
     # defaults; override on the Settings page.
@@ -385,6 +390,8 @@ def generate_launch_description() -> LaunchDescription:
             rt_rp.get("coverage_xy_tolerance", coverage_xy_tolerance))
         dock_approach_distance = float(
             rt_rp.get("dock_approach_distance", dock_approach_distance))
+        dock_charging_threshold = float(
+            rt_rp.get("dock_charging_threshold", dock_charging_threshold))
         # Defensive clip: a stale per-site mowgli_robot.yaml can carry
         # the legacy 0.5 m default that breaks cell-based mowing (the
         # SimpleGoalChecker fires on tick 1 because the strip end is
@@ -474,6 +481,14 @@ def generate_launch_description() -> LaunchDescription:
         # the GUI slider now drives the actual staging point. See
         # issue #192.
         home_dock["staging_x_offset"] = -float(dock_approach_distance)
+
+        # SimpleChargingDock plugin params — charging-current threshold
+        # is operator-tunable so the static nav2_params.yaml value can be
+        # overridden per-site from mowgli_robot.yaml + GUI.
+        scd = (doc.setdefault("docking_server", {})
+                  .setdefault("ros__parameters", {})
+                  .setdefault("simple_charging_dock", {}))
+        scd["charging_threshold"] = dock_charging_threshold
 
         # FollowPath (transit controller = RPP via RotationShim).
         fp = (doc.setdefault("controller_server", {})

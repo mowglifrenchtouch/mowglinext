@@ -82,6 +82,7 @@ const SECTION_DEFINITIONS: SectionMeta[] = [
         keys: [
             "mowing_enabled", "mowing_speed", "transit_speed", "outline_passes",
             "outline_offset", "outline_overlap", "path_spacing", "headland_width",
+            "num_headland_passes", "chassis_safety_inset",
             "min_turning_radius", "mow_angle_offset_deg", "mow_angle_increment_deg",
         ],
     },
@@ -93,6 +94,7 @@ const SECTION_DEFINITIONS: SectionMeta[] = [
         keys: [
             "undock_distance", "undock_speed", "dock_approach_distance",
             "dock_max_retries", "dock_use_charger_detection",
+            "dock_charging_threshold",
         ],
     },
     {

@@ -194,6 +194,10 @@ mowgli:
     dock_approach_distance: 1.0    # distance to staging pose in front of dock
     dock_max_retries: 3
     dock_use_charger_detection: true
+    # Charging-current threshold (A) at which SimpleChargingDock considers
+    # the cradle reached. 0.3 = solid contact past the spring detent on
+    # the YardForce charger; lower stops short, higher over-presses.
+    dock_charging_threshold: 0.3
 
     # -----------------------------------------------------------------
     # Rain
@@ -214,7 +218,11 @@ mowgli:
     # -----------------------------------------------------------------
     # Navigation tolerances (garden terrain)
     # -----------------------------------------------------------------
-    xy_goal_tolerance: 0.75        # metres — acceptable goal position error
-    yaw_goal_tolerance: 1.0        # radians — acceptable heading error
-    coverage_xy_tolerance: 0.5     # metres — for coverage waypoints
+    # 0.30 m / 0.10 rad (was 0.75 / 1.0). The previous values let FTC
+    # report SUCCESS with the chassis 25-40° off the goal yaw, which
+    # made opennav_docking attack the cradle "en biais" (sideways). 0.10
+    # rad (≈5.7°) forces a final in-place pivot before the dock approach.
+    xy_goal_tolerance: 0.30        # metres — acceptable goal position error
+    yaw_goal_tolerance: 0.10       # radians — acceptable heading error
+    coverage_xy_tolerance: 0.10    # metres — for coverage waypoints
     progress_timeout_sec: 60.0     # seconds without progress before recovery

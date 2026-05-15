@@ -308,6 +308,12 @@
           "title": "Use Charger Detection",
           "default": true,
           "description": "Detect charging voltage to confirm successful dock."
+        },
+        "dock_charging_threshold": {
+          "type": "number",
+          "title": "Charging Threshold",
+          "default": 0.3,
+          "description": "Battery current (A) at which SimpleChargingDock considers the cradle reached. Higher = more forward press into the contacts before stopping; lower = stops sooner. 0.3 A is a stable seat on the YardForce charger."
         }
       }
     },
@@ -362,6 +368,18 @@
           "title": "Headland Width",
           "default": 0.18,
           "description": "Width of headland (turning area) in metres."
+        },
+        "num_headland_passes": {
+          "type": "integer",
+          "title": "Headland Passes",
+          "default": 0,
+          "description": "Number of concentric perimeter rings before the inner field. 0 = auto (ceil(headland_width / tool_width)); >0 forces exactly that count."
+        },
+        "chassis_safety_inset": {
+          "type": "number",
+          "title": "Chassis Safety Inset",
+          "default": 0.20,
+          "description": "Pre-shrink the operator polygon by this many metres before F2C plans anything. Defaults to chassis_width / 2 so the chassis edge stays inside the polygon under perfect FTC tracking."
         },
         "min_turning_radius": {
           "type": "number",
