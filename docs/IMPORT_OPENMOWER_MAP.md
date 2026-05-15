@@ -13,15 +13,30 @@ This document specifies how a user can take a pre-existing OpenMower
 recorded mowing/navigation areas + docking station across to a fresh
 MowgliNext install without re-driving the boundaries.
 
-Two source formats are addressed:
+Three source formats are addressed:
 
-1. **`map.json`** — the modern OpenMower map persistence format. Stable,
-   self-describing, easy to parse. **Implemented** as a parse + preview
-   path; the actual write is stubbed.
-2. **`map.bag`** — the legacy ROS1 rosbag format that older OpenMower
-   installs still have on disk. **Designed only**; deferred to a
-   follow-up because pure-Go ROS1-bag readers are unmaintained and we
-   would prefer a sidecar.
+1. **`map.json`** (modern) — OpenMower's current persistence format.
+   Lower-case `areas` / `docking_stations` keys, polygons as
+   `outline: [{x, y}]`, dock as a struct with `position` + `heading`.
+   **Implemented** as parse + preview; write step stubbed.
+2. **Legacy bag-JSON** — `mower_map_service`'s rosbag content serialised
+   to JSON (e.g. via the rosbridge JSON encoder or any ROS1→JSON tool).
+   PascalCase fields with `Package: 0` envelopes, top-level
+   `NavigationAreas` / `WorkingArea` arrays of `{Name, Area: {Points:
+   [{X, Y, Z}]}, Obstacles}`, dock as scalar `DockX` / `DockY` /
+   `DockHeading`. **Implemented** as a conversion layer:
+   `tryConvertLegacyOpenMowerMap` rewrites the body in-place to the
+   modern shape before the existing parser runs. WorkingArea entries
+   become mow areas; their nested Obstacles become top-level
+   `type="obstacle"` entries (matched back to their parent by centroid
+   containment); NavigationAreas become nav areas; the scalar dock
+   fields become the single docking station.
+3. **`map.bag`** (raw rosbag bytes) — the original binary container,
+   still found on very old installs that haven't migrated to either
+   form above. **Designed only**; deferred because pure-Go ROS1-bag
+   readers are unmaintained and we'd prefer a sidecar. Users with
+   raw `.bag` files should run OpenMower 1.x once to auto-convert to
+   either the modern `map.json` or the legacy bag-JSON above.
 
 ---
 

@@ -221,29 +221,214 @@ func postImportOpenMower(rosProvider types.IRosProvider, dbProvider types.IDBPro
 	}
 }
 
-// parseImportRequest accepts either the wrapped form (`{"map": {...},
-// "om_datum_lat": ...}`) or the bare-map form (`{"areas": ..., ...}`).
-// The latter lets callers drop the file in directly without rewrapping
-// it client-side.
+// parseImportRequest accepts three shapes:
+//
+//  1. **Wrapped modern**: `{"map": {...}, "om_datum_lat": ...}` — the
+//     in-app GUI sends this, body already contains `om_datum_*` knobs.
+//  2. **Bare modern**: `{"areas": [...], "docking_stations": [...]}` —
+//     a user dropping their `map.json` straight into the upload field.
+//  3. **Legacy bag-JSON**: `{"WorkingArea": [...], "NavigationAreas":
+//     [...], "DockX": ..., "DockY": ..., "DockHeading": ...}` —
+//     OpenMower 1.x's mower_map_service bag content serialised to JSON
+//     (PascalCase fields with `Package: 0` envelopes). Converted in
+//     place to the modern shape so the rest of the pipeline doesn't
+//     need to know about it.
 func parseImportRequest(raw []byte) (ImportOpenMowerRequest, error) {
 	var req ImportOpenMowerRequest
-	// First try the wrapped form.
+	// 1. Wrapped form.
 	if err := json.Unmarshal(raw, &req); err == nil && len(req.Map) > 0 {
+		// The wrapped payload may itself contain a legacy body — try
+		// converting it; harmless if it's already modern.
+		if converted, ok := tryConvertLegacyOpenMowerMap(req.Map); ok {
+			req.Map = converted
+		}
 		return req, nil
 	}
-	// Fall back to the bare form: treat the whole body as the map.
-	// Probe a couple of expected keys so we don't accept random JSON.
+	// 2 / 3. Bare form. Probe expected keys for both modern and legacy
+	// shapes; reject random JSON that matches neither.
 	var probe struct {
 		Areas           json.RawMessage `json:"areas"`
 		DockingStations json.RawMessage `json:"docking_stations"`
+		NavigationAreas json.RawMessage `json:"NavigationAreas"`
+		WorkingArea     json.RawMessage `json:"WorkingArea"`
+		DockX           *float64        `json:"DockX"`
+		DockY           *float64        `json:"DockY"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return ImportOpenMowerRequest{}, fmt.Errorf("body is not valid JSON: %w", err)
 	}
-	if len(probe.Areas) == 0 && len(probe.DockingStations) == 0 {
-		return ImportOpenMowerRequest{}, errors.New("body has neither {map: ...} envelope nor OpenMower fields (areas, docking_stations)")
+	modernPresent := len(probe.Areas) > 0 || len(probe.DockingStations) > 0
+	legacyPresent := len(probe.NavigationAreas) > 0 || len(probe.WorkingArea) > 0 ||
+		probe.DockX != nil || probe.DockY != nil
+	if !modernPresent && !legacyPresent {
+		return ImportOpenMowerRequest{}, errors.New("body has neither {map: ...} envelope nor OpenMower fields (areas, docking_stations) nor legacy bag fields (NavigationAreas, WorkingArea, DockX)")
+	}
+	if !modernPresent && legacyPresent {
+		converted, ok := tryConvertLegacyOpenMowerMap(raw)
+		if !ok {
+			return ImportOpenMowerRequest{}, errors.New("body looks like a legacy OpenMower bag-JSON map but conversion failed")
+		}
+		return ImportOpenMowerRequest{Map: converted}, nil
 	}
 	return ImportOpenMowerRequest{Map: raw}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Legacy bag-JSON adapter
+// ---------------------------------------------------------------------------
+
+// legacyOpenMowerPoint mirrors geometry_msgs/Point32 the way Go's
+// rosbridge JSON serialiser emits ROS1 messages (PascalCase fields, with
+// each composite carrying a `Package: 0` envelope from the ROS1 msg
+// package tagging). We only care about X/Y; Z is always 0 in OpenMower's
+// map polygons.
+type legacyOpenMowerPoint struct {
+	X float64 `json:"X"`
+	Y float64 `json:"Y"`
+}
+
+// legacyOpenMowerPolygon is a Polygon (geometry_msgs/Polygon).
+type legacyOpenMowerPolygon struct {
+	Points []legacyOpenMowerPoint `json:"Points"`
+}
+
+// legacyOpenMowerMapArea is mower_map/MapArea — one named polygon with
+// optional obstacle polygons nested in the same struct. In the modern
+// map.json schema obstacles are top-level entries; here they live
+// inside their parent.
+type legacyOpenMowerMapArea struct {
+	Name      string                   `json:"Name"`
+	Area      legacyOpenMowerPolygon   `json:"Area"`
+	Obstacles []legacyOpenMowerPolygon `json:"Obstacles"`
+}
+
+// legacyOpenMowerMap is the top-level bag-JSON shape. Only the fields
+// we promote downstream are listed; everything else (Package, MapWidth,
+// MapHeight, MapCenter*) is ignored. WorkingArea is plural because the
+// legacy schema allowed several disjoint mowing zones; we keep that.
+type legacyOpenMowerMap struct {
+	NavigationAreas []legacyOpenMowerMapArea `json:"NavigationAreas"`
+	WorkingArea     []legacyOpenMowerMapArea `json:"WorkingArea"`
+	DockX           *float64                 `json:"DockX"`
+	DockY           *float64                 `json:"DockY"`
+	DockHeading     *float64                 `json:"DockHeading"`
+}
+
+// tryConvertLegacyOpenMowerMap inspects `raw`, and if it's the legacy
+// bag-JSON shape (PascalCase NavigationAreas / WorkingArea / Dock*),
+// returns a re-serialised modern map.json body that the rest of the
+// pipeline can parse. The boolean is true iff a conversion actually
+// happened — callers should still treat the original raw as authoritative
+// when it's false.
+func tryConvertLegacyOpenMowerMap(raw []byte) ([]byte, bool) {
+	var legacy legacyOpenMowerMap
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return nil, false
+	}
+	if len(legacy.NavigationAreas) == 0 && len(legacy.WorkingArea) == 0 &&
+		legacy.DockX == nil && legacy.DockY == nil && legacy.DockHeading == nil {
+		// Not a legacy payload — let the modern parser handle it.
+		return nil, false
+	}
+
+	type modernArea struct {
+		ID         string                  `json:"id"`
+		Properties openMowerAreaProperties `json:"properties"`
+		Outline    []openMowerPoint        `json:"outline"`
+	}
+	type modernDock struct {
+		ID         string `json:"id"`
+		Properties struct {
+			Name   string `json:"name"`
+			Active *bool  `json:"active"`
+		} `json:"properties"`
+		Position openMowerPoint `json:"position"`
+		Heading  float64        `json:"heading"`
+	}
+	type modernMap struct {
+		Areas           []modernArea `json:"areas"`
+		DockingStations []modernDock `json:"docking_stations"`
+	}
+
+	toModernOutline := func(poly legacyOpenMowerPolygon) []openMowerPoint {
+		out := make([]openMowerPoint, 0, len(poly.Points))
+		for _, p := range poly.Points {
+			out = append(out, openMowerPoint{X: p.X, Y: p.Y})
+		}
+		return out
+	}
+
+	out := modernMap{}
+
+	// Working areas are mow areas; their nested Obstacles become
+	// top-level type="obstacle" entries (matchObstaclesToParents will
+	// re-attach them to the right parent via centroid containment).
+	for i, w := range legacy.WorkingArea {
+		name := w.Name
+		if name == "" {
+			name = fmt.Sprintf("Mowing area %d", i+1)
+		}
+		out.Areas = append(out.Areas, modernArea{
+			ID:         fmt.Sprintf("legacy-mow-%02d", i+1),
+			Properties: openMowerAreaProperties{Name: name, Type: "mow"},
+			Outline:    toModernOutline(w.Area),
+		})
+		for j, ob := range w.Obstacles {
+			out.Areas = append(out.Areas, modernArea{
+				ID: fmt.Sprintf("legacy-mow-%02d-obs-%02d", i+1, j+1),
+				Properties: openMowerAreaProperties{
+					Name: fmt.Sprintf("%s obstacle %d", name, j+1),
+					Type: "obstacle",
+				},
+				Outline: toModernOutline(ob),
+			})
+		}
+	}
+
+	for i, n := range legacy.NavigationAreas {
+		name := n.Name
+		if name == "" {
+			name = fmt.Sprintf("Navigation area %d", i+1)
+		}
+		out.Areas = append(out.Areas, modernArea{
+			ID:         fmt.Sprintf("legacy-nav-%02d", i+1),
+			Properties: openMowerAreaProperties{Name: name, Type: "nav"},
+			Outline:    toModernOutline(n.Area),
+		})
+		// Navigation areas can also carry obstacles in the bag schema;
+		// keep them for parity even though obstacles inside nav zones
+		// are unusual.
+		for j, ob := range n.Obstacles {
+			out.Areas = append(out.Areas, modernArea{
+				ID: fmt.Sprintf("legacy-nav-%02d-obs-%02d", i+1, j+1),
+				Properties: openMowerAreaProperties{
+					Name: fmt.Sprintf("%s obstacle %d", name, j+1),
+					Type: "obstacle",
+				},
+				Outline: toModernOutline(ob),
+			})
+		}
+	}
+
+	if legacy.DockX != nil && legacy.DockY != nil {
+		yaw := 0.0
+		if legacy.DockHeading != nil {
+			yaw = *legacy.DockHeading
+		}
+		d := modernDock{
+			ID:       "legacy-dock-01",
+			Position: openMowerPoint{X: *legacy.DockX, Y: *legacy.DockY},
+			Heading:  yaw,
+		}
+		d.Properties.Name = "Docking Station"
+		out.DockingStations = append(out.DockingStations, d)
+	}
+
+	converted, err := json.Marshal(out)
+	if err != nil {
+		return nil, false
+	}
+	return converted, true
 }
 
 // ---------------------------------------------------------------------------

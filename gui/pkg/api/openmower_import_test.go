@@ -317,6 +317,131 @@ func TestPostImportOpenMower_RejectsBadJSON(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code, "body=%s", w.Body.String())
 }
 
+// --- legacy bag-JSON adapter ---------------------------------------------
+
+// sampleLegacyBagMap is a trimmed reproduction of the legacy
+// bag-derived map.json shape Daisy hit on 2026-05-15 — PascalCase
+// fields, `Package: 0` envelopes everywhere, NavigationAreas /
+// WorkingArea split, dock as scalar fields. The fixture covers all
+// three pathways the adapter has to handle:
+//   - a WorkingArea entry (becomes a mow area)
+//   - a WorkingArea obstacle (becomes a top-level type="obstacle")
+//   - a NavigationAreas entry (becomes a nav area)
+//   - DockX/DockY/DockHeading (becomes the single docking station)
+const sampleLegacyBagMap = `{
+  "Package": 0,
+  "MapWidth": 20.0,
+  "NavigationAreas": [
+    {
+      "Package": 0,
+      "Name": "",
+      "Area": {
+        "Package": 0,
+        "Points": [
+          {"Package": 0, "X": -3.0, "Y": 0.0, "Z": 0},
+          {"Package": 0, "X":  0.0, "Y": 0.0, "Z": 0},
+          {"Package": 0, "X":  0.0, "Y": 3.0, "Z": 0},
+          {"Package": 0, "X": -3.0, "Y": 3.0, "Z": 0}
+        ]
+      },
+      "Obstacles": null
+    }
+  ],
+  "WorkingArea": [
+    {
+      "Package": 0,
+      "Name": "",
+      "Area": {
+        "Package": 0,
+        "Points": [
+          {"Package": 0, "X":  0.0, "Y":  0.0, "Z": 0},
+          {"Package": 0, "X": 10.0, "Y":  0.0, "Z": 0},
+          {"Package": 0, "X": 10.0, "Y":  6.0, "Z": 0},
+          {"Package": 0, "X":  0.0, "Y":  6.0, "Z": 0}
+        ]
+      },
+      "Obstacles": [
+        {
+          "Package": 0,
+          "Points": [
+            {"Package": 0, "X": 4.0, "Y": 2.0, "Z": 0},
+            {"Package": 0, "X": 5.0, "Y": 2.0, "Z": 0},
+            {"Package": 0, "X": 5.0, "Y": 3.0, "Z": 0},
+            {"Package": 0, "X": 4.0, "Y": 3.0, "Z": 0}
+          ]
+        }
+      ]
+    }
+  ],
+  "DockX": -0.5,
+  "DockY": 0.2,
+  "DockHeading": 1.5707963267948966
+}`
+
+func TestParseImportRequest_LegacyBareForm(t *testing.T) {
+	req, err := parseImportRequest([]byte(sampleLegacyBagMap))
+	require.NoError(t, err, "legacy bag-JSON should be accepted bare")
+	require.NotEmpty(t, req.Map)
+
+	// The body the rest of the pipeline sees must already be in modern
+	// shape (areas / docking_stations).
+	var modern openMowerMap
+	require.NoError(t, json.Unmarshal(req.Map, &modern))
+	// 1 mow + 1 obstacle (under that mow) + 1 nav = 3 entries.
+	require.Len(t, modern.Areas, 3)
+
+	gotTypes := map[string]int{}
+	for _, a := range modern.Areas {
+		gotTypes[a.Properties.Type]++
+	}
+	assert.Equal(t, 1, gotTypes["mow"])
+	assert.Equal(t, 1, gotTypes["nav"])
+	assert.Equal(t, 1, gotTypes["obstacle"])
+
+	// Dock translated 1:1 from scalar fields.
+	require.Len(t, modern.DockingStations, 1)
+	d := modern.DockingStations[0]
+	assert.InDelta(t, -0.5, d.Position.X, 1e-9)
+	assert.InDelta(t, 0.2, d.Position.Y, 1e-9)
+	assert.InDelta(t, math.Pi/2, d.Heading, 1e-9)
+}
+
+func TestParseImportRequest_LegacyWrappedForm(t *testing.T) {
+	wrapped := []byte(`{"map": ` + sampleLegacyBagMap + `, "om_datum_lat": 48.5, "om_datum_lon": 11.5}`)
+	req, err := parseImportRequest(wrapped)
+	require.NoError(t, err)
+	require.NotEmpty(t, req.Map)
+	require.NotNil(t, req.OmDatumLat)
+	assert.InDelta(t, 48.5, *req.OmDatumLat, 1e-9)
+
+	// Conversion still applied through the wrapper.
+	var modern openMowerMap
+	require.NoError(t, json.Unmarshal(req.Map, &modern))
+	require.Len(t, modern.Areas, 3)
+	require.Len(t, modern.DockingStations, 1)
+}
+
+func TestPostImportOpenMower_LegacyBagPreview(t *testing.T) {
+	mock := types.NewMockRosProvider()
+	router := setupImportRouter(mock, nil)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/import/openmower",
+		bytes.NewReader([]byte(sampleLegacyBagMap)))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var summary ImportOpenMowerSummary
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &summary))
+	assert.Equal(t, 1, summary.MowingAreas)
+	assert.Equal(t, 1, summary.NavigationAreas)
+	assert.Equal(t, 1, summary.Obstacles, "WorkingArea[0].Obstacles[0] should re-attach to its parent")
+	assert.Equal(t, 0, summary.OrphanObstacles)
+	require.NotNil(t, summary.DockPose)
+}
+
 // --- helpers --------------------------------------------------------------
 
 // contains is a tiny substring helper to keep the assertions readable
