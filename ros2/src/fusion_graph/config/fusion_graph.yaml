@@ -71,6 +71,16 @@ fusion_graph_node:
     # any meaningful manual rotation.
     stationary_gyro_thresh_rad_per_s: 0.10
 
+    # ── Online gyro bias estimation (item #3, pragmatic) ─────────────
+    # During wheel-only stationary windows, EMA-update an estimate of
+    # gyro_z bias and subtract it from raw samples before integration.
+    # Captures thermal drift over a session without a graph schema
+    # change. Set to false to use only the offline bias from
+    # hardware_bridge_node's docking calibration.
+    gyro_bias_estimation_enabled: true
+    gyro_bias_ema_tau_s: 30.0
+    gyro_bias_max_sample_rad_per_s: 0.10
+
     # ── Adaptive process noise on wheel σ_x ────────────────────────────
     # Inflates wheel_sigma_x when the |dtheta_wheel - dtheta_gyro|
     # residual EMA exceeds the floor. Slip on wet grass / slope causes

@@ -78,6 +78,12 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
       declare_parameter<double>("pivot_wheel_sigma_x", 0.5);
   gp.stationary_gyro_thresh_rad_per_s =
       declare_parameter<double>("stationary_gyro_thresh_rad_per_s", 0.10);
+  gp.gyro_bias_estimation_enabled =
+      declare_parameter<bool>("gyro_bias_estimation_enabled", true);
+  gp.gyro_bias_ema_tau_s =
+      declare_parameter<double>("gyro_bias_ema_tau_s", 30.0);
+  gp.gyro_bias_max_sample_rad_per_s =
+      declare_parameter<double>("gyro_bias_max_sample_rad_per_s", 0.10);
   gp.adaptive_noise_enabled_gain =
       declare_parameter<double>("adaptive_noise_enabled_gain", 10.0);
   gp.adaptive_noise_ema_tau_s =
@@ -496,6 +502,14 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
                               std::to_string(stats.icp_rejects_divergence));
                           add("stationary_hand_push",
                               std::to_string(stats.stationary_hand_push));
+                          // Gyro bias telemetry (item #3).
+                          {
+                            char buf[32];
+                            std::snprintf(buf, sizeof(buf), "%.5f", stats.gyro_bias_z);
+                            add("gyro_bias_z_rad_per_s", buf);
+                            add("gyro_bias_updates",
+                                std::to_string(stats.gyro_bias_updates));
+                          }
                           // Adaptive process-noise telemetry.
                           {
                             char buf[32];

@@ -121,13 +121,33 @@ void GraphManager::AddGyroDelta(double wz, double dt)
   if (dt <= 0.0)
     return;
   std::lock_guard<std::mutex> lock(mu_);
-  accum_.dtheta_gyro += wz * dt;
-  // Track the running maximum so the stationary multi-source gate
-  // can distinguish "wheels still + robot truly still" (small gyro)
-  // from "wheels still + robot externally rotated" (large gyro).
-  const double abs_wz = std::abs(wz);
-  if (abs_wz > accum_.max_abs_gyro_rad_per_s)
-    accum_.max_abs_gyro_rad_per_s = abs_wz;
+
+  // Track the running maximum on the RAW sample for the multi-source
+  // stationary gate (item #1). Done before bias subtraction so a
+  // drifty bias can't mask a real manual rotation.
+  const double abs_wz_raw = std::abs(wz);
+  if (abs_wz_raw > accum_.max_abs_gyro_rad_per_s)
+    accum_.max_abs_gyro_rad_per_s = abs_wz_raw;
+
+  // Online gyro bias estimation (item #3, pragmatic). When the last
+  // Tick() flagged the wheel-only stationary state AND this sample
+  // is plausibly bias-only (magnitude under the manual-rotation
+  // threshold), EMA-update the bias estimate.
+  if (params_.gyro_bias_estimation_enabled && wheel_stationary_now_ &&
+      abs_wz_raw < params_.gyro_bias_max_sample_rad_per_s)
+  {
+    const double tau = std::max(params_.gyro_bias_ema_tau_s, 1.0e-3);
+    const double alpha = dt / (tau + dt);
+    gyro_bias_z_ = (1.0 - alpha) * gyro_bias_z_ + alpha * wz;
+    ++gyro_bias_updates_;
+  }
+
+  // Subtract the current bias estimate before integration. First few
+  // seconds use bias=0 (offline cal from hardware_bridge has removed
+  // the cold bias); EMA refines as temperature drifts.
+  const double wz_corrected =
+      params_.gyro_bias_estimation_enabled ? wz - gyro_bias_z_ : wz;
+  accum_.dtheta_gyro += wz_corrected * dt;
 }
 
 void GraphManager::QueueGnss(double x, double y, double sigma_xy, bool robust)
@@ -264,6 +284,11 @@ TickOutput GraphManager::CreateNodeLocked(double now_s)
       std::abs(accum_.dx) < params_.stationary_thresh_xy_m &&
       std::abs(accum_.dy) < params_.stationary_thresh_xy_m &&
       std::abs(accum_.dtheta_wheel) < params_.stationary_thresh_theta;
+  // Publish to AddGyroDelta so it can decide whether to EMA-update
+  // the bias estimate from incoming samples. wheel_stationary_now_
+  // stays at the latest tick's value until the next tick, so the
+  // bias EMA sees the right gate state across many IMU samples.
+  wheel_stationary_now_ = wheel_stationary;
   // Multi-source confirmation: if the wheel claims stationary but the
   // gyro reports a rotation rate above the residual-bias floor, the
   // robot is being externally rotated (hand-pushed off the dock,
@@ -485,6 +510,8 @@ GraphStats GraphManager::Stats() const
   s.stationary_hand_push = stats_hand_push_;
   s.residual_ema_rad = residual_ema_;
   s.wheel_sigma_x_eff = last_wheel_sigma_x_eff_;
+  s.gyro_bias_z = gyro_bias_z_;
+  s.gyro_bias_updates = gyro_bias_updates_;
   return s;
 }
 

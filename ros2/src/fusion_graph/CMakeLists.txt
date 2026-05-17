@@ -161,6 +161,11 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_loop_closure_robust fusion_graph_core)
 
+  ament_add_gtest(test_gyro_bias
+    test/test_gyro_bias.cpp
+  )
+  target_link_libraries(test_gyro_bias fusion_graph_core)
+
   # Performance benchmarks. Long-running (~30 s on ARM); only meaningful
   # in Release builds. Output is grep-friendly for tracking regressions.
   ament_add_gtest(test_perf

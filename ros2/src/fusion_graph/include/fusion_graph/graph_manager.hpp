@@ -148,6 +148,40 @@ struct GraphParams
   // produces residual gyro samples on a truly parked robot.
   double stationary_gyro_thresh_rad_per_s = 0.10;
 
+  // Online gyro bias estimation (item #3, pragmatic variant).
+  // hardware_bridge_node calibrates the gyro bias once at boot
+  // (20 s window while docked) but the residual drifts with
+  // temperature over the session — measured 0.025 rad/s after
+  // 30 min of mowing on this robot. Without continuous re-estimation
+  // the gyro between-factor accumulates the drift directly into the
+  // graph's yaw estimate (8.5°/min @ 0.025 rad/s).
+  //
+  // Mechanism: when the wheel-only stationary gate fires (robot is
+  // genuinely parked, encoders flat), EMA-update an estimate of the
+  // gyro_z bias from the raw samples observed. The bias is then
+  // SUBTRACTED from gyro samples in AddGyroDelta before integration
+  // into the graph. When moving, the bias estimate is frozen.
+  //
+  // This is the pragmatic version of full IMU preintegration:
+  // captures the dominant slow-drift bias term without requiring a
+  // graph schema change (no bias state in the iSAM2 variables, just
+  // a side-channel running EMA in graph_manager). Full preintegration
+  // would let GTSAM optimise the bias jointly with the trajectory,
+  // but on this robot the bias variation timescale (minutes) is much
+  // slower than the graph optimisation cadence (20 ms) — the EMA
+  // captures the same effect with two orders of magnitude less code.
+  //
+  // Set gyro_bias_estimation_enabled=false to disable entirely.
+  bool gyro_bias_estimation_enabled = true;
+  // EMA time constant for the bias estimate. 30 s = a few minutes of
+  // stationary time to fully converge from a cold thermal state.
+  double gyro_bias_ema_tau_s = 30.0;
+  // Reject samples with |gyro_z| above this as "real motion despite
+  // wheels saying stationary" — hand-pushed / lifted-spinning case.
+  // Aligned with stationary_gyro_thresh_rad_per_s but kept separate
+  // so the two gates can be tuned independently.
+  double gyro_bias_max_sample_rad_per_s = 0.10;
+
   // Adaptive process-noise inflation on wheel σ_x.
   //
   // Diff-drive encoders report a body-frame translation per tick. If
@@ -236,6 +270,11 @@ struct GraphStats
   // recent wheel between-factor.
   double residual_ema_rad = 0.0;
   double wheel_sigma_x_eff = 0.0;
+  // Gyro bias telemetry. gyro_bias_z is the current estimate (rad/s)
+  // that AddGyroDelta subtracts from raw samples; gyro_bias_updates
+  // is the count of stationary samples that have contributed.
+  double gyro_bias_z = 0.0;
+  uint64_t gyro_bias_updates = 0;
 };
 
 class GraphManager
@@ -521,6 +560,20 @@ private:
   // current σ_x inflation. Exposed via Stats() for diagnostics.
   double residual_ema_ = 0.0;
   double last_wheel_sigma_x_eff_ = 0.0;
+
+  // Gyro bias estimation state (item #3 pragmatic). bias_ is the
+  // current EMA-smoothed bias estimate (rad/s) subtracted from
+  // incoming gyro samples in AddGyroDelta. bias_n_updates_ tracks
+  // how many stationary samples have contributed — useful as a
+  // diagnostic signal (bias converges in tens to hundreds of
+  // samples depending on EMA τ and IMU rate).
+  double gyro_bias_z_ = 0.0;
+  uint64_t gyro_bias_updates_ = 0;
+  // Snapshot of "is the wheel-only stationary check currently
+  // holding". Updated at each Tick from accum_ before the reset;
+  // read by AddGyroDelta to gate EMA updates. Single-writer (Tick)
+  // / single-reader (AddGyroDelta), both under mu_.
+  bool wheel_stationary_now_ = false;
 
   // ── Async-rebase pipeline ───────────────────────────────────────
   // RebaseISAM2 rebuilds the iSAM2 Bayes tree from scratch with one
