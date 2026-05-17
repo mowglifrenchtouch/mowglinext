@@ -3,6 +3,7 @@ import {useGPS} from "../hooks/useGPS.ts";
 import { booleanFormatter, booleanFormatterInverted } from "./utils.tsx";
 import { AbsolutePoseConstants as Flags } from "../types/ros.ts";
 import {useThemeMode} from "../theme/ThemeContext.tsx";
+import {deriveGpsStatus} from "../utils/gpsStatus.ts";
 
 export function GpsComponent() {
     const {colors} = useThemeMode();
@@ -11,14 +12,13 @@ export function GpsComponent() {
     const flags = gps.flags ?? 0;
     // RTK is active when FIXED or FLOAT bit is set (not just the base RTK/GPS-fix bit)
     const hasRtk = !!((flags & Flags.FLAG_GPS_RTK_FIXED) || (flags & Flags.FLAG_GPS_RTK_FLOAT));
-    let fixType = "\u2013";
-    if ((flags & Flags.FLAG_GPS_RTK_FIXED) != 0) {
-        fixType = "RTK FIX";
-    } else if ((flags & Flags.FLAG_GPS_RTK_FLOAT) != 0) {
-        fixType = "RTK FLOAT";
-    } else if ((flags & Flags.FLAG_GPS_RTK) != 0) {
-        fixType = "GPS FIX";
-    }
+    const gpsStatus = deriveGpsStatus(flags);
+    const fixType = gpsStatus.label;
+    const fixColor =
+        gpsStatus.fixType === "RTK_FIX" ? colors.primary
+        : gpsStatus.fixType === "RTK_FLOAT" ? colors.warning
+        : gpsStatus.fixType === "GPS_FIX" ? colors.primary
+        : colors.danger;
 
     return <>
         <Row gutter={[16, 16]}>
@@ -35,7 +35,7 @@ export function GpsComponent() {
             <Col lg={8} xs={24}><Statistic title="RTK" value={hasRtk ? "Yes" : "No"}
                                         formatter={booleanFormatter}/></Col>
             <Col lg={8} xs={24}><Statistic title="Fix type" value={fixType}
-                                        valueStyle={{color: fixType.includes("FIX") ? colors.primary : fixType.includes("FLOAT") ? colors.warning : colors.danger}}/></Col>
+                                        valueStyle={{color: fixColor}}/></Col>
             <Col lg={8} xs={24}><Statistic title="Dead reckoning" value={(flags & Flags.FLAG_GPS_DEAD_RECKONING) != 0 ? "Yes" : "No"}
                                         formatter={booleanFormatterInverted}/></Col>
         </Row>
