@@ -59,6 +59,7 @@
 
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
+#include "mowgli_hardware/clock_fit.hpp"
 #include "mowgli_hardware/ll_datatypes.hpp"
 #include "mowgli_hardware/packet_handler.hpp"
 #include "mowgli_hardware/serial_port.hpp"
@@ -760,7 +761,14 @@ private:
     std::memcpy(&pkt, data, sizeof(LlImu));
 
     auto msg = sensor_msgs::msg::Imu{};
-    msg.header.stamp = now();
+    // Smoothed timestamp from the firmware-host clock fitter.
+    // pkt.dt_millis is the firmware-reported interval since the
+    // previous IMU packet (free of USB jitter); the fitter
+    // accumulates it into a virtual firmware clock and regresses
+    // a linear map to the host clock over the last ~2 s of
+    // packets. Result: published stamps are jitter-free even when
+    // host-side scheduling delays the actual decode by 5-20 ms.
+    msg.header.stamp = imu_clock_fit_.Ingest(pkt.dt_millis, now());
     msg.header.frame_id = "imu_link";
 
     double ax = static_cast<double>(pkt.acceleration_mss[0]);
@@ -1162,7 +1170,11 @@ private:
       return;
     }
 
-    const auto stamp = now();
+    // Smoothed timestamp via the clock fitter. We feed it the
+    // aggregated dt_ms (i.e. the total firmware time spanned by the
+    // 5 packets we just folded together), so the fitter's virtual
+    // firmware clock advances in sync with the published rate.
+    const auto stamp = odom_clock_fit_.Ingest(odom_acc_dt_ms_, now());
     const int32_t acc_d_left = odom_acc_delta_left_;
     const int32_t acc_d_right = odom_acc_delta_right_;
     const uint32_t acc_dt_ms = odom_acc_dt_ms_;
@@ -1520,6 +1532,14 @@ private:
   // executor — no lock needed.
   double last_wheel_vx_{0.0};
   double last_wheel_vyaw_{0.0};
+
+  // Per-stream clock fitters — one for IMU (50 Hz), one for the
+  // aggregated wheel-odom (20 Hz). Both run independently because
+  // the firmware emits IMU and odometry on separate cadences and
+  // a stall on one channel shouldn't perturb the other's stamp
+  // smoothing.
+  HostFirmwareClockFit imu_clock_fit_;
+  HostFirmwareClockFit odom_clock_fit_;
 
   // IMU calibration state (computed while docked and idle, OR when stationary
   // off-dock via auto-cal, OR loaded from the persisted file at boot)
