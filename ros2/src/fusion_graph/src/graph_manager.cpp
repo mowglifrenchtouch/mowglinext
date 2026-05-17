@@ -781,9 +781,30 @@ void GraphManager::AddLoopClosure(uint64_t prev_index,
   auto k_prev = PoseKey(prev_index);
   auto k_curr = PoseKey(curr_index);
 
-  auto noise = MakeDiagonal({sigma_xy, sigma_xy, sigma_theta});
+  // Robust noise model on loop-closure between-factors (item #11).
+  // Wraps the diagonal Gaussian in a Dynamic Covariance Scaling
+  // (DCS) m-estimator. DCS smoothly downweights an LC whose
+  // residual exceeds ~k·σ instead of letting a single bad LC
+  // anchor the entire trajectory to a wrong place — even with the
+  // upstream ICP guards (PR #233) and rmse acceptance gate, a
+  // degenerate match can still squeak through on symmetric
+  // outdoor scenery. DCS keeps inliers fully efficient (factor
+  // weight ≈ 1 when residual is below k·σ) and decays the weight
+  // quadratically beyond. Cheaper than PCM and well-validated in
+  // the SLAM literature (Agarwal et al., "Robust Map Optimization
+  // using Dynamic Covariance Scaling", ICRA 2013).
+  //
+  // DCS shape parameter Φ (kDcsPhi): residuals below √Φ are
+  // unaffected; above, the loss switches from quadratic to
+  // sub-quadratic. Φ = 1 is the classic value — equivalent to
+  // saying "an LC residual of 1 σ is borderline acceptable".
+  auto base_noise = MakeDiagonal({sigma_xy, sigma_xy, sigma_theta});
+  constexpr double kDcsPhi = 1.0;
+  auto robust_noise = gtsam::noiseModel::Robust::Create(
+      gtsam::noiseModel::mEstimator::DCS::Create(kDcsPhi), base_noise);
+
   gtsam::NonlinearFactorGraph fg;
-  fg.add(gtsam::BetweenFactor<gtsam::Pose2>(k_prev, k_curr, delta, noise));
+  fg.add(gtsam::BetweenFactor<gtsam::Pose2>(k_prev, k_curr, delta, robust_noise));
 
   ApplyIsamUpdateLocked(fg, gtsam::Values());
   estimate_dirty_ = true;

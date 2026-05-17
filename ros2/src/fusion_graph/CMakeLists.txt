@@ -156,6 +156,11 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_pose_extrapolator fusion_graph_core)
 
+  ament_add_gtest(test_loop_closure_robust
+    test/test_loop_closure_robust.cpp
+  )
+  target_link_libraries(test_loop_closure_robust fusion_graph_core)
+
   # Performance benchmarks. Long-running (~30 s on ARM); only meaningful
   # in Release builds. Output is grep-friendly for tracking regressions.
   ament_add_gtest(test_perf
