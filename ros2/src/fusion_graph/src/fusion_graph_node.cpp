@@ -980,9 +980,25 @@ void FusionGraphNode::OnSetPose(geometry_msgs::msg::PoseWithCovarianceStamped::C
   if (!snap)
     return;
   graph_->ForceAnchor(snap->node_index, pose, sigma_xy, sigma_theta);
+
+  // Suppress the cold-boot scan-match relocalize heuristic. The
+  // explicit seed (typically dock_yaw_to_set_pose firing on a
+  // charging rising edge with the calibrated dock_pose from
+  // mowgli_robot.yaml) is more authoritative than ICP against the
+  // persisted graph's old scans — especially when the operator
+  // has re-calibrated dock_pose since the persisted session, in
+  // which case the scan-match relocalize would pull the trajectory
+  // back to the OLD dock anchor. Mark relocalize_done_ so OnScan
+  // skips the heuristic on the very first incoming scan.
+  relocalize_done_ = true;
+  // Same reasoning for the RTK-autoload override path: the seed
+  // we just applied is the operator's intent, GPS shouldn't fight
+  // it within the threshold window.
+  rtk_autoload_override_done_ = true;
+
   RCLCPP_INFO(get_logger(),
               "fusion_graph: re-anchored node %lu via /set_pose to "
-              "(%.2f, %.2f, %.2f rad)",
+              "(%.2f, %.2f, %.2f rad) — relocalize suppressed",
               static_cast<unsigned long>(snap->node_index),
               pose.x(),
               pose.y(),
