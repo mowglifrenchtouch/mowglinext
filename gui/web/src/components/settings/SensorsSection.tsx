@@ -17,7 +17,7 @@ export const SensorsSection: React.FC<Props> = ({ values, onChange }) => {
     // independently from the Localization tab (e.g. to use the graph without
     // scan factors), but the defaults stay sensible.
     const handleLidarToggle = (enabled: boolean) => {
-        onChange("use_lidar", enabled);
+        onChange("lidar_enabled", enabled);
         onChange("use_fusion_graph", enabled);
     };
 
@@ -39,7 +39,7 @@ export const SensorsSection: React.FC<Props> = ({ values, onChange }) => {
                         </Paragraph>
                     </div>
                     <Switch
-                        checked={values.use_lidar ?? false}
+                        checked={values.lidar_enabled ?? false}
                         onChange={handleLidarToggle}
                     />
                 </div>
