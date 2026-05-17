@@ -78,6 +78,12 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
       declare_parameter<double>("pivot_wheel_sigma_x", 0.5);
   gp.stationary_gyro_thresh_rad_per_s =
       declare_parameter<double>("stationary_gyro_thresh_rad_per_s", 0.10);
+  gp.adaptive_noise_enabled_gain =
+      declare_parameter<double>("adaptive_noise_enabled_gain", 10.0);
+  gp.adaptive_noise_ema_tau_s =
+      declare_parameter<double>("adaptive_noise_ema_tau_s", 0.5);
+  gp.adaptive_noise_residual_floor_rad =
+      declare_parameter<double>("adaptive_noise_residual_floor_rad", 0.005);
 
   // RTK wrong-fix detection (handled in OnGnss, not in graph_manager).
   rtk_wrongfix_max_jump_m_ =
@@ -442,6 +448,14 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
                               std::to_string(stats.icp_rejects_divergence));
                           add("stationary_hand_push",
                               std::to_string(stats.stationary_hand_push));
+                          // Adaptive process-noise telemetry.
+                          {
+                            char buf[32];
+                            std::snprintf(buf, sizeof(buf), "%.5f", stats.residual_ema_rad);
+                            add("residual_ema_rad", buf);
+                            std::snprintf(buf, sizeof(buf), "%.4f", stats.wheel_sigma_x_eff);
+                            add("wheel_sigma_x_eff", buf);
+                          }
                           if (snap)
                           {
                             char buf[64];

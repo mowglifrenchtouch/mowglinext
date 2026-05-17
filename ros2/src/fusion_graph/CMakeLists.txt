@@ -146,6 +146,11 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_stationary_yaw fusion_graph_core)
 
+  ament_add_gtest(test_adaptive_noise
+    test/test_adaptive_noise.cpp
+  )
+  target_link_libraries(test_adaptive_noise fusion_graph_core)
+
   # Performance benchmarks. Long-running (~30 s on ARM); only meaningful
   # in Release builds. Output is grep-friendly for tracking regressions.
   ament_add_gtest(test_perf

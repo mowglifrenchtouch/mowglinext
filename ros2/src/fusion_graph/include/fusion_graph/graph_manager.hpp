@@ -148,6 +148,36 @@ struct GraphParams
   // produces residual gyro samples on a truly parked robot.
   double stationary_gyro_thresh_rad_per_s = 0.10;
 
+  // Adaptive process-noise inflation on wheel σ_x.
+  //
+  // Diff-drive encoders report a body-frame translation per tick. If
+  // one wheel slips (wet grass, slope, blade-jam recoil) the encoder
+  // and the chassis disagree, but iSAM2 still treats the wheel
+  // between-factor with the configured σ_x. The mismatch shows up as a
+  // residual: dtheta_wheel ≠ dtheta_gyro when the angular motion was
+  // identical, and the linear-axis equivalent (which we cannot observe
+  // directly without an absolute sensor) is correlated with that yaw
+  // residual on a diff-drive. We use |dtheta_wheel - dtheta_gyro| as a
+  // proxy and inflate wheel_sigma_x when it exceeds a threshold.
+  //
+  // EMA-smoothed over recent ticks to avoid single-tick noise tripping
+  // it; reverts to base sigma when residual decays. Disabled by setting
+  // adaptive_noise_gain to 0.
+  //
+  // Gain interpretation: σ_x_eff = wheel_sigma_x + adaptive_noise_gain *
+  // residual_ema. Default 10 (m per rad), tuned so a 0.1 rad slip event
+  // (~6°) inflates σ_x from 0.05 to 1.05 m — effectively releases the X
+  // constraint, similar to pivot_wheel_sigma_x.
+  double adaptive_noise_enabled_gain = 10.0;
+  // EMA time constant (seconds). 0.5 s = the residual settles within a
+  // few ticks of slip onset; smaller values track faster but pick up
+  // single-tick gyro noise.
+  double adaptive_noise_ema_tau_s = 0.5;
+  // Floor below which residual EMA is treated as zero (no inflation).
+  // 0.005 rad sits at the typical gyro noise floor — anything below
+  // this is dominated by sensor jitter, not real slip.
+  double adaptive_noise_residual_floor_rad = 0.005;
+
   // ICP scan-match quality gates. Result is dropped if any of these
   // fail. Defaults are conservative — drop a few good matches in the
   // sparse-outdoor edge case rather than absorb a degenerate one,
@@ -200,6 +230,12 @@ struct GraphStats
   uint64_t icp_rejects_sanity = 0;   // unphysical delta magnitude
   uint64_t icp_rejects_divergence = 0;  // result far from initial guess
   uint64_t stationary_hand_push = 0;  // wheel stationary but gyro disagrees
+  // Adaptive process-noise telemetry. residual_ema_rad is the
+  // current EMA-smoothed |dtheta_wheel - dtheta_gyro| (rad);
+  // wheel_sigma_x_eff is the inflated σ_x actually used for the most
+  // recent wheel between-factor.
+  double residual_ema_rad = 0.0;
+  double wheel_sigma_x_eff = 0.0;
 };
 
 class GraphManager
@@ -478,6 +514,13 @@ private:
   uint64_t stats_icp_rejects_sanity_ = 0;
   uint64_t stats_icp_rejects_divergence_ = 0;
   uint64_t stats_hand_push_ = 0;
+
+  // Adaptive process-noise state.
+  // residual_ema_ tracks the EMA-smoothed |dtheta_wheel - dtheta_gyro|
+  // residual across ticks. Each Tick() updates it and reads back the
+  // current σ_x inflation. Exposed via Stats() for diagnostics.
+  double residual_ema_ = 0.0;
+  double last_wheel_sigma_x_eff_ = 0.0;
 
   // ── Async-rebase pipeline ───────────────────────────────────────
   // RebaseISAM2 rebuilds the iSAM2 Bayes tree from scratch with one

@@ -326,10 +326,43 @@ TickOutput GraphManager::CreateNodeLocked(double now_s)
   // comment) so swap to a loose sigma and let GPS / scan-matching
   // constrain XY. Gating on the gyro (not wheel-derived) dtheta
   // avoids feedback from the same encoder that's misreporting.
-  const double wheel_sigma_x_eff =
+  double wheel_sigma_x_eff =
       std::abs(accum_.dtheta_gyro) > params_.pivot_gate_dtheta_rad
           ? params_.pivot_wheel_sigma_x
           : params_.wheel_sigma_x;
+
+  // Adaptive σ_x inflation from wheel↔gyro residual EMA. Skipped
+  // entirely when adaptive_noise_enabled_gain == 0 (the parameter
+  // defaults to 10 but yaml can disable). Pivot mode already
+  // inflates σ_x to params_.pivot_wheel_sigma_x; in that case the
+  // adaptive term layers on top, but the floor (pivot sigma) is
+  // typically much larger than any residual-driven contribution
+  // so the practical effect is negligible during pivots.
+  if (params_.adaptive_noise_enabled_gain > 0.0)
+  {
+    // |wheel↔gyro residual| this tick. We compare the per-tick yaw
+    // deltas (not the rate) so the noise scales naturally with
+    // node_period_s: longer ticks = more accumulated slip = larger
+    // residual = larger inflation.
+    const double residual = std::abs(accum_.dtheta_wheel - accum_.dtheta_gyro);
+
+    // EMA in continuous time: α = dt / (τ + dt). dt_total here is the
+    // wall time we've been accumulating wheel/gyro samples; safe
+    // approximation of node_period_s when the inputs are arriving on
+    // schedule. Falls back to one full step when dt_total is 0 (rare —
+    // happens on the very first tick before any wheel sample).
+    const double dt = (accum_.dt_total > 0.0) ? accum_.dt_total : params_.node_period_s;
+    const double tau = std::max(params_.adaptive_noise_ema_tau_s, 1.0e-3);
+    const double alpha = dt / (tau + dt);
+    residual_ema_ = (1.0 - alpha) * residual_ema_ + alpha * residual;
+
+    // Floor: anything below this is sensor jitter, not slip.
+    const double net_residual =
+        std::max(0.0, residual_ema_ - params_.adaptive_noise_residual_floor_rad);
+    wheel_sigma_x_eff += params_.adaptive_noise_enabled_gain * net_residual;
+  }
+  last_wheel_sigma_x_eff_ = wheel_sigma_x_eff;
+
   auto between_noise = MakeDiagonal({
       wheel_sigma_x_eff,
       params_.wheel_sigma_y,
@@ -450,6 +483,8 @@ GraphStats GraphManager::Stats() const
   s.icp_rejects_sanity = stats_icp_rejects_sanity_;
   s.icp_rejects_divergence = stats_icp_rejects_divergence_;
   s.stationary_hand_push = stats_hand_push_;
+  s.residual_ema_rad = residual_ema_;
+  s.wheel_sigma_x_eff = last_wheel_sigma_x_eff_;
   return s;
 }
 
