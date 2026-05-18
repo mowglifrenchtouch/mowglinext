@@ -145,9 +145,28 @@ void GraphManager::AddGyroDelta(double wz, double dt)
   // Subtract the current bias estimate before integration. First few
   // seconds use bias=0 (offline cal from hardware_bridge has removed
   // the cold bias); EMA refines as temperature drifts.
-  const double wz_corrected =
-      params_.gyro_bias_estimation_enabled ? wz - gyro_bias_z_ : wz;
+  //
+  // When use_imu_preint is true, we DON'T pre-subtract the EMA bias —
+  // the graph's bias variable absorbs the residual via the
+  // GyroPreintFactor. We still apply the latest bias_estimate_at_node
+  // (stored in current_bias_estimate_) so the integrated ω is in the
+  // right ballpark for iSAM2's linearisation point.
+  const double bias_correction =
+      params_.use_imu_preint ? current_bias_estimate_
+      : (params_.gyro_bias_estimation_enabled ? gyro_bias_z_ : 0.0);
+  const double wz_corrected = wz - bias_correction;
   accum_.dtheta_gyro += wz_corrected * dt;
+
+  // Preintegration accumulation. Variance propagates as
+  // Σ(dt² · σ_gyro²) — this is the noise on the integrated ω, not on
+  // ω itself. Independent of which bias correction is applied above.
+  if (params_.use_imu_preint)
+  {
+    accum_.gyro_preint_dtheta += wz_corrected * dt;
+    accum_.gyro_preint_dt += dt;
+    const double sigma = params_.gyro_noise_density_rad_per_s;
+    accum_.gyro_preint_variance += dt * dt * sigma * sigma;
+  }
 }
 
 void GraphManager::QueueGnss(double x, double y, double sigma_xy, bool robust)
@@ -195,6 +214,19 @@ void GraphManager::Initialize(const gtsam::Pose2& X0,
   auto k0 = PoseKey(0);
   new_values_.insert(k0, X0);
   new_factors_.add(gtsam::PriorFactor<gtsam::Pose2>(k0, X0, prior_noise));
+
+  // When IMU preintegration is on, seed the bias state at 0 with a
+  // loose prior. iSAM2 refines it from the very first preint factor.
+  if (params_.use_imu_preint)
+  {
+    using gtsam::Symbol;
+    auto k_bias0 = Symbol('b', 0);
+    new_values_.insert(k_bias0, 0.0);
+    auto bias_prior_noise = gtsam::noiseModel::Diagonal::Sigmas(
+        gtsam::Vector1(params_.gyro_bias_prior_sigma_rad_per_s));
+    new_factors_.add(
+        gtsam::PriorFactor<double>(k_bias0, 0.0, bias_prior_noise));
+  }
 
   isam_.update(new_factors_, new_values_);
   estimate_dirty_ = true;
@@ -388,12 +420,60 @@ TickOutput GraphManager::CreateNodeLocked(double now_s)
   }
   last_wheel_sigma_x_eff_ = wheel_sigma_x_eff;
 
+  // When IMU preintegration is active, the GyroPreintFactor below
+  // owns the yaw constraint with a tight statistically-grounded
+  // sigma. The wheel between-factor still carries xy translation but
+  // we inflate its sigma_theta so it doesn't fight the preint factor.
+  if (params_.use_imu_preint)
+  {
+    sigma_theta = 0.5;  // very loose — preint dominates yaw
+  }
+
   auto between_noise = MakeDiagonal({
       wheel_sigma_x_eff,
       params_.wheel_sigma_y,
       sigma_theta,
   });
   new_factors_.add(gtsam::BetweenFactor<gtsam::Pose2>(k_prev, k_curr, between, between_noise));
+
+  // ── IMU preintegration: ternary GyroPreintFactor + bias RW ──────
+  // The preint factor adds a yaw constraint that depends on the
+  // jointly-optimised bias variable, and the random-walk between-
+  // factor links consecutive bias variables so iSAM2 can propagate
+  // bias estimates through the trajectory.
+  if (params_.use_imu_preint && accum_.gyro_preint_dt > 0.0)
+  {
+    using gtsam::Symbol;
+    const auto k_bias_prev = Symbol('b', next_index_ - 1);
+    const auto k_bias_curr = Symbol('b', next_index_);
+
+    // Insert the new bias variable initialised at the current best
+    // estimate. iSAM2 will refine it on the next update.
+    new_values_.insert(k_bias_curr, current_bias_estimate_);
+
+    // Preint factor noise: sigma = √variance. Floor at a small value
+    // to avoid a singular constraint when dt is tiny.
+    const double sigma_preint =
+        std::max(std::sqrt(accum_.gyro_preint_variance), 1e-4);
+    auto preint_noise = gtsam::noiseModel::Diagonal::Sigmas(
+        gtsam::Vector1(sigma_preint));
+    new_factors_.add(
+        boost::make_shared<GyroPreintFactor>(k_prev,
+                                              k_curr,
+                                              k_bias_curr,
+                                              accum_.gyro_preint_dtheta,
+                                              accum_.gyro_preint_dt,
+                                              preint_noise));
+
+    // Bias random-walk between: bias_{k} = bias_{k-1} + N(0, σ_rw·√dt)
+    const double sigma_bias_rw =
+        params_.gyro_bias_rw_rad_per_s * std::sqrt(accum_.gyro_preint_dt);
+    auto bias_rw_noise = gtsam::noiseModel::Diagonal::Sigmas(
+        gtsam::Vector1(std::max(sigma_bias_rw, 1e-6)));
+    new_factors_.add(
+        gtsam::BetweenFactor<double>(k_bias_prev, k_bias_curr, 0.0,
+                                     bias_rw_noise));
+  }
 
   // 3. Queued unary factors. Wrap in Huber when caller flagged the
   // measurement as outlier-prone (RTK-Float / single fix on GPS;
@@ -443,6 +523,23 @@ TickOutput GraphManager::CreateNodeLocked(double now_s)
   estimate_dirty_ = true;
   new_factors_.resize(0);
   new_values_.clear();
+
+  // 4b. Refresh the bias linearisation point from the new estimate
+  //     when IMU preint is active. AddGyroDelta will subtract this
+  //     from incoming samples until the next node creation.
+  if (params_.use_imu_preint)
+  {
+    try
+    {
+      const auto k_bias = gtsam::Symbol('b', next_index_);
+      current_bias_estimate_ = isam_.calculateEstimate<double>(k_bias);
+    }
+    catch (const std::exception&)
+    {
+      // Keep the previous estimate if iSAM2 hasn't materialised this
+      // variable yet (shouldn't happen — we just inserted it).
+    }
+  }
 
   // 5. Marginal covariance — throttled. marginalCovariance is O(node
   //    count) on the Bayes tree path and dominates CPU once the graph

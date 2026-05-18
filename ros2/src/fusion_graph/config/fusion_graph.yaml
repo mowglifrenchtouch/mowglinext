@@ -81,6 +81,18 @@ fusion_graph_node:
     gyro_bias_ema_tau_s: 30.0
     gyro_bias_max_sample_rad_per_s: 0.10
 
+    # ── Full IMU preintegration (joint bias optim, item #3 final) ────
+    # When true, replaces the EMA bias path with a per-node bias
+    # variable in the graph and a GyroPreintFactor on each pose pair.
+    # iSAM2 jointly optimises trajectory + bias. Higher quality yaw
+    # tracking (especially during long motion windows where the EMA
+    # path can't update) at the cost of more graph state.
+    # Default false until field-validated; flip to true to opt in.
+    use_imu_preint: false
+    gyro_noise_density_rad_per_s: 0.015
+    gyro_bias_rw_rad_per_s: 0.001
+    gyro_bias_prior_sigma_rad_per_s: 0.05
+
     # ── Adaptive process noise on wheel σ_x ────────────────────────────
     # Inflates wheel_sigma_x when the |dtheta_wheel - dtheta_gyro|
     # residual EMA exceeds the floor. Slip on wet grass / slope causes

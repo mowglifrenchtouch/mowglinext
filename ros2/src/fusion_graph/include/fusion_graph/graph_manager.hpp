@@ -148,6 +148,39 @@ struct GraphParams
   // produces residual gyro samples on a truly parked robot.
   double stationary_gyro_thresh_rad_per_s = 0.10;
 
+  // Full IMU preintegration with joint bias optimisation.
+  //
+  // When true, AddGyroDelta accumulates Σω·dt AND Σ(dt²·σ_gyro²) for
+  // the variance, and CreateNodeLocked emits a ternary
+  // GyroPreintFactor(X_prev, X_curr, bias_curr) along with a
+  // random-walk BetweenFactor<double> on bias_{prev}→bias_{curr}.
+  // The optimiser then solves for the trajectory AND the bias
+  // jointly — same machinery GTSAM ships for the full Pose3 case,
+  // tailored here to our planar Pose2 graph.
+  //
+  // When false (default), the existing pragmatic EMA bias estimator
+  // remains active and the per-node BetweenFactor<Pose2> carries
+  // yaw constraints as before.
+  //
+  // Set use_imu_preint=true in mowgli_robot.yaml to opt in. Keep
+  // false until field-tested — the EMA path is well-validated and
+  // the preint factor is new code.
+  bool use_imu_preint = false;
+  // Per-sample gyro_z noise sigma (rad/s). Used to propagate
+  // covariance through the preintegration: σ²_preint = Σ (dt² · σ²).
+  // Datasheet for the IMU on this robot gives ~0.01-0.02 rad/s noise
+  // density; bias drift is handled separately by the bias state.
+  double gyro_noise_density_rad_per_s = 0.015;
+  // Bias random-walk noise (rad/s per √s). The bias state at node k
+  // is constrained by a BetweenFactor<double>(bias_{k-1}, bias_k, 0,
+  // σ = bias_rw · √dt). 0.001 rad/s/√s ≈ 0.06°/s per minute drift
+  // tolerance — consistent with measured thermal drift on the WT901.
+  double gyro_bias_rw_rad_per_s = 0.001;
+  // Initial prior on the bias variable at graph start. Loose enough
+  // that the first few observations dominate, tight enough to keep
+  // iSAM2 well-conditioned. 0.05 rad/s ≈ 3°/s.
+  double gyro_bias_prior_sigma_rad_per_s = 0.05;
+
   // Online gyro bias estimation (item #3, pragmatic variant).
   // hardware_bridge_node calibrates the gyro bias once at boot
   // (20 s window while docked) but the residual drifts with
@@ -474,6 +507,13 @@ private:
     // robot is being externally rotated (hand-pushed / lifted off
     // the ground) so don't snap dθ to 0.
     double max_abs_gyro_rad_per_s = 0.0;
+    // IMU preintegration state (used when params_.use_imu_preint).
+    // gyro_dt_total separately from dt_total because IMU may publish
+    // at a different rate than wheel odom — we want strictly the
+    // integrated gyro time horizon.
+    double gyro_preint_dtheta = 0.0;
+    double gyro_preint_dt = 0.0;
+    double gyro_preint_variance = 0.0;  // Σ(dt_i² · σ_gyro²)
     void Reset()
     {
       *this = Accumulator{};
@@ -569,6 +609,11 @@ private:
   // samples depending on EMA τ and IMU rate).
   double gyro_bias_z_ = 0.0;
   uint64_t gyro_bias_updates_ = 0;
+
+  // When use_imu_preint is true, this holds the latest optimised
+  // bias value from iSAM2 (refreshed at every node creation). Used
+  // as the linearisation point for the next preintegration window.
+  double current_bias_estimate_ = 0.0;
   // Snapshot of "is the wheel-only stationary check currently
   // holding". Updated at each Tick from accum_ before the reset;
   // read by AddGyroDelta to gate EMA updates. Single-writer (Tick)
