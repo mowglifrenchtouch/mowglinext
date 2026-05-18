@@ -120,6 +120,20 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
 
   graph_ = std::make_shared<GraphManager>(gp);
 
+  // ── Dock pose seed (always declared) ────────────────────────────
+  // Read from mowgli_robot.yaml — calibrate_imu_yaw_node and the
+  // map_server /set_docking_point service write back to that file,
+  // so the values here are always the latest persisted dock anchor.
+  // Declared outside the scan_matching gate because SeedFromDockPose()
+  // is the only seed path that fires while the robot boots docked
+  // and stationary (COG needs motion, mag is off by default) — the
+  // no-LiDAR config must still be able to bootstrap.
+  dock_pose_x_ = declare_parameter<double>("dock_pose_x", 0.0);
+  dock_pose_y_ = declare_parameter<double>("dock_pose_y", 0.0);
+  dock_pose_yaw_ = declare_parameter<double>("dock_pose_yaw", 0.0);
+  dock_pose_yaw_sigma_rad_ =
+      declare_parameter<double>("dock_pose_yaw_sigma_rad", 0.035);
+
   // ── Scan matching (optional) ─────────────────────────────────────
   use_scan_matching_ = declare_parameter<bool>("use_scan_matching", false);
   if (use_scan_matching_)
@@ -135,16 +149,6 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
     sp.sigma_xy_base = declare_parameter<double>("icp_sigma_xy_base", 0.02);
     sp.sigma_theta_base = declare_parameter<double>("icp_sigma_theta_base", 0.005);
     scan_matcher_ = std::make_unique<ScanMatcher>(sp);
-
-    // Dock pose seed (formerly emitted by dock_yaw_to_set_pose_node).
-    // Read from mowgli_robot.yaml — calibrate_imu_yaw_node and the
-    // map_server /set_docking_point service write back to that file,
-    // so the values here are always the latest persisted dock anchor.
-    dock_pose_x_ = declare_parameter<double>("dock_pose_x", 0.0);
-    dock_pose_y_ = declare_parameter<double>("dock_pose_y", 0.0);
-    dock_pose_yaw_ = declare_parameter<double>("dock_pose_yaw", 0.0);
-    dock_pose_yaw_sigma_rad_ =
-        declare_parameter<double>("dock_pose_yaw_sigma_rad", 0.035);
 
     // Per-tick ICP guard rails (see fusion_graph_node.hpp comments).
     icp_max_rmse_m_ = declare_parameter<double>("icp_max_rmse_m", 0.10);
@@ -198,10 +202,6 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
   isam2_rebase_every_nodes_ =
       static_cast<uint64_t>(declare_parameter<int>("isam2_rebase_every_nodes", 2000));
   const bool autoload = declare_parameter<bool>("autoload_graph", true);
-
-  // (dock_pose_yaw_ is declared above as part of the dock-seed
-  // parameter block — formerly declared twice, kept the earlier
-  // declaration which also sets x/y/sigma siblings.)
 
   // RTK-Fixed override of the autoloaded pose: if the autoloaded graph
   // disagrees with the first incoming RTK-Fixed sample by more than this
@@ -1073,19 +1073,31 @@ void FusionGraphNode::OnHardwareStatus(mowgli_interfaces::msg::Status::ConstShar
   //   * Save the graph to disk (auto-save).
   //   * Anchor the graph at the operator-calibrated dock pose
   //     (formerly published by dock_yaw_to_set_pose_node).
+  const bool docked = msg->is_charging;
   const bool rising_edge =
-      last_is_charging_valid_ && !last_is_charging_ && msg->is_charging;
-  const bool boot_while_docked = !last_is_charging_valid_ && msg->is_charging;
-  if ((rising_edge || boot_while_docked) && auto_save_enabled_ &&
-      graph_->IsInitialized())
+      last_is_charging_valid_ && !last_is_charging_ && docked;
+  const bool boot_while_docked = !last_is_charging_valid_ && docked;
+  const bool dock_event = rising_edge || boot_while_docked;
+  if (dock_event && auto_save_enabled_ && graph_->IsInitialized())
   {
     DispatchAsyncSave("dock-arrival");
   }
-  if ((rising_edge || boot_while_docked) && gps_seen_once_)
+  // Dock-pose seed: rising-edge / boot-while-docked one-shot is not
+  // enough on its own. /hardware_bridge/status starts streaming as
+  // soon as the bridge boots, well before /gps/fix is locked
+  // (~4 s in sim, several seconds on real hardware). If the dock
+  // event fires before gps_seen_once_ flips, the seed is lost
+  // permanently because last_is_charging_valid_ goes true and we
+  // never see a fall→rise of charging unless the robot physically
+  // undocks. Pre-init, keep retrying every status callback while
+  // docked + GPS-seen so the seed eventually lands once GPS arrives.
+  const bool pre_init_seed_pending =
+      docked && gps_seen_once_ && !graph_->IsInitialized();
+  if (pre_init_seed_pending || (dock_event && gps_seen_once_))
   {
     SeedFromDockPose();
   }
-  last_is_charging_ = msg->is_charging;
+  last_is_charging_ = docked;
   last_is_charging_valid_ = true;
 }
 
