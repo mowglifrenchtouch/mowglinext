@@ -98,13 +98,15 @@ mowgli:
     # -----------------------------------------------------------------
     # Localization backend
     # -----------------------------------------------------------------
-    # use_fusion_graph (default false): replace ekf_map_node with the
-    # GTSAM factor-graph localizer (fusion_graph package). ekf_odom
-    # keeps publishing odom→base_footprint either way. Flip to true on
-    # robots equipped with LiDAR + RTK GPS where you want
-    # scan-matching-driven map-frame consistency through RTK-Float
-    # gaps.
-    use_fusion_graph: false
+    # Map-frame localization is provided by fusion_graph_node (GTSAM
+    # iSAM2 factor graph). It runs WITHOUT LiDAR when
+    # use_scan_matching=false AND use_loop_closure=false — the graph
+    # is just a Pose2 backbone with wheel between-factors, gyro
+    # between-factors (or preintegrated factors when use_imu_preint=
+    # true), and GNSS lever-arm + COG / mag unaries. Equivalent
+    # functionality to the legacy ekf_map_node, with the option to
+    # enable scan-matching + loop closure on LiDAR-equipped robots.
+    use_fusion_graph: true
 
     # use_magnetometer (default false): subscribe to /imu/mag_yaw and
     # let it influence the map-frame yaw. The chassis motor field
