@@ -4,7 +4,7 @@ Ces profils pilotent à la fois :
 
 - les `LOG` activés sur le récepteur via `sensors/unicore/configure_receiver.sh`
 - les diagnostics ROS 2 activés par `sensors/unicore/start_gps.sh`
-- les backends ASCII / hybride / binaire exposés par `UM982Driver`
+- les backends ASCII / hybride / binaire exposés par le driver Unicore GNSS (`UM982Driver`)
 
 Le profil par défaut est `normal`.
 
