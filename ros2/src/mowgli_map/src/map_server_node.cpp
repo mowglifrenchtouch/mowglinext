@@ -71,20 +71,20 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
   lethal_boundary_margin_m_ = declare_parameter<double>("lethal_boundary_margin_m", 0.5);
   // Soft boundary deadband: distance the robot's BASE_LINK pose must
   // be outside the operator polygon before /boundary_violation fires.
-  // Default 0.20 m = chassis_width / 2 — covers FTC tracking error
-  // during corner traversals (~0.15 m worst case) so the chassis can
-  // briefly graze outside the polygon without triggering recovery.
-  // The blade extends only tool_width / 2 = 0.09 m from base_link, so
-  // even at the worst-case 0.20 m base_link excursion the BLADE TIP
-  // is still inside the polygon (the blade goes "out" only if
-  // base_link is >0.20 m + 0.09 m = 0.29 m past — which already trips
-  // the soft boundary). The lethal margin at 0.50 m is the hard
-  // safety net and bypasses this deadband.
+  // 0.30 m covers FTC tracking error under the wheel-PI motor model
+  // (steady-state ~0.05 m, post-pivot transient up to ~0.20 m) plus
+  // a small slack so the chassis can briefly graze the polygon edge
+  // during corner traversals without ping-ponging into recovery.
+  // The blade extends tool_width / 2 = 0.09 m from base_link, so a
+  // 0.30 m base_link excursion still keeps the BLADE TIP within
+  // 0.39 m of the inside — well clear of the 0.50 m lethal margin,
+  // which is the hard safety net and bypasses this deadband.
   //
-  // Earlier default was 0.10 m which combined with F2C planning to
-  // the polygon edge produced repeated NavigateInsideBoundary aborts
-  // on corner traversals.
-  soft_boundary_margin_m_ = declare_parameter<double>("soft_boundary_margin_m", 0.20);
+  // 0.20 m → 0.30 m (2026-05-19) after the sim run hit 5×
+  // NavigateInsideBoundary recoveries in a single coverage attempt
+  // — every recovery triggered on transient corner-pivot drift of
+  // 0.20-0.30 m, not actual chassis-off-polygon excursions.
+  soft_boundary_margin_m_ = declare_parameter<double>("soft_boundary_margin_m", 0.30);
   // How many consecutive on_odom samples must report the robot outside
   // before /boundary_violation asserts true (filters single-tick EKF
   // jumps). At ~10 Hz odometry, 3 samples ≈ 300 ms — long enough to
