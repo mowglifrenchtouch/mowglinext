@@ -22,8 +22,33 @@ namespace mowgli_localization
 namespace
 {
 
+constexpr float kCorrectionsFreshThresholdSec = 5.0f;
+
+std::string Trim(std::string value)
+{
+  const auto begin = std::find_if_not(value.begin(),
+                                      value.end(),
+                                      [](unsigned char c)
+                                      {
+                                        return std::isspace(c) != 0;
+                                      });
+  const auto end = std::find_if_not(value.rbegin(),
+                                    value.rend(),
+                                    [](unsigned char c)
+                                    {
+                                      return std::isspace(c) != 0;
+                                    })
+                       .base();
+  if (begin >= end)
+  {
+    return {};
+  }
+  return std::string(begin, end);
+}
+
 std::string Lowercase(std::string value)
 {
+  value = Trim(std::move(value));
   std::transform(value.begin(),
                  value.end(),
                  value.begin(),
@@ -111,7 +136,12 @@ std::optional<std::string> LookupString(const GnssDiagnosticEntry* entry, const 
   {
     return std::nullopt;
   }
-  return it->second;
+  const std::string trimmed = Trim(it->second);
+  if (trimmed.empty())
+  {
+    return std::nullopt;
+  }
+  return trimmed;
 }
 
 std::optional<bool> LookupBool(const GnssDiagnosticEntry* entry, const std::string& key)
@@ -257,6 +287,51 @@ void SetFixTypeFromFixTypeLabel(GnssRuntimeState& state, const std::string& valu
   }
 }
 
+std::optional<bool> CorrectionsActiveFromReceiverAge(std::optional<float> age_s)
+{
+  if (!age_s.has_value())
+  {
+    return std::nullopt;
+  }
+  return *age_s <= kCorrectionsFreshThresholdSec;
+}
+
+std::optional<bool> CorrectionsActiveFromTransport(std::optional<float> age_s,
+                                                   std::optional<float> msgs_per_sec)
+{
+  if (age_s.has_value())
+  {
+    return *age_s <= kCorrectionsFreshThresholdSec &&
+           (!msgs_per_sec.has_value() || *msgs_per_sec > 0.0f);
+  }
+  if (msgs_per_sec.has_value())
+  {
+    return *msgs_per_sec > 0.0f;
+  }
+  return std::nullopt;
+}
+
+std::optional<bool> ParseUnicoreDualAntennaStatus(const std::string& value)
+{
+  // Recognized Unicore RTK diagnostic strings from RTKSTATUSA/B:
+  //   "within limit"                 -> heading baseline solved/usable
+  //   "baseline unsolved"            -> dual-antenna heading unavailable
+  //   "out of limit"                 -> baseline invalid
+  //   "baseline length not configured" -> baseline feature present but disabled
+  //   "unknown"                      -> explicit negative state from the driver
+  const std::string lowered = Lowercase(value);
+  if (lowered == "within limit")
+  {
+    return true;
+  }
+  if (lowered == "baseline unsolved" || lowered == "out of limit" ||
+      lowered == "baseline length not configured" || lowered == "unknown")
+  {
+    return false;
+  }
+  return std::nullopt;
+}
+
 void ApplyUbloxDiagnostics(GnssRuntimeState& state, const GnssDiagnosticSnapshot& snapshot)
 {
   const auto* fix = FindEntry(snapshot, "GPS: fix");
@@ -355,10 +430,10 @@ void ApplyUbloxDiagnostics(GnssRuntimeState& state, const GnssDiagnosticSnapshot
   {
     state.correction_age_s = *corr_age;
   }
-  if (msgs_per_sec.has_value() || corr_age.has_value())
+  if (const auto corrections_active = CorrectionsActiveFromTransport(corr_age, msgs_per_sec);
+      corrections_active.has_value())
   {
-    const bool active = msgs_per_sec.value_or(0.0f) > 0.0f && corr_age.value_or(999.0f) <= 5.0f;
-    state.corrections_active = active;
+    state.corrections_active = *corrections_active;
   }
 }
 
@@ -429,15 +504,10 @@ void ApplyUnicoreDiagnostics(GnssRuntimeState& state, const GnssDiagnosticSnapsh
   }
   if (const auto dual_rtk_flag = LookupString(rtk, "dual_rtk_flag"); dual_rtk_flag.has_value())
   {
-    const std::string lowered = Lowercase(*dual_rtk_flag);
-    if (lowered == "within limit")
+    if (const auto dual_antenna = ParseUnicoreDualAntennaStatus(*dual_rtk_flag);
+        dual_antenna.has_value())
     {
-      state.dual_antenna_heading = true;
-    }
-    else if (lowered == "baseline unsolved" || lowered == "out of limit" ||
-             lowered == "baseline length not configured" || lowered == "unknown")
-    {
-      state.dual_antenna_heading = false;
+      state.dual_antenna_heading = *dual_antenna;
     }
   }
 
@@ -464,15 +534,23 @@ void ApplyUnicoreDiagnostics(GnssRuntimeState& state, const GnssDiagnosticSnapsh
 
   const auto injected_age = LookupFloat(rtcm, "age_of_last_injected_corr_s");
   const auto msgs_per_sec = LookupFloat(rtcm, "msgs_per_sec");
+  // Unicore's diff_age_s is the receiver-side age of the corrections applied
+  // to the current solution, so it is the authoritative source when present.
+  // We only fall back to the transport-side RTCM injection age when the RTK
+  // solution age is unavailable.
   if (!state.correction_age_s.has_value() && injected_age.has_value())
   {
     state.correction_age_s = *injected_age;
   }
-  if (msgs_per_sec.has_value() || injected_age.has_value())
+  if (const auto corrections_active = CorrectionsActiveFromReceiverAge(state.correction_age_s);
+      corrections_active.has_value())
   {
-    const bool active =
-        msgs_per_sec.value_or(0.0f) > 0.0f && injected_age.value_or(999.0f) <= 5.0f;
-    state.corrections_active = active;
+    state.corrections_active = *corrections_active;
+  }
+  else if (const auto transport_active = CorrectionsActiveFromTransport(injected_age, msgs_per_sec);
+           transport_active.has_value())
+  {
+    state.corrections_active = *transport_active;
   }
 
   if (const auto interference = LookupBool(rf, "rf_saturation_suspected"); interference.has_value())
@@ -504,7 +582,7 @@ GnssBackendKind ResolveGnssBackend(const std::string& gnss_backend, const std::s
   {
     return GnssBackendKind::kUnicore;
   }
-  if (backend == "gps")
+  if (backend.empty() || backend == "gps")
   {
     if (protocol == "nmea")
     {
@@ -609,7 +687,11 @@ void EnrichGnssRuntimeStateFromDiagnostics(GnssRuntimeState& state,
   }
 
   const double age_sec = (state.stamp - snapshot.stamp).seconds();
-  if (std::fabs(age_sec) > diagnostics_timeout_sec)
+  // Diagnostics are sampled independently from NavSatFix. We only consume the
+  // latest diagnostics snapshot when it is older than or equal to the fix and
+  // still within the freshness timeout. Newer-than-fix diagnostics are
+  // rejected so we never enrich a fix with information that arrived later.
+  if (age_sec < 0.0 || age_sec > diagnostics_timeout_sec)
   {
     return;
   }

@@ -7,8 +7,14 @@
 
 #include "mowgli_localization/gnss_status_adapter.hpp"
 
+#include <cassert>
+#include <type_traits>
+
 namespace mowgli_localization
 {
+
+static_assert(std::is_same_v<std::underlying_type_t<GnssRuntimeCapability>, uint32_t>,
+              "GnssRuntimeCapability must stay within the uint32 public message contract");
 
 namespace
 {
@@ -62,8 +68,13 @@ void SetCapabilityIfNeeded(mowgli_interfaces::msg::GnssStatus& msg,
 
 void SetValueFlagIfPresent(mowgli_interfaces::msg::GnssStatus& msg, uint32_t bit)
 {
+  assert((msg.capability_flags & bit) != 0u &&
+         "value_flags may only be set for fields already declared in capability_flags");
+  if ((msg.capability_flags & bit) == 0u)
+  {
+    return;
+  }
   msg.value_flags |= bit;
-  msg.capability_flags |= bit;
 }
 
 }  // namespace

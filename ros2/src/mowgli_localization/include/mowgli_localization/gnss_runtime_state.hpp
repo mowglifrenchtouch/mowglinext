@@ -33,26 +33,26 @@ enum class GnssRtkMode : uint8_t
   kFixed = 3,
 };
 
-enum class GnssRuntimeCapability : uint64_t
+enum class GnssRuntimeCapability : uint32_t
 {
-  kRtkMode = 1ull << 0,
-  kHdop = 1ull << 1,
-  kVdop = 1ull << 2,
-  kHorizontalAccuracy = 1ull << 3,
-  kVerticalAccuracy = 1ull << 4,
-  kHeading = 1ull << 5,
-  kHeadingAccuracy = 1ull << 6,
-  kSatellitesUsed = 1ull << 7,
-  kSatellitesVisible = 1ull << 8,
-  kSatellitesTracked = 1ull << 9,
-  kDifferentialCorrections = 1ull << 10,
-  kCorrectionsActive = 1ull << 11,
-  kCorrectionAge = 1ull << 12,
-  kMeanCn0 = 1ull << 13,
-  kMaxCn0 = 1ull << 14,
-  kDualAntennaStatus = 1ull << 15,
-  kInterferenceStatus = 1ull << 16,
-  kJammingStatus = 1ull << 17,
+  kRtkMode = 1u << 0,
+  kHdop = 1u << 1,
+  kVdop = 1u << 2,
+  kHorizontalAccuracy = 1u << 3,
+  kVerticalAccuracy = 1u << 4,
+  kHeading = 1u << 5,
+  kHeadingAccuracy = 1u << 6,
+  kSatellitesUsed = 1u << 7,
+  kSatellitesVisible = 1u << 8,
+  kSatellitesTracked = 1u << 9,
+  kDifferentialCorrections = 1u << 10,
+  kCorrectionsActive = 1u << 11,
+  kCorrectionAge = 1u << 12,
+  kMeanCn0 = 1u << 13,
+  kMaxCn0 = 1u << 14,
+  kDualAntennaStatus = 1u << 15,
+  kInterferenceStatus = 1u << 16,
+  kJammingStatus = 1u << 17,
 };
 
 struct GnssRuntimeState
@@ -97,17 +97,17 @@ struct GnssRuntimeState
 
   // Backend/runtime support bits. A producer sets these when a field is part
   // of the backend contract even if the current sample lacks a usable value.
-  uint64_t supported_capabilities{0};
+  uint32_t supported_capabilities{0};
 };
 
 inline void MarkCapability(GnssRuntimeState& state, GnssRuntimeCapability capability)
 {
-  state.supported_capabilities |= static_cast<uint64_t>(capability);
+  state.supported_capabilities |= static_cast<uint32_t>(capability);
 }
 
 inline bool HasCapability(const GnssRuntimeState& state, GnssRuntimeCapability capability)
 {
-  return (state.supported_capabilities & static_cast<uint64_t>(capability)) != 0;
+  return (state.supported_capabilities & static_cast<uint32_t>(capability)) != 0;
 }
 
 }  // namespace mowgli_localization

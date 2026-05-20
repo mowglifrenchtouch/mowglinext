@@ -7,6 +7,40 @@
 namespace mowgli_localization
 {
 
+TEST(GnssStatusAdapterTest, CapabilityBitsMatchPublicMessageContract)
+{
+  using Msg = mowgli_interfaces::msg::GnssStatus;
+
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kRtkMode), Msg::CAP_RTK_MODE);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kHdop), Msg::CAP_HDOP);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kVdop), Msg::CAP_VDOP);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kHorizontalAccuracy),
+            Msg::CAP_HORIZONTAL_ACCURACY);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kVerticalAccuracy),
+            Msg::CAP_VERTICAL_ACCURACY);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kHeading), Msg::CAP_HEADING);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kHeadingAccuracy),
+            Msg::CAP_HEADING_ACCURACY);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kSatellitesUsed), Msg::CAP_SATELLITES_USED);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kSatellitesVisible),
+            Msg::CAP_SATELLITES_VISIBLE);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kSatellitesTracked),
+            Msg::CAP_SATELLITES_TRACKED);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kDifferentialCorrections),
+            Msg::CAP_DIFFERENTIAL_CORRECTIONS);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kCorrectionsActive),
+            Msg::CAP_CORRECTIONS_ACTIVE);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kCorrectionAge), Msg::CAP_CORRECTION_AGE);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kMeanCn0), Msg::CAP_MEAN_CN0);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kMaxCn0), Msg::CAP_MAX_CN0);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kDualAntennaStatus),
+            Msg::CAP_DUAL_ANTENNA_STATUS);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kInterferenceStatus),
+            Msg::CAP_INTERFERENCE_STATUS);
+  EXPECT_EQ(static_cast<uint32_t>(GnssRuntimeCapability::kJammingStatus),
+            Msg::CAP_JAMMING_STATUS);
+}
+
 TEST(GnssStatusAdapterTest, MapsOptionalFieldsToPublicCapabilities)
 {
   GnssRuntimeState state;
@@ -68,6 +102,17 @@ TEST(GnssStatusAdapterTest, FallsBackToDefaultQualityForFixType)
 
   const auto msg = ToGnssStatusMessage(state);
   EXPECT_FLOAT_EQ(msg.quality_percent, 25.0f);
+}
+
+TEST(GnssStatusAdapterTest, DoesNotSetValueFlagsWithoutDeclaredCapability)
+{
+  GnssRuntimeState state;
+  state.hdop = 0.6f;
+
+  const auto msg = ToGnssStatusMessage(state);
+  EXPECT_EQ(msg.capability_flags & mowgli_interfaces::msg::GnssStatus::CAP_HDOP, 0u);
+  EXPECT_EQ(msg.value_flags & mowgli_interfaces::msg::GnssStatus::CAP_HDOP, 0u);
+  EXPECT_FLOAT_EQ(msg.hdop, 0.0f);
 }
 
 TEST(GnssStatusAdapterTest, MapsMinimalNmeaLikeStateWithoutInventingRichFields)

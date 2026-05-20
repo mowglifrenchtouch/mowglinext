@@ -37,6 +37,21 @@ diagnostic_msgs::msg::DiagnosticArray MakeArray(
 
 }  // namespace
 
+TEST(GnssRuntimeStateBuilderTest, ResolveGnssBackendHandlesExplicitLegacyAndUnknownValues)
+{
+  EXPECT_EQ(ResolveGnssBackend("unicore", "UBX"), GnssBackendKind::kUnicore);
+  EXPECT_EQ(ResolveGnssBackend("ublox", "NMEA"), GnssBackendKind::kUblox);
+  EXPECT_EQ(ResolveGnssBackend("nmea", "UBX"), GnssBackendKind::kNmea);
+  EXPECT_EQ(ResolveGnssBackend("gps", "UBX"), GnssBackendKind::kUblox);
+  EXPECT_EQ(ResolveGnssBackend("gps", "NMEA"), GnssBackendKind::kNmea);
+  EXPECT_EQ(ResolveGnssBackend("", "UBX"), GnssBackendKind::kUblox);
+  EXPECT_EQ(ResolveGnssBackend("", "nmea"), GnssBackendKind::kNmea);
+  EXPECT_EQ(ResolveGnssBackend("  GPS  ", "  ubx  "), GnssBackendKind::kUblox);
+  EXPECT_EQ(ResolveGnssBackend("", ""), GnssBackendKind::kUnknown);
+  EXPECT_EQ(ResolveGnssBackend("mystery", "UBX"), GnssBackendKind::kUnknown);
+  EXPECT_EQ(ResolveGnssBackend("gps", "binary"), GnssBackendKind::kUnknown);
+}
+
 TEST(GnssRuntimeStateBuilderTest, BuildsMinimalNmeaStateFromNavSatFixWithoutInventingFields)
 {
   sensor_msgs::msg::NavSatFix fix;
@@ -112,6 +127,29 @@ TEST(GnssRuntimeStateBuilderTest, EnrichesUbloxStateFromStructuredDiagnostics)
   EXPECT_FLOAT_EQ(*state.correction_age_s, 0.4f);
 }
 
+TEST(GnssRuntimeStateBuilderTest, RejectsDiagnosticsThatAreNewerThanFixOrTooStale)
+{
+  sensor_msgs::msg::NavSatFix fix;
+  fix.header.stamp.sec = 12;
+  fix.status.status = sensor_msgs::msg::NavSatStatus::STATUS_FIX;
+
+  auto state_future = BuildGnssRuntimeStateFromFix(fix, GnssBackendKind::kUblox);
+  auto future_snapshot = BuildGnssDiagnosticSnapshot(MakeArray({
+      MakeDiag("GPS: fix", {{"gps_fix_ok", "True"}, {"carr_soln", "fixed"}}),
+  }));
+  future_snapshot.stamp = rclcpp::Time(13, 0);
+  EnrichGnssRuntimeStateFromDiagnostics(state_future, GnssBackendKind::kUblox, future_snapshot, 5.0);
+  EXPECT_EQ(state_future.fix_type, GnssFixType::kGpsFix);
+
+  auto state_stale = BuildGnssRuntimeStateFromFix(fix, GnssBackendKind::kUblox);
+  auto stale_snapshot = BuildGnssDiagnosticSnapshot(MakeArray({
+      MakeDiag("GPS: fix", {{"gps_fix_ok", "True"}, {"carr_soln", "fixed"}}),
+  }));
+  stale_snapshot.stamp = rclcpp::Time(6, 0);
+  EnrichGnssRuntimeStateFromDiagnostics(state_stale, GnssBackendKind::kUblox, stale_snapshot, 5.0);
+  EXPECT_EQ(state_stale.fix_type, GnssFixType::kGpsFix);
+}
+
 TEST(GnssRuntimeStateBuilderTest, EnrichesUnicoreStateFromStructuredDiagnostics)
 {
   sensor_msgs::msg::NavSatFix fix;
@@ -171,6 +209,61 @@ TEST(GnssRuntimeStateBuilderTest, EnrichesUnicoreStateFromStructuredDiagnostics)
   EXPECT_TRUE(*state.jamming_detected);
   ASSERT_TRUE(state.correction_age_s.has_value());
   EXPECT_FLOAT_EQ(*state.correction_age_s, 0.3f);
+}
+
+TEST(GnssRuntimeStateBuilderTest, ParsesUnicoreDualAntennaDiagnosticStringsCaseInsensitively)
+{
+  const struct
+  {
+    const char* raw_value;
+    std::optional<bool> expected;
+  } cases[] = {
+      {" within limit ", true},
+      {"BASELINE UNSOLVED", false},
+      {"Out Of Limit", false},
+      {"baseline length not configured", false},
+      {"UNKNOWN", false},
+      {"unexpected status", std::nullopt},
+  };
+
+  for (const auto& c : cases)
+  {
+    sensor_msgs::msg::NavSatFix fix;
+    fix.header.stamp.sec = 12;
+    fix.status.status = sensor_msgs::msg::NavSatStatus::STATUS_FIX;
+    auto state = BuildGnssRuntimeStateFromFix(fix, GnssBackendKind::kUnicore);
+    auto snapshot = BuildGnssDiagnosticSnapshot(MakeArray({
+        MakeDiag("GPS: RTK", {{"dual_rtk_flag", c.raw_value}}),
+    }));
+
+    EnrichGnssRuntimeStateFromDiagnostics(state, GnssBackendKind::kUnicore, snapshot, 5.0);
+    EXPECT_EQ(state.dual_antenna_heading, c.expected) << "raw value: " << c.raw_value;
+  }
+}
+
+TEST(GnssRuntimeStateBuilderTest, UnicoreUsesReceiverCorrectionAgeBeforeTransportAge)
+{
+  sensor_msgs::msg::NavSatFix fix;
+  fix.header.stamp.sec = 12;
+  fix.status.status = sensor_msgs::msg::NavSatStatus::STATUS_FIX;
+
+  auto state = BuildGnssRuntimeStateFromFix(fix, GnssBackendKind::kUnicore);
+  const auto snapshot = BuildGnssDiagnosticSnapshot(MakeArray({
+      MakeDiag("GPS: fix",
+               {{"fix_quality", "5"},
+                {"gps_fix_ok", "True"},
+                {"diff_corr", "True"},
+                {"diff_age_s", "0.4"}}),
+      MakeDiag("GPS: NTRIP/RTCM",
+               {{"msgs_per_sec", "0.0"},
+                {"age_of_last_injected_corr_s", "8.0"}}),
+  }));
+
+  EnrichGnssRuntimeStateFromDiagnostics(state, GnssBackendKind::kUnicore, snapshot, 5.0);
+  ASSERT_TRUE(state.correction_age_s.has_value());
+  EXPECT_FLOAT_EQ(*state.correction_age_s, 0.4f);
+  ASSERT_TRUE(state.corrections_active.has_value());
+  EXPECT_TRUE(*state.corrections_active);
 }
 
 }  // namespace mowgli_localization

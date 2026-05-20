@@ -83,7 +83,8 @@ describe('deriveGpsStatus', () => {
 
     it('formats user-facing receiver labels without leaking backend ids', () => {
         expect(gnssReceiverLabel({backend: 'unicore', receiver_vendor: 'Unicore'})).toBe('Unicore GNSS');
-        expect(gnssReceiverLabel({backend: 'ublox', receiver_vendor: 'u-blox'})).toBe('u-blox');
-        expect(gnssReceiverLabel({backend: 'nmea'})).toBe('Generic GNSS');
+        expect(gnssReceiverLabel({backend: 'ublox', receiver_vendor: 'u-blox'})).toBe('u-blox GNSS');
+        expect(gnssReceiverLabel({receiver_model: 'F9P'})).toBe('F9P');
+        expect(gnssReceiverLabel({backend: 'nmea'})).toBe('GNSS');
     });
 });

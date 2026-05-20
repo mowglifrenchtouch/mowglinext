@@ -66,25 +66,18 @@ export function readGnssBooleanState(
 }
 
 export function gnssReceiverLabel(gnssStatus: GnssStatus | undefined | null): string {
-    const backend = gnssStatus?.backend?.trim().toLowerCase() ?? "";
     const vendor = gnssStatus?.receiver_vendor?.trim() ?? "";
     const model = gnssStatus?.receiver_model?.trim() ?? "";
 
     if (vendor && model) {
         return `${vendor} ${model}`;
     }
+    if (model) {
+        return model;
+    }
     if (vendor) {
-        return backend === "unicore" ? `${vendor} GNSS` : vendor;
+        return `${vendor} GNSS`;
     }
 
-    switch (backend) {
-        case "nmea":
-            return "Generic GNSS";
-        case "ublox":
-            return "u-blox GNSS";
-        case "unicore":
-            return "Unicore GNSS";
-        default:
-            return "GNSS";
-    }
+    return "GNSS";
 }
