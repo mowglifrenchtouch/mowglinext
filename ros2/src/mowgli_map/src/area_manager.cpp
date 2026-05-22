@@ -671,6 +671,51 @@ void MapServerNode::on_set_docking_point(
     const mowgli_interfaces::srv::SetDockingPoint::Request::SharedPtr req,
     mowgli_interfaces::srv::SetDockingPoint::Response::SharedPtr res)
 {
+  // Reject the call when the EKF yaw hasn't converged yet — pinning a
+  // dock pose during EKF startup transient writes a wildly wrong heading
+  // (and therefore a wrong base position via the lever-arm projection on
+  // /gps/absolute_pose). The operator should drive the robot forward
+  // briefly to lock in COG yaw, then retry, or wait for mag/COG to
+  // settle the EKF naturally.
+  {
+    std::lock_guard<std::mutex> lk(recent_yaws_mutex_);
+    if (recent_yaws_.size() < yaw_convergence_min_samples_)
+    {
+      res->success = false;
+      RCLCPP_WARN(get_logger(),
+                  "set_docking_point rejected: only %zu yaw samples in the last %.1f s "
+                  "(need >= %zu). Wait for the EKF to receive more updates.",
+                  recent_yaws_.size(),
+                  yaw_convergence_window_s_,
+                  yaw_convergence_min_samples_);
+      return;
+    }
+    double sum = 0.0;
+    double sum_sq = 0.0;
+    for (const auto& [t, y] : recent_yaws_)
+    {
+      sum += y;
+      sum_sq += y * y;
+    }
+    const double n = static_cast<double>(recent_yaws_.size());
+    const double mean = sum / n;
+    const double var = (sum_sq / n) - (mean * mean);
+    const double std_dev = std::sqrt(std::max(var, 0.0));
+    if (std_dev > yaw_convergence_threshold_rad_)
+    {
+      res->success = false;
+      RCLCPP_WARN(get_logger(),
+                  "set_docking_point rejected: EKF yaw not converged "
+                  "(std %.3f° > threshold %.3f° over %.1f s, %zu samples). "
+                  "Drive the robot 1 m forward to anchor heading from COG, then retry.",
+                  std_dev * 180.0 / M_PI,
+                  yaw_convergence_threshold_rad_ * 180.0 / M_PI,
+                  yaw_convergence_window_s_,
+                  recent_yaws_.size());
+      return;
+    }
+  }
+
   docking_pose_ = req->docking_pose;
   docking_pose_set_ = true;
 

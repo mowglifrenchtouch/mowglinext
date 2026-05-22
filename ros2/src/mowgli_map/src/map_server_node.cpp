@@ -58,6 +58,11 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
   decay_rate_per_hour_ = declare_parameter<double>("decay_rate_per_hour", 0.1);
   tool_width_ = declare_parameter<double>("tool_width", 0.18);
   reachability_period_s_ = declare_parameter<double>("reachability_period_s", 2.0);
+  yaw_convergence_threshold_rad_ =
+      declare_parameter<double>("yaw_convergence_threshold_rad", 0.00873);  // 0.5°
+  yaw_convergence_window_s_ = declare_parameter<double>("yaw_convergence_window_s", 5.0);
+  yaw_convergence_min_samples_ = static_cast<size_t>(
+      declare_parameter<int>("yaw_convergence_min_samples", 20));
   map_file_path_ = declare_parameter<std::string>("map_file_path", "");
   areas_file_path_ = declare_parameter<std::string>("areas_file_path", "");
   publish_rate_ = declare_parameter<double>("publish_rate", 1.0);
@@ -568,6 +573,7 @@ void MapServerNode::on_odom(nav_msgs::msg::Odometry::ConstSharedPtr /*msg*/)
   // Use TF for the definitive map-frame robot position.
   // The odom message position may be in odom frame, not map frame.
   double x = 0.0, y = 0.0;
+  double yaw = 0.0;
   if (tf_buffer_)
   {
     try
@@ -575,6 +581,9 @@ void MapServerNode::on_odom(nav_msgs::msg::Odometry::ConstSharedPtr /*msg*/)
       auto tf = tf_buffer_->lookupTransform(map_frame_, "base_footprint", tf2::TimePointZero);
       x = tf.transform.translation.x;
       y = tf.transform.translation.y;
+      // Yaw extraction valid because the EKF runs in two_d_mode (roll/pitch ≈ 0).
+      const auto& q = tf.transform.rotation;
+      yaw = 2.0 * std::atan2(q.z, q.w);
     }
     catch (const tf2::TransformException&)
     {
@@ -584,6 +593,21 @@ void MapServerNode::on_odom(nav_msgs::msg::Odometry::ConstSharedPtr /*msg*/)
   else
   {
     return;
+  }
+
+  // Maintain a rolling window of recent yaws for the docking-set gate.
+  // Window is bounded by yaw_convergence_window_s_; samples beyond that
+  // age out at the front. The gate in on_set_docking_point reads this.
+  {
+    std::lock_guard<std::mutex> lk(recent_yaws_mutex_);
+    const rclcpp::Time now_t = now();
+    recent_yaws_.emplace_back(now_t, yaw);
+    const rclcpp::Duration window =
+        rclcpp::Duration::from_seconds(yaw_convergence_window_s_);
+    while (!recent_yaws_.empty() && (now_t - recent_yaws_.front().first) > window)
+    {
+      recent_yaws_.pop_front();
+    }
   }
 
   // Latch most recent map-frame position so reachability BFS can use

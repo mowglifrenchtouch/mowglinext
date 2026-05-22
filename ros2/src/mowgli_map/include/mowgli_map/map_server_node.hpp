@@ -17,6 +17,7 @@
 #define MOWGLI_MAP__MAP_SERVER_NODE_HPP_
 
 #include <cmath>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -680,6 +681,22 @@ private:
   /// Docking point in map frame.
   geometry_msgs::msg::Pose docking_pose_;
   bool docking_pose_set_{false};
+
+  /// Rolling window of recent map→base_footprint yaw samples (radians).
+  /// Pushed by on_odom; consumed by on_set_docking_point to gate the
+  /// service on EKF yaw convergence. After a mowgli-ros2 restart the EKF
+  /// boots at yaw=0 and only converges to the true heading via gyro+wheel
+  /// integration / COG / mag; on a stationary robot with no COG signal
+  /// the convergence can take 30 s+, during which /gps/absolute_pose
+  /// swings by lever_arm·sin(Δyaw) — i.e. hundreds of mm when yaw drifts
+  /// tens of degrees. Persisting a dock pose during that window pins it
+  /// to a wildly wrong location. The gate rejects set_docking_point when
+  /// the recent yaw std exceeds yaw_convergence_threshold_rad_.
+  std::deque<std::pair<rclcpp::Time, double>> recent_yaws_;
+  mutable std::mutex recent_yaws_mutex_;
+  double yaw_convergence_threshold_rad_{0.00873};  ///< 0.5°
+  double yaw_convergence_window_s_{5.0};
+  size_t yaw_convergence_min_samples_{20};
 
   /// Three coupled dock polygons in map frame, all derived from
   /// docking_pose_ + dock_body/corridor parameters. Built once at startup.
