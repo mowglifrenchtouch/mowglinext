@@ -887,6 +887,77 @@ void GraphManager::ApplyIsamUpdateLocked(const gtsam::NonlinearFactorGraph& fg,
   }
 }
 
+void GraphManager::RigidTransformAll(const gtsam::Pose2& correction,
+                                     double latest_node_sigma_xy,
+                                     double latest_node_sigma_theta)
+{
+  std::lock_guard<std::mutex> lock(mu_);
+
+  // Refresh the cached estimate so we have every variable.
+  RefreshEstimateLocked();
+  if (current_estimate_.empty())
+    return;
+
+  // Apply correction to every Pose2 node. Non-pose variables (e.g.
+  // gyro bias) are gauge-invariant — copy them through unchanged.
+  gtsam::Values transformed;
+  uint64_t latest_idx_local = (next_index_ > 0) ? next_index_ - 1 : 0;
+  auto latest_key = PoseKey(latest_idx_local);
+  for (const auto& kv : current_estimate_)
+  {
+    gtsam::Symbol s(kv.key);
+    if (s.chr() == 'x')
+    {
+      const gtsam::Pose2 X_old = kv.value.cast<gtsam::Pose2>();
+      const gtsam::Pose2 X_new = correction * X_old;
+      transformed.insert(kv.key, X_new);
+    }
+    else
+    {
+      transformed.insert(kv.key, kv.value);
+    }
+  }
+
+  // Build a fresh iSAM2 with priors at the shifted poses. Loose σ
+  // (5 cm / 3°) on the older nodes so future loop closures can still
+  // refine them; tight σ on the latest node so the dock anchor isn't
+  // washed out by the next stream of GPS factors when the robot
+  // undocks.
+  gtsam::ISAM2Params p;
+  p.optimizationParams = gtsam::ISAM2GaussNewtonParams(0.001);
+  p.relinearizeThreshold = 0.05;
+  p.relinearizeSkip = std::max(1, params_.isam2_relinearize_skip);
+  gtsam::ISAM2 fresh(p);
+
+  gtsam::NonlinearFactorGraph fg;
+  auto loose_noise = MakeDiagonal({0.05, 0.05, 0.05});
+  auto tight_noise = MakeDiagonal(
+      {std::max(latest_node_sigma_xy, 1.0e-4),
+       std::max(latest_node_sigma_xy, 1.0e-4),
+       std::max(latest_node_sigma_theta, 1.0e-4)});
+  for (const auto& kv : transformed)
+  {
+    gtsam::Symbol s(kv.key);
+    if (s.chr() != 'x')
+      continue;
+    const auto noise = (kv.key == latest_key) ? tight_noise : loose_noise;
+    fg.add(
+        gtsam::PriorFactor<gtsam::Pose2>(kv.key, kv.value.cast<gtsam::Pose2>(), noise));
+  }
+  fresh.update(fg, transformed);
+  isam_ = std::move(fresh);
+  estimate_dirty_ = true;
+  // Loop-closure edges collapsed into priors during the rebuild.
+  loop_closure_edges_.clear();
+
+  // Update the latched latest_ snapshot so the next PublishOutputs
+  // sees the transformed pose instead of the pre-transform one.
+  if (latest_)
+  {
+    latest_->pose = correction * latest_->pose;
+  }
+}
+
 void GraphManager::AddLoopClosure(uint64_t prev_index,
                                   uint64_t curr_index,
                                   const gtsam::Pose2& delta,

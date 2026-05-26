@@ -456,6 +456,24 @@ public:
   // estimates and the variable set are preserved.
   void RebaseISAM2();
 
+  // Rigid-transform the entire trajectory by `correction` (applied as
+  // X_k_new = correction * X_k for every Pose2 node). Relative
+  // constraints between nodes (wheel between-factors, gyro between-
+  // factors, scan_between, loop closures) are gauge-invariant under
+  // this transform, so the graph topology and all LiDAR-derived
+  // structure is preserved. The optimized solution is rebuilt with
+  // priors at the shifted poses.
+  //
+  // Used at dock arrival when the latest node has accumulated drift
+  // vs the operator-calibrated dock_pose: a "gauge reset" that snaps
+  // the absolute frame so X_latest lands exactly on dock_pose,
+  // without losing the persisted LiDAR scans / loop-closure structure
+  // (which is what a Reset() would throw away). The latest node also
+  // receives a tighter prior (5 mm / 0.3°) so future GPS factors take
+  // longer to drift it back off the dock anchor.
+  void RigidTransformAll(const gtsam::Pose2& correction, double latest_node_sigma_xy = 0.005,
+                         double latest_node_sigma_theta = 0.005);
+
   // Add a loop-closure between-factor between two existing nodes.
   // delta is the relative Pose2 such that X_curr = X_prev * delta.
   // Triggers an iSAM2 update + returns the refreshed marginal pose
