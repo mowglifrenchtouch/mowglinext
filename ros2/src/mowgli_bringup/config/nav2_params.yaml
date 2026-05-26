@@ -942,3 +942,4 @@ lifecycle_manager_navigation:
     use_sim_time: false
     autostart: true
     bond_timeout: 10.0
+# CI trigger marker 1779795185
