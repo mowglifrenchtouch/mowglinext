@@ -837,8 +837,22 @@ void FusionGraphNode::OnGnss(sensor_msgs::msg::NavSatFix::ConstSharedPtr msg)
   // fight the dock prior for many seconds before the trajectory walks
   // over. RTK-Fixed is sub-cm and trustworthy: re-anchor the latest
   // loaded node at the GPS pose with a tight prior. One-shot per boot.
+  //
+  // BUT — if the robot is physically on the dock at boot (is_charging),
+  // SeedFromDockPose owns the anchor — it's the operator-calibrated
+  // ground truth on the robot's position, independent of how the F9P's
+  // RTK integer ambiguities happened to land this session. The tight
+  // RTK override (σ=5mm) would dominate the looser dock seed
+  // (σ=10cm) and pull the trajectory to the live GPS, defeating the
+  // whole point of having a persisted dock_pose. So:
+  //   * If /hardware_bridge/status hasn't been seen yet
+  //     (!last_is_charging_valid_) — defer; the next /gps/fix tick
+  //     will re-check once we know whether we're docked.
+  //   * If docked, suppress this override entirely (latch one-shot
+  //     done) and let SeedFromDockPose anchor the graph.
+  //   * Otherwise (off-dock, status valid) proceed as before.
   if (rtk_fixed && autoload_succeeded_ && !rtk_autoload_override_done_ &&
-      graph_->IsInitialized())
+      graph_->IsInitialized() && last_is_charging_valid_ && !last_is_charging_)
   {
     auto snap = graph_->LatestSnapshot();
     if (snap)
@@ -1207,6 +1221,14 @@ void FusionGraphNode::SeedFromDockPose()
     return;
   graph_->ForceAnchor(snap->node_index, pose, sigma_xy, sigma_theta);
   t_map_odom_anchor_valid_ = false;
+  // Latch the RTK-Fixed override one-shot so it doesn't fire later if
+  // the robot undocks mid-session — same rationale as OnSetPose: the
+  // dock-pose seed we just applied is the operator's authoritative
+  // anchor, GPS observations shouldn't fight it. (The boot-time gate
+  // in OnGnss also defers the override while is_charging, but this
+  // catches the case where SeedFromDockPose fires from
+  // OnHardwareStatus before OnGnss runs.)
+  rtk_autoload_override_done_ = true;
   RCLCPP_INFO(get_logger(),
               "fusion_graph: re-anchored at dock (%.2f, %.2f, %.1f°)",
               pose.x(),
