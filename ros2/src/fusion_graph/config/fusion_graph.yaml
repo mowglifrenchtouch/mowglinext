@@ -44,7 +44,23 @@ fusion_graph_node:
     # ground truth.
     stationary_thresh_xy_m: 0.001
     stationary_thresh_theta: 0.002
-    stationary_sigma_theta: 0.001
+    # 2026-05-27: relax 0.001 → 0.01 rad. The original tight value gave
+    # the wheel between-factor's yaw component a precision of 1e6, which
+    # — combined with the wheel non-holo σ_y=0.005m (precision 4e4) and
+    # tight GPS lever-arm factors (σ~3-5mm → precision 4e4-1e5) during
+    # the slow-pivot phase of docking — pushed iSAM2's Cholesky onto
+    # a near-singular information matrix and triggered
+    # IndeterminantLinearSystemException. The crash was reliably
+    # reproducible during DockRobot's rotate-to-dock alignment, where
+    # the wheel reports "stationary" (snap dθ=0 with this σ) while the
+    # gyro between-factor wants a non-zero dθ from chassis vibration
+    # under sub-deadband motor PWM. 0.01 rad gives Cholesky two extra
+    # orders of magnitude of conditioning slack while still pinning yaw
+    # tighter than the gyro alone (gyro_sigma_theta=0.005 rad). Cost:
+    # ~×3 yaw drift over a long idle window (still under 1°/min).
+    # If LiDAR is enabled, scan_between factors break the wheel-only
+    # constraint colinearity and this relaxation can be tightened again.
+    stationary_sigma_theta: 0.01
 
     # ── Pivot-mode wheel-translation downweight ───────────────────────
     # When |per-tick gyro dtheta| exceeds pivot_gate_dtheta_rad, the
