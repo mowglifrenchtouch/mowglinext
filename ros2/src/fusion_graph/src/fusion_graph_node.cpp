@@ -83,6 +83,15 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
       declare_parameter<double>("pivot_wheel_sigma_x", 0.5);
   gp.stationary_gyro_thresh_rad_per_s =
       declare_parameter<double>("stationary_gyro_thresh_rad_per_s", 0.10);
+  // Slip veto: zero the BetweenFactor translation when wheel-vs-gyro
+  // rotation disagreement signals the encoders are skating. See
+  // graph_manager.cpp Tick() comments.
+  gp.slip_residual_thresh_rad =
+      declare_parameter<double>("slip_residual_thresh_rad", 0.01);
+  gp.slip_gyro_max_rad =
+      declare_parameter<double>("slip_gyro_max_rad", 0.005);
+  gp.slip_wheel_min_rad =
+      declare_parameter<double>("slip_wheel_min_rad", 0.005);
   gp.gyro_bias_estimation_enabled =
       declare_parameter<bool>("gyro_bias_estimation_enabled", true);
   gp.gyro_bias_ema_tau_s =
