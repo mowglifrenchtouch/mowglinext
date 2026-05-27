@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -671,12 +672,91 @@ void MapServerNode::on_set_docking_point(
     const mowgli_interfaces::srv::SetDockingPoint::Request::SharedPtr req,
     mowgli_interfaces::srv::SetDockingPoint::Response::SharedPtr res)
 {
-  // Reject the call when the EKF yaw hasn't converged yet — pinning a
-  // dock pose during EKF startup transient writes a wildly wrong heading
-  // (and therefore a wrong base position via the lever-arm projection on
-  // /gps/absolute_pose). The operator should drive the robot forward
-  // briefly to lock in COG yaw, then retry, or wait for mag/COG to
-  // settle the EKF naturally.
+  // Sequence of gates protecting dock_pose accuracy. The operator forces
+  // the EKF to dock_pose at boot via the fusion_graph gauge reset, so a
+  // bad calibration leaks straight into the map-frame anchor for every
+  // subsequent session. Reject unless ALL conditions hold:
+  //   (1) firmware reports is_charging=true (robot physically on dock)
+  //   (2) GPS sample fresh and σ(xy) ≤ dock_set_gps_accuracy_max_m_
+  //   (3) EKF yaw converged on the recent rolling window
+  //
+  // (1) — is_charging gate. Refuse if the last /hardware_bridge/status was
+  // not charging or is older than dock_set_status_max_age_s_.
+  {
+    const double max_age =
+        get_parameter("dock_set_status_max_age_s").as_double();
+    const double status_age =
+        (last_status_time_.nanoseconds() == 0)
+            ? std::numeric_limits<double>::infinity()
+            : (now() - last_status_time_).seconds();
+    if (status_age > max_age || !last_is_charging_)
+    {
+      res->success = false;
+      RCLCPP_WARN(get_logger(),
+                  "set_docking_point rejected: robot not detected on dock "
+                  "(is_charging=%s, status_age=%.1fs, max=%.1fs). "
+                  "Drive onto the dock and wait for the firmware to report "
+                  "charging before retrying.",
+                  last_is_charging_ ? "true" : "false",
+                  status_age,
+                  max_age);
+      return;
+    }
+  }
+
+  // (2) — GPS accuracy gate. RTK-Fixed reports σ ≈ 3 mm; RTK-Float is
+  // 10-50 cm. Reject when σ(xx) or σ(yy) breaches the threshold, or when
+  // /gps/pose_cov is stale (driver dead, USB unplugged, datum unset).
+  {
+    const double max_acc =
+        get_parameter("dock_set_gps_accuracy_max_m").as_double();
+    const double max_age = get_parameter("dock_set_gps_max_age_s").as_double();
+    geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr gps_snap;
+    rclcpp::Time gps_time{0, 0, RCL_ROS_TIME};
+    {
+      std::lock_guard<std::mutex> lk(last_gps_pose_cov_mutex_);
+      gps_snap = last_gps_pose_cov_;
+      gps_time = last_gps_pose_cov_time_;
+    }
+    if (!gps_snap)
+    {
+      res->success = false;
+      RCLCPP_WARN(get_logger(),
+                  "set_docking_point rejected: no /gps/pose_cov sample yet "
+                  "(navsat_to_absolute_pose_node not running, or no GPS fix).");
+      return;
+    }
+    const double gps_age = (now() - gps_time).seconds();
+    if (gps_age > max_age)
+    {
+      res->success = false;
+      RCLCPP_WARN(get_logger(),
+                  "set_docking_point rejected: /gps/pose_cov stale "
+                  "(age %.2fs > %.2fs). Wait for the GPS feed to refresh.",
+                  gps_age,
+                  max_age);
+      return;
+    }
+    const double sigma_xx = std::sqrt(std::max(gps_snap->pose.covariance[0], 0.0));
+    const double sigma_yy = std::sqrt(std::max(gps_snap->pose.covariance[7], 0.0));
+    const double sigma_max = std::max(sigma_xx, sigma_yy);
+    if (sigma_max > max_acc)
+    {
+      res->success = false;
+      RCLCPP_WARN(get_logger(),
+                  "set_docking_point rejected: GPS not accurate enough "
+                  "(σ_max=%.3f m > %.3f m). Achieve RTK-Fixed before retrying.",
+                  sigma_max,
+                  max_acc);
+      return;
+    }
+  }
+
+  // (3) — Yaw convergence gate. Pinning a dock pose during EKF startup
+  // transient writes a wildly wrong heading (and therefore a wrong base
+  // position via the lever-arm projection on /gps/absolute_pose). The
+  // operator should drive the robot forward briefly to lock in COG yaw,
+  // then retry, or wait for mag/COG to settle the EKF naturally.
   //
   // Read thresholds live each call so `ros2 param set` works without a
   // node restart — the constructor-cached values were stuck at startup.

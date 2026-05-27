@@ -223,6 +223,26 @@ MapServerNode::MapServerNode(const rclcpp::NodeOptions& options)
       rclcpp::QoS(1).reliable(),
       [this](nav_msgs::msg::OccupancyGrid::ConstSharedPtr msg) { on_costmap(std::move(msg)); });
 
+  // GPS pose-with-covariance feed (from navsat_to_absolute_pose_node), used
+  // only by on_set_docking_point to gate the service on RTK quality. The
+  // service must not pin a dock pose while in RTK-Float (σ ~10-50 cm) or
+  // when the GPS feed is stale.
+  dock_set_gps_accuracy_max_m_ =
+      declare_parameter<double>("dock_set_gps_accuracy_max_m", dock_set_gps_accuracy_max_m_);
+  dock_set_gps_max_age_s_ =
+      declare_parameter<double>("dock_set_gps_max_age_s", dock_set_gps_max_age_s_);
+  dock_set_status_max_age_s_ =
+      declare_parameter<double>("dock_set_status_max_age_s", dock_set_status_max_age_s_);
+  gps_pose_cov_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+      "/gps/pose_cov",
+      rclcpp::SensorDataQoS(),
+      [this](geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg)
+      {
+        std::lock_guard<std::mutex> lk(last_gps_pose_cov_mutex_);
+        last_gps_pose_cov_ = std::move(msg);
+        last_gps_pose_cov_time_ = now();
+      });
+
   // ── Services ─────────────────────────────────────────────────────────────
   save_map_srv_ = create_service<std_srvs::srv::Trigger>(
       "~/save_map",
@@ -566,6 +586,8 @@ void MapServerNode::on_occupancy_grid(nav_msgs::msg::OccupancyGrid::ConstSharedP
 void MapServerNode::on_mower_status(mowgli_interfaces::msg::Status::ConstSharedPtr msg)
 {
   mow_blade_enabled_ = msg->mow_enabled;
+  last_is_charging_ = msg->is_charging;
+  last_status_time_ = now();
 }
 
 void MapServerNode::on_odom(nav_msgs::msg::Odometry::ConstSharedPtr /*msg*/)
