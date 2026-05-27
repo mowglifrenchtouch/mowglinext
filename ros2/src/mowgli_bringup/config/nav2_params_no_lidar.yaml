@@ -417,6 +417,9 @@ map_saver:
 docking_server:
   ros__parameters:
     use_sim_time: false
+    # See nav2_params.yaml — 0.1 s default tripped extrapolation errors
+    # against the 50 Hz /tf publish rate, killed DockRobot in seconds.
+    transform_tolerance: 0.5
     # hardware_bridge_node subscribes to TwistStamped — without this
     # the docking controller publishes plain Twist and the dock
     # approach never reaches the firmware. Symptom: dock action
