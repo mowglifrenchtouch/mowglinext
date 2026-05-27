@@ -137,6 +137,8 @@ private:
     // ticks_per_meter matches the firmware-side scaling).
     wheel_track_ = declare_parameter<double>("wheel_track", 0.325);
     ticks_per_meter_ = declare_parameter<double>("ticks_per_meter", 300.0);
+    // Pivot deadband floor — see comment above the clamp in on_cmd_vel.
+    min_ang_vel_rad_per_s_ = declare_parameter<double>("min_ang_vel_rad_per_s", 0.5);
 
     // Dock pose comes solely from mowgli_robot.yaml (declared as ROS
     // parameters above). Calibration and manual GUI adjustments persist
@@ -1348,21 +1350,41 @@ private:
     // 0.16` and RPP's `min_approach_linear_velocity: 0.16` for the
     // canonical examples).
     //
-    // wz is intentionally left passthrough: FTC's fine-heading
-    // corrections during PRE_ROTATE and headland turns command
-    // sub-deadband angular velocities to close small (~0.1 rad)
-    // yaw_goal_tolerance errors. Zeroing them would prevent goal
-    // convergence. The motor PWM 40 pivot deadband is closer to 0.6
-    // rad/s on this chassis and the resulting wheel/IMU mismatch in
-    // pure-rotation mode is small enough to be absorbed by the graph's
-    // gyro between-factor (since both legs of a pivot integrate the
-    // same gyro_z and only the wheel-derived ω is silenced, which the
-    // non-holo factor already handles).
+    // wz floor — boost sub-deadband angular commands up to the chassis
+    // pivot deadband (~0.5-0.6 rad/s on PWM 40, measured 2026-05-27).
+    //
+    // Earlier policy was passthrough: the comment justified it as
+    // "the graph absorbs the wheel/IMU mismatch in pure-rotation mode."
+    // Field observation 2026-05-27 contradicted that — during DockRobot's
+    // graceful-controller approach the cmd_vel.angular.z hovered at 0.1
+    // rad/s while the firmware (PWM 40 deadband) silently dropped every
+    // tick to zero motion. The PoseProgressChecker then aborted FollowPath
+    // every 60 s, the spin behavior timed out trying to do 1.57 rad in
+    // 10 s, and the robot spent 8 minutes never reaching dock_pose.yaw.
+    //
+    // PR #221 and #223 tried pulse modulation here; both were reverted
+    // (commits 09abe1ac/447a68e4) because the gyro saw the pulses while
+    // the wheel encoders didn't, and pre-fusion_graph the wheel-IMU
+    // mismatch corrupted the localizer. Today fusion_graph has explicit
+    // gates for that case (stationary_thresh_xy_m + gyro_bias_estimation),
+    // so a steady-state floor is safer than the on/off pulse pattern that
+    // previously aliased into the graph at random phase.
+    //
+    // Implementation: hard clamp |wz| in (kMinCmdToConsider, min_ang_vel)
+    // up to min_ang_vel, sign preserved. Below kMinCmdToConsider treat as
+    // zero (rotate-to-heading reached, no command). The floor is exposed
+    // as the `min_ang_vel_rad_per_s` parameter (default 0.5) so it can be
+    // tuned without a rebuild if a chassis variant or motor change moves
+    // the deadband.
     constexpr double kMinLinVel = 0.15;          // m/s — PWM 40 forward deadband + margin
     constexpr double kMinCmdToConsider = 1.0e-3;  // ignore floating-point dust
     if (std::abs(vx) > kMinCmdToConsider && std::abs(vx) < kMinLinVel)
     {
       vx = 0.0;
+    }
+    if (std::abs(wz) > kMinCmdToConsider && std::abs(wz) < min_ang_vel_rad_per_s_)
+    {
+      wz = std::copysign(min_ang_vel_rad_per_s_, wz);
     }
 
     LlCmdVel pkt{};
@@ -1471,6 +1493,7 @@ private:
   double dock_yaw_{0.0};
   double wheel_track_{0.325};
   double ticks_per_meter_{300.0};
+  double min_ang_vel_rad_per_s_{0.5};
   bool mow_enabled_{false};
   bool is_charging_{false};
   uint8_t current_mode_{0};
