@@ -141,13 +141,13 @@ if(BUILD_TESTING)
     mowgli_hardware_core
   )
 
-  # ---- test_wz_pulse_modulator ----
-  # wz_pulse_modulator.hpp is header-only; link mowgli_hardware_core only for
-  # its public include directories (no ROS deps needed for this pure function).
-  ament_add_gtest(test_wz_pulse_modulator
-    test/test_wz_pulse_modulator.cpp
+  # ---- test_angular_rate_controller ----
+  # angular_rate_controller.hpp is header-only; link mowgli_hardware_core only
+  # for its public include directories (no ROS deps needed — pure function).
+  ament_add_gtest(test_angular_rate_controller
+    test/test_angular_rate_controller.cpp
   )
-  target_link_libraries(test_wz_pulse_modulator
+  target_link_libraries(test_angular_rate_controller
     mowgli_hardware_core
   )
 endif()

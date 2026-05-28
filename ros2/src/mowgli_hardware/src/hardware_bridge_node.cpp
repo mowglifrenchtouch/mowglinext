@@ -63,7 +63,7 @@
 #include "mowgli_hardware/ll_datatypes.hpp"
 #include "mowgli_hardware/packet_handler.hpp"
 #include "mowgli_hardware/serial_port.hpp"
-#include "mowgli_hardware/wz_pulse_modulator.hpp"
+#include "mowgli_hardware/angular_rate_controller.hpp"
 
 // High-level mode constants — must match HighLevelStatus.msg and the
 // HL_MODE_* defines in firmware/mowgli_protocol.h. Declared locally to
@@ -138,17 +138,16 @@ private:
     // ticks_per_meter matches the firmware-side scaling).
     wheel_track_ = declare_parameter<double>("wheel_track", 0.325);
     ticks_per_meter_ = declare_parameter<double>("ticks_per_meter", 300.0);
-    // Pivot deadband / pulse amplitude — see comment above the modulator in
-    // on_cmd_vel. wz_pulse_modulation_enabled switches between the duty-cycle
-    // pulse path (default) and a plain passthrough.
-    min_ang_vel_rad_per_s_ = declare_parameter<double>("min_ang_vel_rad_per_s", 0.5);
-    wz_pulse_modulation_enabled_ = declare_parameter<bool>("wz_pulse_modulation_enabled", true);
-    // Min consecutive ON-ticks per sub-deadband pulse. 4 ≈ 200 ms @ 20 Hz /
-    // 400 ms @ 10 Hz — long enough to break chassis stiction (a 1-tick pulse
-    // left the robot frozen, 2026-05-27). Tune up if the chassis still won't
-    // start rotating on slow commands.
-    wz_pulse_min_burst_ticks_ =
-        declare_parameter<int>("wz_pulse_min_burst_ticks", 4);
+    // Closed-loop angular-rate controller — see angular_rate_controller.hpp.
+    // Gains are gentle by default (USB latency caps them); tune live via
+    // ros2 param set. angular_rate_loop_enabled:=false → plain passthrough.
+    angular_rate_loop_enabled_ = declare_parameter<bool>("angular_rate_loop_enabled", true);
+    angular_rate_params_.kff = declare_parameter<double>("angular_rate_kff", 1.0);
+    angular_rate_params_.kp = declare_parameter<double>("angular_rate_kp", 0.4);
+    angular_rate_params_.ki = declare_parameter<double>("angular_rate_ki", 2.0);
+    angular_rate_params_.max_cmd = declare_parameter<double>("angular_rate_max_cmd", 1.5);
+    angular_rate_params_.integral_max =
+        declare_parameter<double>("angular_rate_integral_max", 1.5);
 
     // Dock pose comes solely from mowgli_robot.yaml (declared as ROS
     // parameters above). Calibration and manual GUI adjustments persist
@@ -945,6 +944,12 @@ private:
     msg.angular_velocity.y = gy;
     msg.angular_velocity.z = gz;
 
+    // Latest bias-corrected yaw rate, snapshotted for the closed-loop
+    // angular-rate controller in on_cmd_vel. Single-writer (this IMU path) /
+    // single-reader (cmd_vel callback), both on the one rclcpp executor —
+    // no lock needed. ~90 Hz, well above cmd_vel cadence.
+    latest_gyro_z_ = gz;
+
     // Magnetometer data is ignored — uncalibrated on metal robot chassis,
     // gives ~229° error vs real heading. dock_pose_yaw is set from config
     // (user measures with phone compass).
@@ -1360,48 +1365,40 @@ private:
     // 0.16` and RPP's `min_approach_linear_velocity: 0.16` for the
     // canonical examples).
     //
-    // wz sub-deadband handling — pulse-width (duty-cycle) modulation.
+    // wz handling — closed-loop angular-rate controller.
     //
-    // WHY: the chassis can't pivot below the PWM static-friction deadband
-    // (~0.5 rad/s on PWM 40, measured 2026-05-27), so fine |wz| commands
-    // (e.g. the dock graceful-controller's 0.05-0.3 rad/s heading
-    // corrections) just buzz the motors and never rotate — DockRobot never
-    // settled and the spin behavior timed out.
+    // WHY: the firmware PWM→rotation response is nonlinear and load-
+    // dependent (measured 2026-05-27: commanded 0.2/0.3/0.4 rad/s → actual
+    // 0.07/0.22/0.30, i.e. a soft deadband plus a ~0.7-0.75 drifting gain).
+    // Every Nav2 controller assumes commanded ω == actual ω, so the mismatch
+    // surfaced as under-rotation, dock-approach stalls and (when an earlier
+    // fix over-corrected) left/right oscillation. Four open-loop amplitude
+    // hacks (floor 0.85 / pulse / floor 0.5 / pulse+burst) all failed because
+    // none measured the result. compute_angular_rate_cmd() closes the loop on
+    // the gyro so the firmware command is driven until measured == target,
+    // absorbing the deadband + nonlinear gain at every operating point. See
+    // angular_rate_controller.hpp for the full rationale and the history.
+    // Safe now (the closed-loop boost 2a371798 was dropped pre-slip-veto)
+    // because fusion_graph slip-vetoes the transient wheel/IMU mismatch.
+    // Set angular_rate_loop_enabled:=false to fall back to passthrough.
     //
-    // The earlier mitigation FLOORED every sub-deadband |wz| up to the
-    // deadband amplitude. That OVER-ROTATES: measured on-robot 2026-05-27,
-    // a commanded 0.3 rad/s produced 0.38-0.49 rad/s of actual yaw
-    // (127-164%) because the firmware ran at full deadband amplitude for the
-    // whole command. Worse, the dock controller's fine corrections all
-    // jumped to 0.5 rad/s → overshoot → reverse → ping-pong oscillation.
-    //
-    // Fix: hold the AMPLITUDE at the deadband (enough to break stiction) but
-    // cut the DUTY CYCLE so the time-average rate equals wz_cmd. A
-    // sigma-delta accumulator (wz_pulse_accum_) integrates
-    // duty = |wz_cmd|/min_ang_vel and fires a full-deadband pulse whenever it
-    // crosses 1.0 — long-run average == wz_cmd, no over-rotation. Commands
-    // at/above the deadband pass through unchanged; |wz| below
-    // kWzMinCmdToConsider is exactly 0 (rotate-to-heading reached).
-    //
-    // PR #221 (commit 00952173) first merged pulsing, then it was reverted
-    // (09abe1ac) because the gyro saw the pulses while the wheel encoders
-    // didn't, and pre-fusion_graph the wheel/IMU mismatch corrupted the
-    // localizer. fusion_graph now slip-vetoes that mismatch (graph
-    // between-factors + dead-reckoning), so pulsing is safe again. Set
-    // wz_pulse_modulation_enabled:=false to fall back to plain passthrough.
-    //
-    // The sub-deadband |vx| → 0 guard below is unchanged.
+    // The sub-deadband |vx| → 0 guard is unchanged (linear has no clean
+    // host-side rate feedback — encoders slip; leave it to Nav2's loops).
     constexpr double kMinLinVel = 0.15;  // m/s — PWM 40 forward deadband + margin
     constexpr double kMinCmdToConsider = 1.0e-3;  // ignore floating-point dust
     if (std::abs(vx) > kMinCmdToConsider && std::abs(vx) < kMinLinVel)
     {
       vx = 0.0;
     }
-    if (wz_pulse_modulation_enabled_)
+    if (angular_rate_loop_enabled_)
     {
-      wz = mowgli_hardware::pulse_modulate_wz(
-          wz, min_ang_vel_rad_per_s_, wz_pulse_accum_, wz_pulse_burst_remaining_,
-          wz_pulse_min_burst_ticks_);
+      const rclcpp::Time now = this->now();
+      const double dt = last_cmd_vel_time_.nanoseconds() > 0
+                            ? (now - last_cmd_vel_time_).seconds()
+                            : 0.0;
+      last_cmd_vel_time_ = now;
+      wz = mowgli_hardware::compute_angular_rate_cmd(
+          wz, latest_gyro_z_, dt, angular_rate_params_, angular_rate_state_);
     }
 
     LlCmdVel pkt{};
@@ -1510,21 +1507,14 @@ private:
   double dock_yaw_{0.0};
   double wheel_track_{0.325};
   double ticks_per_meter_{300.0};
-  double min_ang_vel_rad_per_s_{0.5};
-  // Sub-deadband angular pulse-width modulation (on_cmd_vel). When enabled,
-  // fine |wz| commands below min_ang_vel_rad_per_s_ are emitted at the
-  // deadband amplitude for a duty-cycle fraction of ticks so the long-run
-  // average equals the commanded rate (no over-rotation). The signed
-  // sigma-delta accumulator carries phase between ticks; pulse_modulate_wz()
-  // resets it on sign flip / return to zero.
-  bool wz_pulse_modulation_enabled_{true};
-  double wz_pulse_accum_{0.0};
-  // Minimum consecutive ON-ticks per pulse (see wz_pulse_modulator.hpp): a
-  // single-tick pulse can't overcome chassis stiction, so sub-deadband
-  // rotation must come in bursts. burst_remaining_ carries an in-progress
-  // burst between on_cmd_vel calls.
-  int wz_pulse_burst_remaining_{0};
-  int wz_pulse_min_burst_ticks_{4};
+  // Closed-loop angular-rate controller (on_cmd_vel). Drives the firmware yaw
+  // command from gyro feedback so measured ω tracks the commanded ω across
+  // the firmware's nonlinear PWM curve. See angular_rate_controller.hpp.
+  bool angular_rate_loop_enabled_{true};
+  mowgli_hardware::AngularRateParams angular_rate_params_{};
+  mowgli_hardware::AngularRateState angular_rate_state_{};
+  double latest_gyro_z_{0.0};  ///< bias-corrected gyro_z, from the IMU path.
+  rclcpp::Time last_cmd_vel_time_{0, 0, RCL_ROS_TIME};
   bool mow_enabled_{false};
   bool is_charging_{false};
   uint8_t current_mode_{0};
