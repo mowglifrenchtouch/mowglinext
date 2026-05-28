@@ -36,7 +36,7 @@ ARG UBLOX_DGNSS_REF=fix/hp-fix-stale-status-cov
 # ~80 % at 7 Hz nav rate, which silently published Float positions with
 # stale Fixed status during cycle slips. Switch back to the parent
 # branches once #1 and #2 land.
-ARG UBLOX_DGNSS_SHA=76115f43259d45da19c918f1aad8c5a88186b878
+ARG UBLOX_DGNSS_SHA=5e1d0cf1e8ec0e2638c44a59f57d15f5dd04c9af
 # cedbossneo fork (itself a fork of privatedocs000/ublox_dgnss). Layered
 # customisations over upstream:
 #   * privatedocs000 base — RTK-Fixed detection via UBX-NAV-STATUS.carr_soln:
