@@ -338,6 +338,17 @@ controller_server:
       max_lateral_deviation: 1.5
       deviation_step: 0.05
       deviation_blend_rate: 0.5
+      # Minimum committed offset once AVOIDANCE engages. growDeviation only
+      # checks the path CENTERLINE per pose, so a one-step (0.05 m) offset
+      # can "clear" the line while the 0.40 m-wide chassis still overlaps the
+      # obstacle. 0.30 m ≈ half_width (0.20) + margin guarantees the body
+      # skirts it. Paired with the clear-at-zero AVOIDANCE-exit gate (see
+      # updateLateralDeviation): the controller now HOLDS this offset until
+      # the robot has physically driven past the obstacle, instead of
+      # flapping in/out of AVOIDANCE at a sub-deadband ±0.05 m dither (the
+      # "stops and wiggles left-right in front of a stone" failure, observed
+      # 2026-05-28 LiDAR mow as repeated entering/complete pairs at one idx).
+      min_lateral_deviation: 0.30
 
 # ---------------------------------------------------------------------------
 # Planner server
