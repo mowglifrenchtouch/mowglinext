@@ -135,8 +135,8 @@ controller_server:
       # --- RotationShim params ---
       angular_dist_threshold: 0.785
       forward_sampling_distance: 0.5
-      rotate_to_heading_angular_vel: 0.6   # ≥ kMinRotVel so the wheels engage
-      max_angular_accel: 1.0
+      rotate_to_heading_angular_vel: 0.75  # decisive pivot, clear of deadband — see nav2_params.yaml
+      max_angular_accel: 2.5
       simulate_ahead_time: 1.0
       rotate_to_goal_heading: false        # let RPP handle final heading
       closed_loop: true                    # use wheel odom feedback for pivot completion
@@ -158,8 +158,8 @@ controller_server:
       max_allowed_time_to_collision_up_to_carrot: 1.0
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.785
-      rotate_to_heading_angular_vel: 0.6
-      max_angular_accel: 1.0
+      rotate_to_heading_angular_vel: 0.75
+      max_angular_accel: 2.5
       allow_reversing: false
       max_robot_pose_search_dist: 10.0
       use_interpolation: true

@@ -195,8 +195,15 @@ controller_server:
       # NavigateToPose typically generates at long-transit endpoints.
       angular_dist_threshold: 0.785
       forward_sampling_distance: 0.5
-      rotate_to_heading_angular_vel: 0.6   # ≥ kMinRotVel so the wheels engage
-      max_angular_accel: 1.0
+      # 0.75 (was 0.6) + accel 2.5 (was 1.0): the in-place pivot used to ramp
+      # 0→0.6 at 1.0 rad/s² (~0.6 s), spending most of the ramp BELOW the
+      # firmware pivot deadband (~0.5 rad/s) so the hardware_bridge closed-loop
+      # wound up then kicked → jerky pivot start (user 2026-05-28; mowing turns
+      # are smooth because FTC uses its own PRE_ROTATE profile, not this ramp).
+      # Snapping to a decisive 0.75 rad/s clears the deadband margin and the
+      # closed-loop holds it smoothly.
+      rotate_to_heading_angular_vel: 0.75
+      max_angular_accel: 2.5
       simulate_ahead_time: 1.0
       # Terminal pivot. With this false, neither RotationShim (start-of-path
       # only) nor RPP (mid-path, rotate_to_heading_min_angle: 0.785 rad =
@@ -240,8 +247,11 @@ controller_server:
       # after RotationShim disengages if the path bends mid-trajectory.
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.785
-      rotate_to_heading_angular_vel: 0.6
-      max_angular_accel: 1.0
+      # Match the RotationShim values above (decisive pivot, clear of the
+      # firmware deadband) so RPP's mid-path rotate-to-heading hand-off is
+      # as smooth as the start-of-path pivot.
+      rotate_to_heading_angular_vel: 0.75
+      max_angular_accel: 2.5
       allow_reversing: false
       max_robot_pose_search_dist: 10.0
       use_interpolation: true
