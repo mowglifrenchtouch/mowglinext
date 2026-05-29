@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iomanip>
 #include <ios>
@@ -13,8 +14,6 @@
 
 #include <gtsam/base/GenericValue.h>
 #include <gtsam/base/serialization.h>
-#include <cstdio>
-
 #include <gtsam/linear/NoiseModel.h>
 #include <gtsam/linear/linearExceptions.h>
 #include <gtsam/nonlinear/ISAM2Params.h>

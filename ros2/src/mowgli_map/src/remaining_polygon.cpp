@@ -133,7 +133,8 @@ void MapServerNode::on_get_remaining_area_polygon(
   //    robot can drive across it on the way home (DOCKING_AREA keepout only).
   BgPolygon original = to_bg_polygon(area.polygon);
 
-  auto punch_exclusion = [&](BgPolygon excl) {
+  auto punch_exclusion = [&](BgPolygon excl)
+  {
     bg::correct(excl);
     if (excl.outer().empty())
     {
@@ -181,7 +182,8 @@ void MapServerNode::on_get_remaining_area_polygon(
       RCLCPP_WARN(get_logger(),
                   "remaining_polygon: exclusion split the area into %zu pieces; "
                   "keeping the largest (%.2f m²).",
-                  notched.size(), bg::area(*best));
+                  notched.size(),
+                  bg::area(*best));
     }
     // Replace the outer ring with the notched one, then re-attach the holes
     // punched earlier — but ONLY those still strictly inside the new outer.

@@ -1343,8 +1343,7 @@ void FTCController::updateLateralDeviation(double dt)
     // carrot into an obstacle the way a blind post-grow floor would, since
     // clearance is not monotonic in the offset.
     double dev_init = target_lateral_deviation_;
-    if (config_.min_lateral_deviation > 0.0 &&
-        std::abs(dev_init) < config_.min_lateral_deviation)
+    if (config_.min_lateral_deviation > 0.0 && std::abs(dev_init) < config_.min_lateral_deviation)
     {
       // Use the LATCHED avoidance side, not the sign of dev_init: a transient
       // clear_at_zero tick can leave dev_init == 0 mid-episode, and deriving
@@ -1357,14 +1356,14 @@ void FTCController::updateLateralDeviation(double dt)
     }
 
     // Grow the deviation until the offset path is clear (keeps current side).
-    target_lateral_deviation_ = ObstacleDeviation::growDeviationUntilClear(
-        *costmap_map_,
-        global_plan_,
-        start_idx,
-        config_.obstacle_lookahead,
-        dev_init,
-        config_.max_lateral_deviation,
-        config_.deviation_step);
+    target_lateral_deviation_ =
+        ObstacleDeviation::growDeviationUntilClear(*costmap_map_,
+                                                   global_plan_,
+                                                   start_idx,
+                                                   config_.obstacle_lookahead,
+                                                   dev_init,
+                                                   config_.max_lateral_deviation,
+                                                   config_.deviation_step);
 
     if (std::abs(target_lateral_deviation_) > config_.max_lateral_deviation)
     {
