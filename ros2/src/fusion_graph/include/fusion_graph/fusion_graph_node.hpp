@@ -372,6 +372,14 @@ private:
   // (vx_max ≈ 0.30 m/s × 0.1 s = 30 mm). 50 mm leaves headroom for
   // 1-2σ outliers while still catching ≥0.5σ wrong-fix jumps.
   double rtk_wrongfix_max_jump_m_ = 0.05;
+  // σ (m) of the WEAK GPS factor kept while charging on the dock. Fully
+  // suppressing GPS on the dock left a stationary graph with only the single
+  // bootstrap prior as an absolute constraint → after ~60 nodes iSAM2 hit an
+  // indeterminate (underconstrained) linear system and the node ABORTED
+  // (field 2026-05-29, crash near x62). A deliberately loose GPS factor keeps
+  // the system well-posed without walking the trajectory off the (tighter)
+  // dock prior. Large enough that the dock prior still dominates xy.
+  double dock_gps_sigma_m_ = 0.50;
   // Wheel-derived distance (m) traveled since the last GPS sample,
   // below which a GPS jump > rtk_wrongfix_max_jump_m_ is judged
   // inconsistent. 20 mm sits just above the per-tick encoder noise

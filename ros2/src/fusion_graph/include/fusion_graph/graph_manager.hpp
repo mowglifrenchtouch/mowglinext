@@ -553,6 +553,10 @@ public:
   void Reset();
 
 private:
+  // Reset() body without taking mu_ — for callers that already hold the lock
+  // (e.g. the iSAM2 indeterminate-system catch inside ApplyIsamUpdateLocked).
+  void ResetLocked();
+
   // Per-node accumulator for between-factors.
   struct Accumulator
   {
@@ -654,6 +658,10 @@ private:
   uint64_t stats_icp_rejects_divergence_ = 0;
   uint64_t stats_hand_push_ = 0;
   uint64_t stats_slip_veto_ = 0;
+  // Count of iSAM2 indeterminate-system catches that triggered a graph
+  // reset (instead of aborting the node). Nonzero = the graph hit an
+  // ill-posed state and self-healed; investigate if it climbs.
+  uint64_t stats_isam_resets_ = 0;
 
   // Adaptive process-noise state.
   // residual_ema_ tracks the EMA-smoothed |dtheta_wheel - dtheta_gyro|

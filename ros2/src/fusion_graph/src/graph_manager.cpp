@@ -13,7 +13,10 @@
 
 #include <gtsam/base/GenericValue.h>
 #include <gtsam/base/serialization.h>
+#include <cstdio>
+
 #include <gtsam/linear/NoiseModel.h>
+#include <gtsam/linear/linearExceptions.h>
 #include <gtsam/nonlinear/ISAM2Params.h>
 #include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
@@ -955,7 +958,27 @@ void GraphManager::RebaseISAM2()
 void GraphManager::ApplyIsamUpdateLocked(const gtsam::NonlinearFactorGraph& fg,
                                          const gtsam::Values& values)
 {
-  isam_.update(fg, values);
+  try
+  {
+    isam_.update(fg, values);
+  }
+  catch (const gtsam::IndeterminantLinearSystemException& e)
+  {
+    // The linear system became ill-posed (underconstrained — e.g. a
+    // stationary graph that lost its only absolute anchor). iSAM2 leaves
+    // itself in an inconsistent state, so the ONLY safe recovery is a full
+    // rebuild; do NOT let the exception propagate (it would SIGABRT the node
+    // and kill localization entirely — field 2026-05-29, dock-bootstrap
+    // crash at x62). After ResetLocked() IsInitialized()==false and the next
+    // GPS/dock seed re-bootstraps cleanly. We are already under mu_ here.
+    std::fprintf(stderr,
+                 "[fusion_graph] iSAM2 indeterminate linear system (%s) — "
+                 "resetting graph for a clean re-seed instead of aborting.\n",
+                 e.what());
+    ++stats_isam_resets_;
+    ResetLocked();
+    return;
+  }
   if (rebase_in_progress_)
   {
     // Mirror everything onto the pending buffer so phase 3 of the
@@ -1173,6 +1196,11 @@ bool DeserializeScansBinary(std::istream& is,
 void GraphManager::Reset()
 {
   std::lock_guard<std::mutex> lock(mu_);
+  ResetLocked();
+}
+
+void GraphManager::ResetLocked()
+{
   // Rebuild iSAM2 with the same parameters used in the constructor —
   // GTSAM has no public clear() API.
   gtsam::ISAM2Params p;

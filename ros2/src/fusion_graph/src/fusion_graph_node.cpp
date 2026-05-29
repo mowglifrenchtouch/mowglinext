@@ -122,6 +122,7 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
   // RTK wrong-fix detection (handled in OnGnss, not in graph_manager).
   rtk_wrongfix_max_jump_m_ =
       declare_parameter<double>("rtk_wrongfix_max_jump_m", 0.05);
+  dock_gps_sigma_m_ = declare_parameter<double>("dock_gps_sigma_m", 0.50);
   rtk_wrongfix_max_wheel_m_ =
       declare_parameter<double>("rtk_wrongfix_max_wheel_m", 0.02);
 
@@ -907,11 +908,19 @@ void FusionGraphNode::OnGnss(sensor_msgs::msg::NavSatFix::ConstSharedPtr msg)
   // to bootstrap if the graph somehow becomes uninitialised.
   if (last_is_charging_valid_ && last_is_charging_)
   {
-    // Still run TrySeedInitialPose so a not-yet-init graph can pick up
-    // a previously-seen seed (e.g. boot race where status arrived
-    // before any /gps/fix). And run the RTK-Fixed override block below
-    // — which is itself gated on !last_is_charging_ now, so it'll
-    // no-op safely. Just don't add a GPS factor or update seed_xy_.
+    // On the dock the dock_pose prior is authoritative, but FULLY suppressing
+    // GPS leaves a stationary graph whose only absolute constraint is the
+    // single bootstrap prior — after ~60 zero-motion nodes iSAM2 hits an
+    // indeterminate (underconstrained) linear system and ABORTS the node
+    // (field 2026-05-29, crash at x62). Instead inject a deliberately WEAK
+    // GPS factor (σ = dock_gps_sigma_m_, far looser than the dock prior) so
+    // the system stays well-posed without walking the trajectory off the dock
+    // anchor. seed_xy_ is still NOT updated (TrySeedInitialPose must bootstrap
+    // from dock_pose, not GPS).
+    if (graph_->IsInitialized())
+    {
+      graph_->QueueGnss(mx, my, std::max(sigma, dock_gps_sigma_m_), /*robust=*/true);
+    }
     TrySeedInitialPose();
     return;
   }
