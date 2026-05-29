@@ -109,23 +109,40 @@ TEST(RobustLoopClosure, ConsistentLcLeavesTrajectoryStable)
     gm.AddGyroDelta(0.0, kDt);
     gm.Tick(kDt * (i + 1));
   }
-  auto x9_before = gm.GetPose(9);
-  ASSERT_TRUE(x9_before.has_value());
+  // The node-period gate uses now_s - last_node_time_s_, and now_s =
+  // 0.1*(i+1) lands a few inter-tick deltas at 0.0999…8 < node_period_s
+  // (0.1) in IEEE-754, so 10 Tick() calls do NOT create exactly nodes
+  // 0..9 — a couple of ticks are skipped (their motion still accumulates
+  // into the next node). Query the actual latest node index rather than a
+  // hardcoded 9, and feed the LC the true node-0 → latest relative delta.
+  auto snap = gm.LatestSnapshot();
+  ASSERT_TRUE(snap.has_value());
+  const uint64_t last_idx = snap->node_index;
+  auto x_last_before = gm.GetPose(last_idx);
+  auto x0 = gm.GetPose(0);
+  ASSERT_TRUE(x_last_before.has_value());
+  ASSERT_TRUE(x0.has_value());
 
-  // Consistent LC: node 0 sits at ~0.02 m and node 9 at ~0.20 m, so the
-  // true node-0 → node-9 relative delta is ~0.18 m. Feed exactly that —
-  // a redundant, consistent factor DCS must NOT downweight.
-  gm.AddLoopClosure(0, 9, gtsam::Pose2(0.18, 0.0, 0.0), 0.05, 0.02);
+  // Consistent LC: feed exactly the wheel-integrated node-0 → latest delta
+  // (straight forward, no rotation) — a redundant, consistent factor DCS
+  // must NOT downweight.
+  const double consistent_dx = x_last_before->x() - x0->x();
+  gm.AddLoopClosure(0, last_idx, gtsam::Pose2(consistent_dx, 0.0, 0.0), 0.05, 0.02);
 
-  auto x9_after = gm.GetPose(9);
-  ASSERT_TRUE(x9_after.has_value());
-  std::printf("[RobustLC] consistent LC: X9 before=(%.3f,%.3f,%.3f) after=(%.3f,%.3f,%.3f)\n",
-              x9_before->x(), x9_before->y(), x9_before->theta(),
-              x9_after->x(), x9_after->y(), x9_after->theta());
+  auto x_last_after = gm.GetPose(last_idx);
+  ASSERT_TRUE(x_last_after.has_value());
+  std::printf("[RobustLC] consistent LC: X%llu before=(%.3f,%.3f,%.3f) after=(%.3f,%.3f,%.3f)\n",
+              static_cast<unsigned long long>(last_idx),
+              x_last_before->x(),
+              x_last_before->y(),
+              x_last_before->theta(),
+              x_last_after->x(),
+              x_last_after->y(),
+              x_last_after->theta());
 
   // The two poses should be near-identical (the LC adds redundant
   // information that DOESN'T move iSAM2). Allow a small Δ since the
   // LC tightens the marginal posterior slightly.
-  EXPECT_NEAR(x9_after->x(), x9_before->x(), 0.05);
-  EXPECT_NEAR(x9_after->y(), x9_before->y(), 0.05);
+  EXPECT_NEAR(x_last_after->x(), x_last_before->x(), 0.05);
+  EXPECT_NEAR(x_last_after->y(), x_last_before->y(), 0.05);
 }

@@ -332,8 +332,9 @@ BT::NodeStatus NavigateInsideBoundary::onStart()
   }
   if (!keepout_params_client_)
   {
-    keepout_params_client_ = std::make_shared<rclcpp::AsyncParametersClient>(
-        ctx->node, "/global_costmap/global_costmap");
+    keepout_params_client_ =
+        std::make_shared<rclcpp::AsyncParametersClient>(ctx->node,
+                                                        "/global_costmap/global_costmap");
   }
   if (!action_client_)
   {

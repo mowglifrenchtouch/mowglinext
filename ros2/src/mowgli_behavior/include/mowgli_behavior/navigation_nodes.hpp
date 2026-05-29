@@ -18,6 +18,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "behaviortree_cpp/behavior_tree.h"
 #include "behaviortree_cpp/bt_factory.h"
@@ -263,13 +264,13 @@ public:
 private:
   enum class Phase
   {
-    WaitingForService,    // /map_server_node/get_recovery_point
-    DisablingKeepout,     // global_costmap.set_parameters(keepout_filter.enabled=false)
-    ClearingCostmap,      // global_costmap/clear_entirely_global_costmap
-    WaitingForGoalHandle, // /navigate_to_pose
+    WaitingForService,  // /map_server_node/get_recovery_point
+    DisablingKeepout,  // global_costmap.set_parameters(keepout_filter.enabled=false)
+    ClearingCostmap,  // global_costmap/clear_entirely_global_costmap
+    WaitingForGoalHandle,  // /navigate_to_pose
     WaitingForResult,
-    FallbackBackingUp,    // /backup (open-loop reverse when Smac aborts)
-    ReEnablingKeepout,    // global_costmap.set_parameters(keepout_filter.enabled=true)
+    FallbackBackingUp,  // /backup (open-loop reverse when Smac aborts)
+    ReEnablingKeepout,  // global_costmap.set_parameters(keepout_filter.enabled=true)
   };
 
   // Reset Phase + tracking state for a fresh recovery attempt.
