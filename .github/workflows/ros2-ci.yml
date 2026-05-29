@@ -107,6 +107,55 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libboost-all-dev libeigen3-dev libmetis-dev
 
+      # Fields2Cover 2.0.0 — mowgli_coverage pins
+      #   find_package(Fields2Cover 2.0.0 REQUIRED PATHS /opt/fields2cover-200)
+      # No v2 debian on Noble, so the Docker image (Dockerfile stage 0b) builds
+      # it from source; mirror that here (cached) or the workspace build fails
+      # at mowgli_coverage.
+      - name: Cache Fields2Cover build
+        id: cache-f2c
+        uses: actions/cache@v4
+        with:
+          path: /opt/fields2cover-200
+          key: f2c-2.0.0-${{ runner.os }}-noble
+
+      - name: Build Fields2Cover 2.0.0 from source
+        working-directory: .
+        if: steps.cache-f2c.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git pkg-config \
+            libeigen3-dev libgdal-dev libgeos++-dev libgeos-dev libgsl-dev \
+            libtinyxml2-dev libpython3-dev python3-dev libtbb-dev \
+            ros-${{ matrix.ros_distro }}-ortools-vendor
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          cd /tmp
+          git clone --depth 1 -b v2.0.0 https://github.com/Fields2Cover/Fields2Cover.git f2c
+          cd f2c && mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/opt/fields2cover-200 \
+            -DBUILD_TESTS=OFF \
+            -DBUILD_PYTHON=OFF \
+            -DBUILD_TUTORIALS=OFF \
+            -DBUILD_DOC=OFF \
+            -DALLOW_PARALLELIZATION=ON \
+            -DBUILD_SHARED_LIBS=ON
+          sudo make -j$(nproc) install
+
+      - name: Register Fields2Cover in linker + CMake search paths
+        run: |
+          # Runtime/link deps mowgli_coverage needs against F2C (the build apt
+          # deps above cover these, but a cache-restore skips that step).
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgdal-dev libgeos-dev libgeos++-dev libtinyxml2-dev \
+            ros-${{ matrix.ros_distro }}-ortools-vendor
+          echo "/opt/fields2cover-200/lib" | sudo tee /etc/ld.so.conf.d/f2c.conf
+          sudo ldconfig
+          echo "CMAKE_PREFIX_PATH=/opt/fields2cover-200:$CMAKE_PREFIX_PATH" >> $GITHUB_ENV
+
       - name: Cache rosdep
         uses: actions/cache@v4
         with:
