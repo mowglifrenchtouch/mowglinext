@@ -182,6 +182,12 @@ FusionGraphNode::FusionGraphNode(const rclcpp::NodeOptions& opts)
     scan_yield_sigma_theta_ = declare_parameter<double>("scan_yield_sigma_theta", 0.3);
   }
 
+  // 180° yaw-flip recovery (see fusion_graph_node.hpp). Declared outside the
+  // scan_matching gate — it keys off COG, not LiDAR.
+  cog_flip_recovery_enabled_ = declare_parameter<bool>("cog_flip_recovery_enabled", true);
+  cog_flip_threshold_rad_ = declare_parameter<double>("cog_flip_threshold_rad", 2.618);
+  cog_flip_consecutive_n_ = declare_parameter<int>("cog_flip_consecutive_n", 3);
+
   // ── Magnetometer (off by default) ───────────────────────────────
   // Motors near the chassis induce a heading-dependent bias on the
   // magnetometer that no static cal can remove (see CLAUDE.md
@@ -995,6 +1001,49 @@ void FusionGraphNode::OnCogHeading(sensor_msgs::msg::Imu::ConstSharedPtr msg)
   const double sigma = std::sqrt(var);
   graph_->QueueYaw(yaw, sigma);
   seed_yaw_ = yaw;
+
+  // 180° yaw-flip recovery. The COG yaw is the physical travel direction
+  // (wheels + GPS displacement, only emitted on a solid straight baseline),
+  // so a sustained ~180° disagreement with the fused estimate means the
+  // estimate is flipped — and the non-robust COG unary above can fail to pull
+  // it back across the half-turn. After N consecutive flipped samples, snap
+  // the yaw onto the COG (keep the estimated xy) so the robot stops believing
+  // it faces backwards.
+  if (cog_flip_recovery_enabled_ && graph_->IsInitialized())
+  {
+    auto snap = graph_->LatestSnapshot();
+    if (snap)
+    {
+      const double d = yaw - snap->pose.theta();
+      const double err = std::fabs(std::atan2(std::sin(d), std::cos(d)));
+      if (err > cog_flip_threshold_rad_)
+      {
+        if (++cog_flip_count_ >= cog_flip_consecutive_n_)
+        {
+          const gtsam::Pose2 anchor(snap->pose.x(), snap->pose.y(), yaw);
+          // Tight yaw (1°) — we are deliberately overriding the flipped
+          // estimate with the physics-grounded COG heading. Keep xy at its
+          // current σ-equivalent (5 mm) since only yaw is wrong.
+          graph_->ForceAnchor(snap->node_index, anchor, 0.005, 1.0 * M_PI / 180.0);
+          t_map_odom_anchor_valid_ = false;
+          ++cog_flip_recoveries_;
+          cog_flip_count_ = 0;
+          RCLCPP_WARN(get_logger(),
+                      "fusion_graph: 180° yaw-flip recovery — estimate %.1f° vs "
+                      "COG %.1f° (Δ=%.0f°); re-anchored yaw to COG on node %lu.",
+                      snap->pose.theta() * 180.0 / M_PI,
+                      yaw * 180.0 / M_PI,
+                      err * 180.0 / M_PI,
+                      static_cast<unsigned long>(snap->node_index));
+        }
+      }
+      else
+      {
+        cog_flip_count_ = 0;
+      }
+    }
+  }
+
   TrySeedInitialPose();
 }
 

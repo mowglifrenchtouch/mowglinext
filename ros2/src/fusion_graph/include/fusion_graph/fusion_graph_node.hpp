@@ -196,6 +196,24 @@ private:
   // Latched seeds for initialization.
   std::optional<gtsam::Vector2> seed_xy_;  // from latest GPS
   std::optional<double> seed_yaw_;  // from latest COG/mag
+
+  // --- 180° yaw-flip recovery -----------------------------------------------
+  // COG yaw is the PHYSICAL travel direction (wheels + GPS displacement) and
+  // is only emitted on a solid straight-line baseline — it cannot lie about
+  // which way the robot is facing. If the fused estimate disagrees with it by
+  // ~180° for several consecutive COG samples, the estimate is flipped (a seed
+  // that initialised backwards, or a gyro chain that jumped during a pivot
+  // where COG was gated off). The normal non-robust COG unary can fail to pull
+  // it back across the half-turn, so when this persistent disagreement is seen
+  // we force-re-anchor the yaw onto the COG (trusting the physics). Gated on a
+  // large threshold + N consecutive samples so it never fires in normal
+  // operation. Field 2026-05-29: "robot thinks it faces backwards, drives in
+  // reverse toward a goal that is in front."
+  bool cog_flip_recovery_enabled_ = true;
+  double cog_flip_threshold_rad_ = 2.618;  // ~150°
+  int cog_flip_consecutive_n_ = 3;
+  int cog_flip_count_ = 0;
+  uint64_t cog_flip_recoveries_ = 0;  // diagnostic counter
   // True when seed_xy_ was set from an RTK-Fixed fix (carr_soln=2).
   // Drives the prior sigma at Initialize: tight (sub-cm) when set,
   // configured default (cm-decimetre) otherwise. Without this the
