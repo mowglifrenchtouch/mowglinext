@@ -212,13 +212,30 @@ unset GPS_BY_ID GNSS_BACKEND GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_U
 PRESET_LOADED=true
 GNSS_BACKEND=unicore
 GPS_CONNECTION=usb
-GPS_PROTOCOL=UBX
+GPS_PROTOCOL=UNICORE
 GPS_BAUD=921600
 GPS_DEBUG_ENABLED=false
 if configure_gps >/dev/null 2>&1; then
   fail "GPS preset unicore USB requires GPS_BY_ID" "configure_gps unexpectedly succeeded"
 else
   pass "GPS preset unicore USB requires GPS_BY_ID"
+fi
+
+# Test: legacy Unicore preset values are normalized onto the dedicated protocol
+unset GPS_BY_ID GNSS_BACKEND GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE 2>/dev/null || true
+PRESET_LOADED=true
+GNSS_BACKEND=unicore
+GPS_CONNECTION=usb
+GPS_PROTOCOL=UBX
+GPS_BAUD=921600
+GPS_BY_ID=/dev/serial/by-id/usb-Unicore-test
+GPS_PORT="$GPS_BY_ID"
+GPS_DEBUG_ENABLED=false
+if configure_gps >/dev/null 2>&1; then
+  pass "GPS preset unicore legacy protocol is normalized"
+  assert_eq "GPS preset unicore protocol normalized to UNICORE" "UNICORE" "$GPS_PROTOCOL"
+else
+  fail "GPS preset unicore legacy protocol is normalized" "configure_gps unexpectedly failed"
 fi
 
 # Test: invalid GNSS backend does not fall back to gps compose
@@ -471,17 +488,20 @@ confirm() {
 }
 
 # GPS with preset — should NOT prompt
-unset GNSS_BACKEND GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE UBLOX_DEVICE_SERIAL_STRING 2>/dev/null || true
+unset GNSS_BACKEND GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BY_ID GPS_BAUD GPS_UART_DEVICE GPS_DEBUG_ENABLED GPS_UART_RULE GPS_DEBUG_UART_RULE UBLOX_DEVICE_SERIAL_STRING 2>/dev/null || true
 PRESET_LOADED=true
 GNSS_BACKEND=ublox
 GPS_CONNECTION=usb
 GPS_PROTOCOL=UBX
 GPS_BAUD=115200
+GPS_BY_ID=/dev/serial/by-id/usb-u-blox-test
 GPS_UART_DEVICE=
-UBLOX_DEVICE_SERIAL_STRING=ublox-test-serial
+GPS_PORT="$GPS_BY_ID"
+UBLOX_DEVICE_SERIAL_STRING=
 GPS_DEBUG_ENABLED=false
 configure_gps >/dev/null 2>&1
-assert_eq "GPS preset mode: keeps dedicated ublox serial string" "ublox-test-serial" "$UBLOX_DEVICE_SERIAL_STRING"
+assert_eq "GPS preset mode: keeps canonical ublox by-id path" "/dev/serial/by-id/usb-u-blox-test" "$GPS_BY_ID"
+assert_eq "GPS preset mode: keeps canonical ublox port" "/dev/serial/by-id/usb-u-blox-test" "$GPS_PORT"
 pass "GPS preset mode: no interactive prompts"
 
 # LiDAR with preset — should NOT prompt

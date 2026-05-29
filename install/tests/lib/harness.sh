@@ -32,9 +32,11 @@ harness_init() {
   # shell so the matrix tests in test_gps_matrix.sh / test_lidar_matrix.sh
   # don't carry GPS_UART_DEVICE etc. from one preset into the next.
   unset GNSS_BACKEND GPS_CONNECTION GPS_PROTOCOL GPS_PORT GPS_BAUD \
-        GPS_UART_DEVICE GPS_BY_ID GPS_DEBUG_ENABLED GPS_DEBUG_PORT \
+        GPS_UART_DEVICE GPS_BY_ID GPS_FRAME_ID GPS_DEBUG_ENABLED GPS_DEBUG_PORT \
         GPS_DEBUG_UART_DEVICE GPS_DEBUG_BAUD \
-        UNICORE_COM_PORT UNICORE_TARGET_BAUD \
+        UNICORE_COM_PORT UNICORE_TARGET_BAUD UNICORE_AUTO_CONFIGURE \
+        UNICORE_FIRST_RUN_RESET UNICORE_RESET_MARKER_PATH \
+        UNICORE_RESET_COMMAND \
         UBLOX_DEVICE_FAMILY UBLOX_DEVICE_SERIAL_STRING \
         LIDAR_ENABLED LIDAR_TYPE LIDAR_MODEL LIDAR_CONNECTION \
         LIDAR_PORT LIDAR_UART_DEVICE LIDAR_BAUD LIDAR_IMAGE \
@@ -148,6 +150,7 @@ harness_init() {
   GPS_CONNECTION="${GPS_CONNECTION:-uart}"
   GPS_PROTOCOL="${GPS_PROTOCOL:-UBX}"
   GPS_BAUD="${GPS_BAUD:-921600}"
+  GPS_FRAME_ID="${GPS_FRAME_ID:-gps_link}"
   GPS_UART_DEVICE="${GPS_UART_DEVICE:-/dev/ttyAMA4}"
   UBLOX_DEVICE_FAMILY="${UBLOX_DEVICE_FAMILY:-F9P}"
   GPS_DEBUG_ENABLED="${GPS_DEBUG_ENABLED:-false}"
@@ -183,12 +186,6 @@ harness_set_preset() {
         ;;
       gnss)
         GNSS_BACKEND="$val"
-        if [ "$val" = "ublox" ]; then
-          GPS_CONNECTION="usb"
-          GPS_PROTOCOL="UBX"
-          GPS_UART_DEVICE=""
-          UBLOX_DEVICE_SERIAL_STRING="${UBLOX_DEVICE_SERIAL_STRING:-ublox-test-serial}"
-        fi
         ;;
       gps)
         proto="${val%%-*}"; conn="${val##*-}"
@@ -246,6 +243,34 @@ harness_set_preset() {
       ntrip)     CONFIG_NTRIP_ENABLED="$val" ;;
     esac
   done
+
+  case "${GNSS_BACKEND:-gps}" in
+    ublox)
+      GPS_CONNECTION="usb"
+      GPS_PROTOCOL="UBX"
+      GPS_UART_DEVICE=""
+      GPS_BY_ID="${GPS_BY_ID:-/dev/serial/by-id/usb-u-blox-stub}"
+      GPS_PORT="$GPS_BY_ID"
+      UBLOX_DEVICE_SERIAL_STRING=""
+      GPS_BAUD="${GPS_BAUD:-921600}"
+      ;;
+    unicore)
+      GPS_CONNECTION="usb"
+      GPS_PROTOCOL="UNICORE"
+      GPS_UART_DEVICE=""
+      GPS_BY_ID="${GPS_BY_ID:-/dev/serial/by-id/usb-unicore-stub}"
+      GPS_PORT="$GPS_BY_ID"
+      GPS_BAUD="${GPS_BAUD:-921600}"
+      ;;
+    gps)
+      if [ "${GPS_CONNECTION:-uart}" = "usb" ]; then
+        GPS_BY_ID="${GPS_BY_ID:-/dev/serial/by-id/usb-gps-stub}"
+        GPS_PORT="$GPS_BY_ID"
+      else
+        GPS_PORT="/dev/gps"
+      fi
+      ;;
+  esac
 }
 
 # Run the same data-flow steps that mowglinext.sh main() runs, minus the

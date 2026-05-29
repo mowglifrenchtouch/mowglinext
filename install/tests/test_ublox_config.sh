@@ -146,7 +146,7 @@ section "No-op for other GNSS modes"
 
 reset_ublox_mocks
 GNSS_BACKEND=unicore
-GPS_PROTOCOL=UBX
+GPS_PROTOCOL=UNICORE
 GPS_BAUD=460800
 maybe_upgrade_ublox_baud "$port" "$GPS_BAUD" auto
 assert_eq "unicore backend does not send u-blox commands" "" "$UBLOX_COMMANDS"

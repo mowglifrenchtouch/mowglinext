@@ -30,11 +30,13 @@ parse_yaml() {
 # inside a shelled-in container where only mowgli_robot.yaml is set.
 GPS_PROTOCOL="${GPS_PROTOCOL:-$(parse_yaml gps_protocol)}"
 GPS_PROTOCOL="${GPS_PROTOCOL:-UBX}"
-GPS_PORT="${GPS_DEVICE_PATH:-$(parse_yaml gps_port)}"
+GPS_PORT="${GPS_PORT:-${GPS_DEVICE_PATH:-$(parse_yaml gps_port)}}"
 GPS_PORT="${GPS_PORT:-/dev/gps}"
 # gps_baudrate is the runtime baud for the main GNSS receiver.
 GPS_BAUD="${GPS_BAUD:-$(parse_yaml gps_baudrate)}"
 GPS_BAUD="${GPS_BAUD:-921600}"
+GPS_FRAME_ID="${GPS_FRAME_ID:-$(parse_yaml gps_frame_id)}"
+GPS_FRAME_ID="${GPS_FRAME_ID:-gps_link}"
 
 NTRIP_ENABLED=$(parse_yaml ntrip_enabled)
 NTRIP_HOST=$(parse_yaml ntrip_host)
@@ -71,7 +73,7 @@ if [ "$GPS_PROTOCOL" = "NMEA" ]; then
   ros2 run nmea_navsat_driver nmea_serial_driver --ros-args \
     -p port:="${GPS_PORT}" \
     -p baud:=${GPS_BAUD} \
-    -p frame_id:=gps_link \
+    -p frame_id:="${GPS_FRAME_ID}" \
     -r /fix:=/gps/fix &
   GPS_PID=$!
 else

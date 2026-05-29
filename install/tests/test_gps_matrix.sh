@@ -3,9 +3,9 @@
 # A.4 GPS backend matrix
 #
 # The installer supports three direct GNSS backends:
-#   gps     — generic legacy GPS container       (docker-compose.gps.yml)
-#   ublox   — u-blox F9P (ublox_dgnss launch)    (docker-compose.ublox.yaml)
-#   unicore — Unicore UM98x (unicore_gnss launch)(docker-compose.unicore.yaml)
+#   gps     — generic legacy GPS container            (docker-compose.gps.yml)
+#   ublox   — u-blox F9P on the shared gps fragment   (docker-compose.gps.yml)
+#   unicore — Unicore UM98x                           (docker-compose.unicore.yaml)
 # Generic NMEA receivers are modeled as GNSS_BACKEND=gps with
 # GPS_PROTOCOL=NMEA, not as a separate GNSS backend.
 # =============================================================================
@@ -31,6 +31,11 @@ selected_fragments_in_current_run() {
 
 setup_sandbox
 install_all_mocks
+
+section "installer GNSS label copy"
+gps_menu_source="$(cat "$REPO_ROOT/install/lib/gps.sh")"
+assert_contains "installer label names Generic / Legacy NMEA receiver" "Generic / Legacy NMEA receiver" "$gps_menu_source"
+assert_not_contains "installer does not introduce GNSS_BACKEND=legacy" "GNSS_BACKEND=legacy" "$gps_menu_source"
 
 # ── Default GPS backend: legacy "gps" container, UBX over UART ────────────
 section "gnss=gps protocol=UBX connection=uart"
@@ -85,8 +90,8 @@ assert_eq "ubx/usb: GPS_CONNECTION=usb" "usb" "$(env_value "$repo" GPS_CONNECTIO
 # important invariant is that no UART udev rule is generated for USB.
 assert_eq "ubx/usb: no UART udev rule (GPS_UART_RULE empty)" "" "${GPS_UART_RULE:-}"
 
-# ── u-blox F9P backend (ublox_dgnss) ───────────────────────────────────────
-section "gnss=ublox (F9P / ublox_dgnss launch)"
+# ── u-blox F9P backend on the shared gps fragment ──────────────────────────
+section "gnss=ublox (F9P via shared gps fragment)"
 
 repo="$SANDBOX/repo_ublox"
 sandbox_repo "$repo"
@@ -96,17 +101,19 @@ if harness_run; then pass "harness_run ublox"; else fail "harness_run ublox"; fi
 assert_eq "ublox: GNSS_BACKEND=ublox" "ublox" "$(env_value "$repo" GNSS_BACKEND)"
 assert_eq "ublox: GPS_CONNECTION forced to usb" "usb" "$(env_value "$repo" GPS_CONNECTION)"
 assert_eq "ublox: GPS_PROTOCOL forced to UBX" "UBX" "$(env_value "$repo" GPS_PROTOCOL)"
-assert_eq "ublox: dedicated serial string stored" "ublox-test-serial" "$(env_value "$repo" UBLOX_DEVICE_SERIAL_STRING)"
+assert_eq "ublox: GPS_PORT mirrors selected by-id path" "$(env_value "$repo" GPS_BY_ID)" "$(env_value "$repo" GPS_PORT)"
+assert_eq "ublox: legacy serial string is cleared once GPS_PORT is canonical" "" "$(env_value "$repo" UBLOX_DEVICE_SERIAL_STRING)"
 
-# Compose selection must include the ublox fragment and exclude the legacy gps fragment.
+# Compose selection must keep ublox on the shared gps fragment and exclude
+# the Unicore-specific fragment.
 ublox_fragments=$(selected_fragments_in_current_run)
 case "$ublox_fragments" in
-  *docker-compose.ublox.yaml*) pass "ublox: ublox fragment present" ;;
-  *)                           fail "ublox: ublox fragment present" "got: $ublox_fragments" ;;
+  *docker-compose.gps.yml*) pass "ublox: gps fragment present" ;;
+  *)                        fail "ublox: gps fragment present" "got: $ublox_fragments" ;;
 esac
 case "$ublox_fragments" in
-  *docker-compose.gps.yml*) fail "ublox: NO legacy gps fragment" "legacy gps leaked when ublox selected" ;;
-  *)                        pass "ublox: NO legacy gps fragment" ;;
+  *docker-compose.unicore.yaml*) fail "ublox: NO unicore fragment" "unicore fragment leaked when ublox selected" ;;
+  *)                             pass "ublox: NO unicore fragment" ;;
 esac
 
 # ── Unicore UM98x backend ──────────────────────────────────────────────────
@@ -115,14 +122,15 @@ section "gnss=unicore (UM98x via unicore_gnss launch)"
 repo="$SANDBOX/repo_unicore"
 sandbox_repo "$repo"
 harness_init "$repo"
-# Unicore needs GPS_UART_DEVICE for its `devices: ${GPS_UART_DEVICE}:...`
-# binding (see compose/docker-compose.unicore.yaml).
-GPS_UART_DEVICE=/dev/ttyUSB0
-harness_set_preset gnss=unicore gps=ubx-uart lidar=none tfluna=none
+# Legacy generic GPS presets must not leak into the dedicated Unicore backend.
+harness_set_preset gnss=unicore gps=nmea-uart lidar=none tfluna=none
 if harness_run; then pass "harness_run unicore"; else fail "harness_run unicore"; fi
 assert_eq "unicore: GNSS_BACKEND=unicore" "unicore" "$(env_value "$repo" GNSS_BACKEND)"
+assert_eq "unicore: GPS_PROTOCOL=UNICORE" "UNICORE" "$(env_value "$repo" GPS_PROTOCOL)"
+assert_eq "unicore: GPS_CONNECTION forced to usb" "usb" "$(env_value "$repo" GPS_CONNECTION)"
+assert_eq "unicore: GPS_PORT mirrors selected by-id path" "$(env_value "$repo" GPS_BY_ID)" "$(env_value "$repo" GPS_PORT)"
 # Web/CLI presets no longer bake a backend-specific intermediate baud.
-assert_eq "unicore/uart: GPS_BAUD=921600" "921600" "$(env_value "$repo" GPS_BAUD)"
+assert_eq "unicore: GPS_BAUD=921600" "921600" "$(env_value "$repo" GPS_BAUD)"
 
 unicore_fragments=$(selected_fragments_in_current_run)
 case "$unicore_fragments" in
@@ -158,20 +166,18 @@ GPS_CONNECTION=usb
 GPS_PROTOCOL=UBX
 GPS_BY_ID=""
 pick_serial_called=false
-
 prompt_count=0
+
 prompt() {
   prompt_count=$((prompt_count + 1))
-  case "$prompt_count" in
-    1) REPLY="1" ;; # connection: USB
-    2) REPLY="1" ;; # by-id candidate
-    3) REPLY="1" ;; # protocol: UBX
-    *) REPLY="${2:-}" ;;
-  esac
+  REPLY="${2:-}"
 }
 pick_serial_by_id() {
   pick_serial_called=true
   REPLY="$serial_dir/usb-Unicore_UM980"
+}
+prompt_or_probe_baud() {
+  REPLY="921600"
 }
 
 if configure_gps >/dev/null 2>&1; then
@@ -182,7 +188,53 @@ fi
 assert_eq "unicore web preset asks for by-id selection" "true" "$pick_serial_called"
 assert_eq "unicore web preset selects by-id interactively" "$serial_dir/usb-Unicore_UM980" "${GPS_BY_ID:-}"
 assert_eq "unicore web preset keeps backend" "unicore" "${GNSS_BACKEND:-}"
+assert_eq "unicore web preset normalizes protocol" "UNICORE" "${GPS_PROTOCOL:-}"
+assert_eq "unicore web preset never asks generic GPS prompts" "0" "$prompt_count"
+unset -f prompt_or_probe_baud
 unset SERIAL_BY_ID_DIR
+
+# ── Existing .env rerun must keep Unicore out of generic UBX/NMEA prompts ──
+section "gnss=unicore rerun from existing .env"
+
+repo="$SANDBOX/repo_unicore_rerun_env"
+sandbox_repo "$repo"
+harness_init "$repo"
+
+cat > "$repo/docker/.env" <<'EOF'
+GNSS_BACKEND=unicore
+GPS_CONNECTION=usb
+GPS_PROTOCOL=UBX
+GPS_PORT=/dev/serial/by-id/usb-Unicore_UM980
+GPS_BY_ID=/dev/serial/by-id/usb-Unicore_UM980
+GPS_BAUD=460800
+EOF
+
+load_env_defaults_file "$repo/docker/.env" >/dev/null 2>&1
+PRESET_LOADED=false
+STATE_ACTIVE_PRESET_COUNT=0
+
+prompt_count=0
+prompt() {
+  prompt_count=$((prompt_count + 1))
+  REPLY="${2:-}"
+}
+pick_serial_by_id() {
+  REPLY="${1:-/dev/serial/by-id/usb-Unicore_UM980}"
+}
+prompt_or_probe_baud() {
+  REPLY="${GPS_BAUD:-460800}"
+}
+
+if configure_gps >/dev/null 2>&1; then
+  pass "unicore rerun from .env configures GPS"
+else
+  fail "unicore rerun from .env configures GPS"
+fi
+assert_eq "unicore rerun from .env keeps backend" "unicore" "${GNSS_BACKEND:-}"
+assert_eq "unicore rerun from .env normalizes protocol" "UNICORE" "${GPS_PROTOCOL:-}"
+assert_eq "unicore rerun from .env keeps by-id path" "/dev/serial/by-id/usb-Unicore_UM980" "${GPS_BY_ID:-}"
+assert_eq "unicore rerun from .env avoids generic UBX/NMEA prompts" "1" "$prompt_count"
+unset -f prompt_or_probe_baud
 
 # ── Explicit GPS_BAUD must remain authoritative ───────────────────────────
 section "explicit GPS_BAUD is not auto-replaced"
@@ -284,8 +336,7 @@ prompt_count=0
 prompt() {
   prompt_count=$((prompt_count + 1))
   case "$prompt_count" in
-    1) REPLY="1" ;; # connection: USB
-    2) REPLY="1" ;; # protocol: UBX
+    1) REPLY="1" ;; # baud: auto-detect
     *) REPLY="${2:-}" ;;
   esac
 }
@@ -307,6 +358,7 @@ mapfile -t probe_args < "$probe_args_file"
 assert_eq "unicore baud probe uses selected by-id" "$serial_dir/usb-Unicore_UM980" "${probe_args[0]:-}"
 assert_eq "unicore baud probe uses backend" "unicore" "${probe_args[1]:-}"
 assert_eq "unicore web preset writes detected GPS_BAUD" "921600" "${GPS_BAUD:-}"
+assert_eq "unicore auto-baud never asks protocol" "1" "$prompt_count"
 
 # ── Unicore detected baud is upgraded to 921600 only after verification ───
 section "unicore auto-detected baud upgrade success"
@@ -327,10 +379,8 @@ prompt_count=0
 prompt() {
   prompt_count=$((prompt_count + 1))
   case "$prompt_count" in
-    1) REPLY="1" ;;    # connection: USB
-    2) REPLY="1" ;;    # protocol: UBX
-    3) REPLY="1" ;;    # baud: auto-detect
-    4) REPLY="COM1" ;; # Unicore COM port
+    1) REPLY="1" ;;    # baud: auto-detect
+    2) REPLY="COM1" ;; # Unicore COM port
     *) REPLY="${2:-}" ;;
   esac
 }
@@ -356,6 +406,7 @@ assert_eq "unicore upgrade uses selected by-id" "$serial_dir/usb-Unicore_UM980" 
 assert_eq "unicore upgrade uses detected baud" "460800" "${upgrade_args[1]:-}"
 assert_eq "unicore upgrade uses COM1 default" "COM1" "${upgrade_args[2]:-}"
 assert_eq "unicore upgrade success writes GPS_BAUD=921600" "921600" "${GPS_BAUD:-}"
+assert_eq "unicore upgrade success avoids generic protocol prompt" "2" "$prompt_count"
 
 section "unicore auto-detected baud upgrade failure keeps detected baud"
 
@@ -376,9 +427,7 @@ prompt() {
   prompt_count=$((prompt_count + 1))
   case "$prompt_count" in
     1) REPLY="1" ;;
-    2) REPLY="1" ;;
-    3) REPLY="1" ;;
-    4) REPLY="COM1" ;;
+    2) REPLY="COM1" ;;
     *) REPLY="${2:-}" ;;
   esac
 }
@@ -398,6 +447,7 @@ else
   fail "unicore detected baud upgrade failure still configures GPS"
 fi
 assert_eq "unicore upgrade failure keeps detected GPS_BAUD" "460800" "${GPS_BAUD:-}"
+assert_eq "unicore upgrade failure avoids generic protocol prompt" "2" "$prompt_count"
 
 unset -f configure_unicore_baud_921600 serial_probe_baud
 

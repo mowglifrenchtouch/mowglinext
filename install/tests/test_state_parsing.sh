@@ -89,11 +89,12 @@ cat > "$SANDBOX_REPO/docker/.env" <<'EOF'
 export GPS_PROTOCOL=NMEA
 
 GPS_BAUD=115200
+GPS_FRAME_ID=gps_antenna
 LIDAR_MODEL=""
 UNKNOWN_TEST_KEY=surprise
 EOF
 
-unset GPS_PROTOCOL GPS_BAUD LIDAR_MODEL UNKNOWN_TEST_KEY 2>/dev/null || true
+unset GPS_PROTOCOL GPS_BAUD GPS_FRAME_ID LIDAR_MODEL UNKNOWN_TEST_KEY 2>/dev/null || true
 env_output_file="$SANDBOX/env-load.out"
 load_env_defaults_file "$SANDBOX_REPO/docker/.env" >"$env_output_file" 2>&1
 env_output="$(cat "$env_output_file")"
@@ -101,6 +102,7 @@ assert_contains ".env comments ignored and file loads" "Loaded previous configur
 assert_contains "unknown key warning preserved" "Ignoring unknown installer key 'UNKNOWN_TEST_KEY'" "$env_output"
 assert_eq ".env export compatibility preserved" "NMEA" "${GPS_PROTOCOL:-}"
 assert_eq ".env numeric text preserved" "115200" "${GPS_BAUD:-}"
+assert_eq ".env keeps GPS_FRAME_ID" "gps_antenna" "${GPS_FRAME_ID:-}"
 assert_eq ".env quoted empty value preserved" "" "${LIDAR_MODEL-__unset__}"
 
 section ".env backup for web preset installs"

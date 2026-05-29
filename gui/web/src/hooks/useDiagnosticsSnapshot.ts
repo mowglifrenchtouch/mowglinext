@@ -28,8 +28,22 @@ export interface DockPoseCrossCheck {
     source?: string;
 }
 
+export interface GnssCrossCheck {
+    backend: string;
+    hardware_backend: string;
+    protocol: string;
+    connection: string;
+    port: string;
+    by_id: string;
+    baud: string;
+    frame_id: string;
+    has_config: boolean;
+    source?: string;
+}
+
 export interface CrossChecks {
     dock_pose: DockPoseCrossCheck;
+    gnss: GnssCrossCheck;
     warnings: string[];
     overall_status: string; // "ok", "warn", "error"
 }

@@ -16,6 +16,14 @@ services:
       FOXGLOVE_URL: ws://localhost:8765
       MOWER_CONFIG_FILE: /config/mower_config.sh
       MOWER_YAML_CONFIG_FILE: /mowgli_config/mowgli_robot.yaml
+      HARDWARE_BACKEND: ${HARDWARE_BACKEND}
+      GNSS_BACKEND: ${GNSS_BACKEND}
+      GPS_CONNECTION: ${GPS_CONNECTION}
+      GPS_PROTOCOL: ${GPS_PROTOCOL}
+      GPS_PORT: ${GPS_PORT}
+      GPS_BY_ID: ${GPS_BY_ID}
+      GPS_BAUD: ${GPS_BAUD}
+      GPS_FRAME_ID: ${GPS_FRAME_ID:-gps_link}
       DOCKER_HOST: unix:///var/run/docker.sock
       DB_PATH: /db
     volumes:

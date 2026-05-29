@@ -33,16 +33,18 @@ services:
     environment:
       <<: *ros2-env
       HARDWARE_BACKEND: ${HARDWARE_BACKEND}
-      # Pass the host-side device path straight through. start_gps.sh uses
-      # GPS_DEVICE_PATH as the ublox_dgnss DEVICE_PATH when transport=serial,
-      # which lets the container use /dev/serial/by-id/... directly (always
-      # created by systemd-udev) instead of depending on the /dev/gps symlink
-      # from /etc/udev/rules.d/50-mowgli.rules. GPS_PORT is the canonical
-      # installer key; fall back to UBLOX_DEVICE_SERIAL_STRING for compose
-      # generations carried over from the legacy ublox backend.
+      GNSS_BACKEND: ${GNSS_BACKEND}
+      GPS_CONNECTION: ${GPS_CONNECTION}
+      GPS_PORT: ${GPS_PORT:-${UBLOX_DEVICE_SERIAL_STRING:-/dev/gps}}
+      GPS_BY_ID: ${GPS_BY_ID}
+      # GPS_DEVICE_PATH is kept as a compatibility alias for older shell
+      # entrypoints; GPS_PORT is the canonical runtime contract, while older
+      # compose generations fall back to UBLOX_DEVICE_SERIAL_STRING for compose
+      # compatibility.
       GPS_DEVICE_PATH: ${GPS_PORT:-${UBLOX_DEVICE_SERIAL_STRING:-/dev/gps}}
       GPS_PROTOCOL: ${GPS_PROTOCOL:-UBX}
       GPS_BAUD: ${GPS_BAUD:-921600}
+      GPS_FRAME_ID: ${GPS_FRAME_ID:-gps_link}
     volumes:
       - /dev:/dev
       - ./docker/config/mowgli:/config:ro

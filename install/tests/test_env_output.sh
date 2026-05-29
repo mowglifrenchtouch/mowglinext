@@ -47,9 +47,16 @@ REQUIRED_KEYS=(
   GPS_CONNECTION
   GPS_PROTOCOL
   GPS_PORT
+  GPS_BY_ID
   GPS_BAUD
   GPS_UART_DEVICE
+  GPS_FRAME_ID
   UNICORE_COM_PORT
+  UNICORE_TARGET_BAUD
+  UNICORE_AUTO_CONFIGURE
+  UNICORE_FIRST_RUN_RESET
+  UNICORE_RESET_MARKER_PATH
+  UNICORE_RESET_COMMAND
   UBLOX_DEVICE_FAMILY
   UBLOX_DEVICE_SERIAL_STRING
   GPS_DEBUG_ENABLED
@@ -72,6 +79,7 @@ REQUIRED_KEYS=(
   TFLUNA_EDGE_BAUD
   MOWGLI_ROS2_IMAGE
   GPS_IMAGE
+  UNICORE_IMAGE
   LIDAR_IMAGE
   MAVROS_IMAGE
   GUI_IMAGE
@@ -97,10 +105,13 @@ ENV_CONTENT="$(cat "$ENV_FILE")"
 assert_contains "GPS_PROTOCOL=UBX (preset)" "GPS_PROTOCOL=UBX" "$ENV_CONTENT"
 assert_contains "GPS_BAUD=921600 (runtime target)" "GPS_BAUD=921600" "$ENV_CONTENT"
 assert_contains "GPS_CONNECTION=uart (preset)" "GPS_CONNECTION=uart" "$ENV_CONTENT"
+assert_contains "GPS_FRAME_ID=gps_link (default)" "GPS_FRAME_ID=gps_link" "$ENV_CONTENT"
 assert_contains "LIDAR_TYPE=ldlidar (preset)" "LIDAR_TYPE=ldlidar" "$ENV_CONTENT"
 assert_contains "LIDAR_BAUD=230400 (preset)" "LIDAR_BAUD=230400" "$ENV_CONTENT"
 assert_contains "HARDWARE_BACKEND=mowgli (default)" "HARDWARE_BACKEND=mowgli" "$ENV_CONTENT"
 assert_contains "GNSS_BACKEND=gps (default)" "GNSS_BACKEND=gps" "$ENV_CONTENT"
+assert_contains "UNICORE_AUTO_CONFIGURE=true (default)" "UNICORE_AUTO_CONFIGURE=true" "$ENV_CONTENT"
+assert_contains "UNICORE_FIRST_RUN_RESET=false (default)" "UNICORE_FIRST_RUN_RESET=false" "$ENV_CONTENT"
 assert_contains "TFLUNA_FRONT_ENABLED=false (default)" "TFLUNA_FRONT_ENABLED=false" "$ENV_CONTENT"
 assert_contains "TFLUNA_EDGE_ENABLED=false (default)" "TFLUNA_EDGE_ENABLED=false" "$ENV_CONTENT"
 
@@ -108,7 +119,7 @@ section ".env image references point at ghcr.io"
 
 # Every image var should be a ghcr.io path — guards against accidental
 # Docker Hub or local paths leaking into production .env.
-for img_var in MOWGLI_ROS2_IMAGE GPS_IMAGE LIDAR_IMAGE MAVROS_IMAGE GUI_IMAGE; do
+for img_var in MOWGLI_ROS2_IMAGE GPS_IMAGE UNICORE_IMAGE LIDAR_IMAGE MAVROS_IMAGE GUI_IMAGE; do
   val="$(grep -E "^${img_var}=" "$ENV_FILE" | head -1 | cut -d= -f2-)"
   case "$val" in
     ghcr.io/*) pass "${img_var} is ghcr.io ($val)" ;;

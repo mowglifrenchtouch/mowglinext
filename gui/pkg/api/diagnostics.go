@@ -57,6 +57,7 @@ type AreaCoverageInfo struct {
 // CrossChecks holds smart diagnostic cross-checks.
 type CrossChecks struct {
 	DockPose      DockPoseCheck `json:"dock_pose"`
+	GNSS          GNSSCheck     `json:"gnss"`
 	Warnings      []string      `json:"warnings"`
 	OverallStatus string        `json:"overall_status"` // "ok", "warn", "error"
 }
@@ -73,6 +74,21 @@ type DockPoseCheck struct {
 	// "mowgli_robot.yaml" (single source of truth), or "" when the file
 	// could not be read.
 	Source        string  `json:"source,omitempty"`
+}
+
+// GNSSCheck reports the installer-selected GNSS runtime contract forwarded by
+// docker compose from docker/.env into the GUI container environment.
+type GNSSCheck struct {
+	Backend       string `json:"backend"`
+	Hardware      string `json:"hardware_backend"`
+	Protocol      string `json:"protocol"`
+	Connection    string `json:"connection"`
+	Port          string `json:"port"`
+	ByID          string `json:"by_id"`
+	Baud          string `json:"baud"`
+	FrameID       string `json:"frame_id"`
+	HasConfig     bool   `json:"has_config"`
+	Source        string `json:"source,omitempty"`
 }
 
 // MowingSession represents a single mowing session stored in the DB.
@@ -241,6 +257,8 @@ func buildCrossChecks(dbProvider types.IDBProvider) CrossChecks {
 		Source:        source,
 	}
 
+	checks.GNSS = buildGNSSCheck()
+
 	// Validate config
 	if datumLat == 0 && datumLon == 0 {
 		checks.Warnings = append(checks.Warnings, "GPS datum not configured (lat=0, lon=0)")
@@ -252,6 +270,39 @@ func buildCrossChecks(dbProvider types.IDBProvider) CrossChecks {
 	}
 
 	return checks
+}
+
+func buildGNSSCheck() GNSSCheck {
+	backend := strings.TrimSpace(os.Getenv("GNSS_BACKEND"))
+	if backend == "nmea" {
+		backend = "gps"
+	}
+
+	hardware := strings.TrimSpace(os.Getenv("HARDWARE_BACKEND"))
+	protocol := strings.TrimSpace(os.Getenv("GPS_PROTOCOL"))
+	connection := strings.TrimSpace(os.Getenv("GPS_CONNECTION"))
+	port := strings.TrimSpace(os.Getenv("GPS_PORT"))
+	byID := strings.TrimSpace(os.Getenv("GPS_BY_ID"))
+	baud := strings.TrimSpace(os.Getenv("GPS_BAUD"))
+	frameID := strings.TrimSpace(os.Getenv("GPS_FRAME_ID"))
+
+	hasConfig := backend != "" || hardware != "" || protocol != "" || connection != "" || port != "" || baud != "" || byID != "" || frameID != ""
+	if backend == "" {
+		backend = "unknown"
+	}
+
+	return GNSSCheck{
+		Backend:       backend,
+		Hardware:      hardware,
+		Protocol:      protocol,
+		Connection:    connection,
+		Port:          port,
+		ByID:          byID,
+		Baud:          baud,
+		FrameID:       frameID,
+		HasConfig:     hasConfig,
+		Source:        "compose env",
+	}
 }
 
 // extractYAMLFloat searches recursively for a key in nested YAML.

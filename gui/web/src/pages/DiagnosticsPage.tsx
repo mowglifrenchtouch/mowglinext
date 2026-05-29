@@ -970,6 +970,61 @@ export const DiagnosticsPage = () => {
                             No warnings.
                         </Typography.Text>
                     )}
+                    {crossChecks?.gnss && (
+                        <Row gutter={[8, 4]} style={{marginBottom: 12}}>
+                            <Col span={24}>
+                                <Typography.Text type="secondary" style={{fontSize: 11}}>GNSS runtime</Typography.Text>
+                            </Col>
+                            <Col span={24}>
+                                <Space wrap>
+                                    <Typography.Text type="secondary" style={{fontSize: 12}}>Backend</Typography.Text>
+                                    <Tag color={crossChecks.gnss.backend === "unknown" ? "warning" : "processing"}>
+                                        {crossChecks.gnss.backend}
+                                    </Tag>
+                                    {crossChecks.gnss.protocol && (
+                                        <Tag>{crossChecks.gnss.protocol}</Tag>
+                                    )}
+                                    {crossChecks.gnss.connection && (
+                                        <Tag>{crossChecks.gnss.connection}</Tag>
+                                    )}
+                                </Space>
+                            </Col>
+                            <Col span={12}>
+                                <Statistic
+                                    title="Port"
+                                    value={crossChecks.gnss.port || "—"}
+                                    valueStyle={{fontSize: 14}}
+                                />
+                            </Col>
+                            <Col span={12}>
+                                <Statistic
+                                    title="Baud"
+                                    value={crossChecks.gnss.baud || "—"}
+                                    valueStyle={{fontSize: 14}}
+                                />
+                            </Col>
+                            {crossChecks.gnss.by_id && (
+                                <Col span={24}>
+                                    <Typography.Text type="secondary" style={{fontSize: 11}}>
+                                        USB by-id:{" "}
+                                    </Typography.Text>
+                                    <Typography.Text code style={{fontSize: 11}}>
+                                        {crossChecks.gnss.by_id}
+                                    </Typography.Text>
+                                </Col>
+                            )}
+                            {crossChecks.gnss.frame_id && (
+                                <Col span={24}>
+                                    <Typography.Text type="secondary" style={{fontSize: 11}}>
+                                        Frame ID:{" "}
+                                    </Typography.Text>
+                                    <Typography.Text code style={{fontSize: 11}}>
+                                        {crossChecks.gnss.frame_id}
+                                    </Typography.Text>
+                                </Col>
+                            )}
+                        </Row>
+                    )}
                     {crossChecks?.dock_pose && (
                         <Row gutter={[8, 4]}>
                             <Col span={24}>

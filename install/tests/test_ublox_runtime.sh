@@ -10,16 +10,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/framework.sh
 source "$SCRIPT_DIR/lib/framework.sh"
 
-compose_file="$REPO_ROOT/install/compose/docker-compose.ublox.yaml"
+compose_file="$REPO_ROOT/install/compose/docker-compose.gps.yml"
 launch_file="$REPO_ROOT/ros2/src/mowgli_bringup/launch/ublox_gnss.launch.py"
 config_file="$REPO_ROOT/ros2/src/mowgli_bringup/config/ublox_gnss.yaml"
 
 section "Compose wiring"
 
 compose_content="$(cat "$compose_file")"
-assert_not_contains "compose does not pass GPS_BAUD to dedicated ublox backend" 'ublox_baud_rate:=' "$compose_content"
-assert_contains "compose passes dedicated u-blox serial string" 'ublox_device_serial_string:=${UBLOX_DEVICE_SERIAL_STRING}' "$compose_content"
-assert_contains "compose documents dedicated ublox backend transport" 'GNSS_BACKEND=ublox uses the dedicated USB/libusb u-blox driver.' "$compose_content"
+assert_contains "compose passes canonical GPS device path" 'GPS_DEVICE_PATH: ${GPS_PORT:-${UBLOX_DEVICE_SERIAL_STRING:-/dev/gps}}' "$compose_content"
+assert_contains "compose passes GPS_BAUD through shared gps fragment" 'GPS_BAUD: ${GPS_BAUD:-921600}' "$compose_content"
+assert_contains "compose documents legacy ublox fallback path" 'fall back to UBLOX_DEVICE_SERIAL_STRING for compose' "$compose_content"
 
 section "Launch wiring"
 
@@ -34,6 +34,7 @@ assert_file_exists "ublox runtime config file exists" "$config_file"
 config_content="$(cat "$config_file")"
 assert_contains "ublox runtime config declares ublox_dgnss section" 'ublox_dgnss:' "$config_content"
 assert_contains "ublox runtime config declares adapter section" 'ublox_gnss_adapter:' "$config_content"
+assert_contains "ublox runtime config documents dedicated driver" 'GNSS_BACKEND=ublox uses the dedicated USB/libusb u-blox driver.' "$config_content"
 assert_contains "ublox runtime config documents serial ubx fallback" 'Serial UBX receivers should use GNSS_BACKEND=gps with GPS_PROTOCOL=UBX.' "$config_content"
 
 test_summary
