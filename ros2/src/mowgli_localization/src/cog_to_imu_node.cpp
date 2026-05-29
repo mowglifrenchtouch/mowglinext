@@ -210,8 +210,13 @@ public:
           const double dt = t - prev;
           if (prev > 0.0 && dt > 0.0 && dt < 0.5)
           {
-            abs_dtheta_since_anchor_ =
-                abs_dtheta_since_anchor_.load() + std::abs(msg->angular_velocity.z) * dt;
+            // CAS add (not a plain load+store) so a concurrent on_fix() reset
+            // to 0 under a MultiThreadedExecutor can't be lost to a stale add.
+            const double inc = std::abs(msg->angular_velocity.z) * dt;
+            double cur = abs_dtheta_since_anchor_.load(std::memory_order_relaxed);
+            while (!abs_dtheta_since_anchor_.compare_exchange_weak(cur, cur + inc))
+            {
+            }
           }
         });
     pub_ = create_publisher<sensor_msgs::msg::Imu>("/imu/cog_heading", qos);
