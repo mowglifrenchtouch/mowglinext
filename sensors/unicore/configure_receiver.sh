@@ -1,12 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# Send a one-time UM98x rover configuration over the serial port.
+# Send a one-time UM98x/UM96x rover configuration over the serial port.
 #
 # Symptoms this fixes:
 #   * accuracy stuck at 10 m, RTK never validates, even with RTCM flowing
 #   * /diagnostics carr_soln stays "none"
 #
-# Root cause: out-of-the-box / FRESET-state UM98x receivers default to
+# Root cause: out-of-the-box / FRESET-state Unicore receivers default to
 # something close to "rover, no NMEA enabled, no PVTSLNA" — and the
 # default RTK timeout is short. Without an explicit MODE ROVER + LOG
 # directives, the receiver outputs only minimal NMEA and the operator
@@ -59,6 +59,9 @@ UNICORE_ENABLE_GGAH="${UNICORE_ENABLE_GGAH:-}"
 UNICORE_ENABLE_RAW_OBSERVATIONS="${UNICORE_ENABLE_RAW_OBSERVATIONS:-}"
 UNICORE_LAST_SERIAL_COMMAND="${UNICORE_LAST_SERIAL_COMMAND:-}"
 UNICORE_LAST_COMMAND_RESPONSE="${UNICORE_LAST_COMMAND_RESPONSE:-}"
+UNICORE_FIRST_RUN_RESET="${UNICORE_FIRST_RUN_RESET:-false}"
+UNICORE_RESET_MARKER_PATH="${UNICORE_RESET_MARKER_PATH:-/state/unicore-first-run-reset.done}"
+UNICORE_RESET_COMMAND="${UNICORE_RESET_COMMAND:-FRESET}"
 
 declare -A UNICORE_ACCEPTED_LOG_COMMANDS=()
 declare -A UNICORE_REJECTED_LOG_COMMANDS=()
@@ -88,6 +91,28 @@ unicore_bool_string() {
     printf '%s\n' "true"
   else
     printf '%s\n' "false"
+  fi
+}
+
+unicore_reset_marker_present() {
+  [ -n "${UNICORE_RESET_MARKER_PATH:-}" ] || return 1
+  [ -f "$UNICORE_RESET_MARKER_PATH" ]
+}
+
+unicore_write_reset_marker() {
+  local marker="${UNICORE_RESET_MARKER_PATH:-}"
+  local marker_dir
+
+  [ -n "$marker" ] || return 0
+
+  marker_dir="$(dirname "$marker")"
+  if ! mkdir -p "$marker_dir"; then
+    log "WARN: could not create reset marker directory ${marker_dir}." >&2
+    return 1
+  fi
+  if ! printf 'reset_command=%s\n' "${UNICORE_RESET_COMMAND:-FRESET}" >"$marker"; then
+    log "WARN: could not write reset marker ${marker}." >&2
+    return 1
   fi
 }
 
@@ -848,7 +873,7 @@ query_receiver_identification() {
   sleep 0.1
   response="$(collect_serial_output 10)"
 
-  if [[ "$response" != *"UM980"* && "$response" != *"UM982"* && "$response" != *"#VERSIONA"* ]]; then
+  if [[ "$response" != *"UM960"* && "$response" != *"UM980"* && "$response" != *"UM982"* && "$response" != *"#VERSIONA"* ]]; then
     send_serial_command "VERSIONA"
     sleep 0.1
     response+=$(collect_serial_output 10)
@@ -862,6 +887,8 @@ model_from_response() {
 
   if [[ "$response" == *"UM980"* ]]; then
     printf '%s\n' "UM980"
+  elif [[ "$response" == *"UM960"* ]]; then
+    printf '%s\n' "UM960"
   elif [[ "$response" == *"UM982"* ]]; then
     printf '%s\n' "UM982"
   else
@@ -935,6 +962,9 @@ signalgroup_for_model() {
   fi
 
   case "$model" in
+    # UM960 stays conservative by default until we have a verified
+    # model-specific SIGNALGROUP recommendation for that firmware family.
+    UM960) printf '%s\n' "" ;;
     UM980) printf '%s\n' "CONFIG SIGNALGROUP 2" ;;
     UM982) printf '%s\n' "CONFIG SIGNALGROUP 3 6" ;;
     *) return 1 ;;
@@ -944,27 +974,37 @@ signalgroup_for_model() {
 build_base_config_commands() {
   local model="${1:?build_base_config_commands: missing model}"
   local signalgroup
+  local -a commands=()
 
   signalgroup="$(signalgroup_for_model "$model")" || return 1
 
-  printf '%s\n' \
-    "MODE ROVER SURVEY MOW" \
-    "CONFIG NMEAVERSION V411" \
-    "CONFIG RTK TIMEOUT 10" \
-    "CONFIG RTK RELIABILITY 3 1" \
-    "CONFIG DGPS TIMEOUT 600" \
-    "CONFIG UNDULATION AUTO" \
-    "${signalgroup}" \
-    "CONFIG SBAS DISABLE" \
-    "CONFIG AGNSS DISABLE" \
-    "CONFIG PPS DISABLE" \
-    "MASK 10" \
-    "UNMASK GPS" \
-    "UNMASK GLO" \
-    "UNMASK GAL" \
-    "UNMASK BDS" \
-    "MASK QZSS" \
+  commands=(
+    "MODE ROVER SURVEY MOW"
+    "CONFIG NMEAVERSION V411"
+    "CONFIG RTK TIMEOUT 10"
+    "CONFIG RTK RELIABILITY 3 1"
+    "CONFIG DGPS TIMEOUT 600"
+    "CONFIG UNDULATION AUTO"
+  )
+
+  if [ -n "$signalgroup" ]; then
+    commands+=("$signalgroup")
+  fi
+
+  commands+=(
+    "CONFIG SBAS DISABLE"
+    "CONFIG AGNSS DISABLE"
+    "CONFIG PPS DISABLE"
+    "MASK 10"
+    "UNMASK GPS"
+    "UNMASK GLO"
+    "UNMASK GAL"
+    "UNMASK BDS"
+    "MASK QZSS"
     "MASK IRNSS"
+  )
+
+  printf '%s\n' "${commands[@]}"
 }
 
 build_log_commands() {
@@ -1115,7 +1155,7 @@ apply_receiver_configuration() {
   cmds+=( "${profile_cmds[@]}" )
   cmds+=( "${log_cmds[@]}" )
 
-  log "Applying UM98x rover config to ${port} @ ${TARGET_BAUD}..."
+  log "Applying Unicore rover config to ${port} @ ${TARGET_BAUD}..."
   log "Profile=${UNICORE_PROFILE} output=${UNICORE_OUTPUT_FORMAT} main=${UNICORE_MAIN_LOG_PERIOD}s bestnav=${UNICORE_BESTNAV_LOG_PERIOD}s diag=${UNICORE_DIAGNOSTIC_LOG_PERIOD}s sat=${UNICORE_SATELLITE_LOG_PERIOD}s rf=${UNICORE_RF_LOG_PERIOD}s raw=${UNICORE_RAW_LOG_PERIOD}s sat_enabled=$(unicore_bool_string "$UNICORE_ENABLE_SATELLITES") rf_enabled=$(unicore_bool_string "$UNICORE_ENABLE_RF") jam_enabled=$(unicore_bool_string "$UNICORE_ENABLE_JAMMING") raw_enabled=$(unicore_bool_string "$UNICORE_ENABLE_RAW_OBSERVATIONS")"
   if ! send_config_batch "$port" "${cmds[@]}"; then
     log "WARN: one or more LOG commands could not find an accepted syntax on this firmware."
@@ -1137,10 +1177,23 @@ apply_receiver_configuration() {
   log "Done. Receiver config persisted via SAVECONFIG."
 }
 
+perform_first_run_reset() {
+  local port="${1:?perform_first_run_reset: missing port}"
+  local detected_baud="${2:?perform_first_run_reset: missing detected baud}"
+
+  log "First-run reset requested; sending ${UNICORE_RESET_COMMAND} on ${port} @ ${detected_baud}."
+  serial_set_baud "$port" "$detected_baud"
+  open_serial "$port"
+  send_serial_command_with_response "$UNICORE_RESET_COMMAND"
+  close_serial
+  sleep 1
+}
+
 main() {
   local port="${1:-/dev/gps}"
   local preferred_baud="${2:-$TARGET_BAUD}"
   local detection detected_baud detected_model
+  local reset_performed=false
 
   require_serial_port "$port"
   wait_for_serial_port "$port"
@@ -1153,6 +1206,21 @@ main() {
   detected_baud="${detection%%|*}"
   detected_model="${detection#*|}"
 
+  if unicore_is_truthy "$UNICORE_FIRST_RUN_RESET"; then
+    if unicore_reset_marker_present; then
+      log "First-run reset marker present at ${UNICORE_RESET_MARKER_PATH}; skipping reset."
+    else
+      perform_first_run_reset "$port" "$detected_baud"
+      reset_performed=true
+      detection="$(detect_receiver_baud_and_model "$port" "$TARGET_BAUD")" || {
+        log "ERROR: unable to detect a responding Unicore receiver on ${port} after ${UNICORE_RESET_COMMAND}." >&2
+        return 1
+      }
+      detected_baud="${detection%%|*}"
+      detected_model="${detection#*|}"
+    fi
+  fi
+
   if [ "$detected_model" = "unknown" ]; then
     log "WARN: receiver model could not be identified from VERSION response." >&2
     log "WARN: no SIGNALGROUP will be applied and SAVECONFIG is skipped." >&2
@@ -1160,6 +1228,12 @@ main() {
   fi
 
   apply_receiver_configuration "$port" "$detected_baud" "$detected_model"
+
+  if $reset_performed; then
+    if unicore_write_reset_marker; then
+      log "First-run reset marker written to ${UNICORE_RESET_MARKER_PATH}."
+    fi
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

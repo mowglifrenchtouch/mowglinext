@@ -8,7 +8,11 @@
 #                           and subscribes to /ntrip_client/rtcm
 #   2. ntrip_client_node  — NTRIP caster client publishing /ntrip_client/rtcm
 #
-# Reads gps_port / gps_baudrate / ntrip_* from /config/mowgli_robot.yaml.
+# Compose env is authoritative for the GNSS transport contract
+# (GNSS_BACKEND / GPS_PORT / GPS_BAUD / GPS_PROTOCOL / GPS_FRAME_ID and
+# UNICORE_* toggles). The
+# mounted /config/mowgli_robot.yaml remains the fallback for manual shell runs
+# inside the container and still carries the ROS-side NTRIP settings.
 # Bind-mount docker/config/mowgli to /config (see docker-compose.unicore.yaml).
 #
 # We deliberately do NOT use `ros2 launch mowgli_unicore_gnss
@@ -74,6 +78,26 @@ resolve_bool_setting() {
   fi
 }
 
+resolve_string_setting() {
+  local var_name="${1:?resolve_string_setting: missing var name}"
+  local yaml_key="${2:?resolve_string_setting: missing yaml key}"
+  local default_value="${3-}"
+  local raw_value="${!var_name-}"
+
+  if [ -n "$raw_value" ]; then
+    printf '%s\n' "$raw_value"
+    return 0
+  fi
+
+  raw_value="$(parse_yaml "$yaml_key")"
+  if [ -n "$raw_value" ]; then
+    printf '%s\n' "$raw_value"
+    return 0
+  fi
+
+  printf '%s\n' "$default_value"
+}
+
 cleanup() {
   [ -n "$NTRIP_PID" ] && kill "$NTRIP_PID" 2>/dev/null || true
   [ -n "$GPS_PID" ] && kill "$GPS_PID" 2>/dev/null || true
@@ -81,11 +105,17 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-GPS_PORT=$(parse_yaml gps_port)
+GPS_PROTOCOL="$(resolve_string_setting GPS_PROTOCOL gps_protocol UNICORE)"
+if [ "$GPS_PROTOCOL" != "UNICORE" ]; then
+  echo "[start_gps.sh] WARN: forcing GPS_PROTOCOL=UNICORE for the dedicated Unicore backend (got ${GPS_PROTOCOL})"
+  GPS_PROTOCOL="UNICORE"
+fi
+GPS_PORT="${GPS_PORT:-${GPS_DEVICE_PATH:-$(parse_yaml gps_port)}}"
 GPS_PORT="${GPS_PORT:-/dev/gps}"
-GPS_BAUD=$(parse_yaml gps_baudrate)
+GPS_BAUD="${GPS_BAUD:-$(parse_yaml gps_baudrate)}"
 GPS_BAUD="${GPS_BAUD:-921600}"
-UNICORE_TARGET_BAUD="${UNICORE_TARGET_BAUD:-921600}"
+GPS_FRAME_ID="$(resolve_string_setting GPS_FRAME_ID gps_frame_id gps_link)"
+UNICORE_TARGET_BAUD="${UNICORE_TARGET_BAUD:-$GPS_BAUD}"
 UNICORE_PROFILE="${UNICORE_PROFILE:-normal}"
 UNICORE_OUTPUT_FORMAT="${UNICORE_OUTPUT_FORMAT:-}"
 
@@ -93,10 +123,12 @@ UNICORE_OUTPUT_FORMAT="${UNICORE_OUTPUT_FORMAT:-}"
 # directives via /configure_receiver.sh. SAVECONFIG persists in NVRAM,
 # so this is a no-op on a receiver that's already correctly configured.
 # Default true so the "just installed, never configured" case works
-# out of the box; set to false in mowgli_robot.yaml after you've run
-# Unicore Setup tool yourself.
-UNICORE_AUTO_CONFIGURE=$(parse_yaml unicore_auto_configure)
-UNICORE_AUTO_CONFIGURE="${UNICORE_AUTO_CONFIGURE:-true}"
+# out of the box; set UNICORE_AUTO_CONFIGURE=false in docker/.env
+# (or the YAML fallback key) after you've run the Unicore setup yourself.
+UNICORE_AUTO_CONFIGURE="$(resolve_string_setting UNICORE_AUTO_CONFIGURE unicore_auto_configure true)"
+UNICORE_FIRST_RUN_RESET="$(resolve_string_setting UNICORE_FIRST_RUN_RESET unicore_first_run_reset false)"
+UNICORE_RESET_MARKER_PATH="$(resolve_string_setting UNICORE_RESET_MARKER_PATH unicore_reset_marker_path /state/unicore-first-run-reset.done)"
+UNICORE_RESET_COMMAND="$(resolve_string_setting UNICORE_RESET_COMMAND unicore_reset_command FRESET)"
 
 unicore_apply_profile_defaults
 
@@ -220,7 +252,7 @@ if unicore_output_has_ascii "$UNICORE_OUTPUT_FORMAT" &&
   UNICORE_BINARY_COMPARE_ASCII="true"
 fi
 
-echo "[start_gps.sh] Resolved Unicore backend: output=${UNICORE_OUTPUT_FORMAT} binary_transport=${UNICORE_ENABLE_UNICORE_BINARY} binary_nav=${UNICORE_USE_BINARY_NAV} binary_rtk=${UNICORE_USE_BINARY_RTK_DIAG} binary_rtcm=${UNICORE_USE_BINARY_RTCM_DIAG} binary_sat=${UNICORE_USE_BINARY_SATELLITE_DIAG} binary_rf=${UNICORE_USE_BINARY_RF_DIAG} binary_hw=${UNICORE_USE_BINARY_HW_DIAG} binary_jam=${UNICORE_USE_BINARY_JAMMING_DIAG} raw_diag=${UNICORE_ENABLE_RAW_OBSERVATION_DIAG} raw_binary=${UNICORE_USE_BINARY_RAW_OBSERVATIONS}"
+echo "[start_gps.sh] Resolved Unicore backend: transport=${GPS_PROTOCOL} port=${GPS_PORT} baud=${GPS_BAUD} target_baud=${UNICORE_TARGET_BAUD} auto_configure=${UNICORE_AUTO_CONFIGURE} first_run_reset=${UNICORE_FIRST_RUN_RESET} reset_marker=${UNICORE_RESET_MARKER_PATH} output=${UNICORE_OUTPUT_FORMAT} binary_transport=${UNICORE_ENABLE_UNICORE_BINARY} binary_nav=${UNICORE_USE_BINARY_NAV} binary_rtk=${UNICORE_USE_BINARY_RTK_DIAG} binary_rtcm=${UNICORE_USE_BINARY_RTCM_DIAG} binary_sat=${UNICORE_USE_BINARY_SATELLITE_DIAG} binary_rf=${UNICORE_USE_BINARY_RF_DIAG} binary_hw=${UNICORE_USE_BINARY_HW_DIAG} binary_jam=${UNICORE_USE_BINARY_JAMMING_DIAG} raw_diag=${UNICORE_ENABLE_RAW_OBSERVATION_DIAG} raw_binary=${UNICORE_USE_BINARY_RAW_OBSERVATIONS}"
 echo "[start_gps.sh] Auto-config uses a per-message UM98x/N4 syntax table (LOG ONTIME, direct period, ONCHANGED) with compatibility fallbacks when needed."
 
 NTRIP_ENABLED=$(parse_yaml ntrip_enabled)
@@ -255,7 +287,7 @@ echo "[start_gps.sh] Launching Unicore GNSS driver: port=${GPS_PORT} baud=${GPS_
 ros2 run "${UNICORE_ROS_PACKAGE}" "${UNICORE_ROS_EXECUTABLE}" --ros-args \
   -p "port:=${GPS_PORT}" \
   -p "baudrate:=${GPS_BAUD}" \
-  -p "frame_id:=gps_link" \
+  -p "frame_id:=${GPS_FRAME_ID}" \
   -p "fix_topic:=/gps/fix" \
   -p "heading_topic:=/gps/azimuth" \
   -p "diagnostics_topic:=/diagnostics" \

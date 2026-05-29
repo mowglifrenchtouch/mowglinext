@@ -106,6 +106,7 @@ query_receiver_identification() {
   esac
 
   case "$MOCK_MODEL" in
+    UM960) printf '%s\n' '#VERSIONA,"UM960","R4.10Build15434"' ;;
     UM980) printf '%s\n' '#VERSIONA,"UM980","R4.10Build15434"' ;;
     UM982) printf '%s\n' '#VERSIONA,"UM982","R4.10Build15434"' ;;
     *) printf '%s\n' '#VERSIONA,"UNKNOWN","R4.10Build15434"' ;;
@@ -152,14 +153,44 @@ run_scenario() {
   assert_eq "$label rc" "$expected_rc" "$rc"
 }
 
+assert_eq "UM960 VERSION maps to model" "UM960" "$(model_from_response '#VERSIONA,"UM960","R4.10Build15434"')"
+assert_eq "UM980 VERSION maps to model" "UM980" "$(model_from_response '#VERSIONA,"UM980","R4.10Build15434"')"
+assert_eq "UM982 VERSION maps to model" "UM982" "$(model_from_response '#VERSIONA,"UM982","R4.10Build15434"')"
+assert_eq "UM960 default signalgroup is skipped" "" "$(signalgroup_for_model "UM960")"
+assert_eq "UM980 default signalgroup is model-safe" "CONFIG SIGNALGROUP 2" "$(signalgroup_for_model "UM980")"
+assert_eq "UM982 default signalgroup is model-specific" "CONFIG SIGNALGROUP 3 6" "$(signalgroup_for_model "UM982")"
 run_scenario "UM980 from 460800" "460800" "UM980" "460800 921600" "0"
 assert_contains "UM980 switches to 921600" "CONFIG COM1 921600" "$COMMAND_LOG"
 assert_contains "UM980 uses SIGNALGROUP 2" "CONFIG SIGNALGROUP 2" "$COMMAND_LOG"
+assert_not_contains "UM980 avoids UM982-only signalgroup" "CONFIG SIGNALGROUP 3 6" "$COMMAND_LOG"
 assert_contains "UM980 saves config" "SAVECONFIG" "$COMMAND_LOG"
+
+run_scenario "UM960 already at 921600" "921600" "UM960" "921600" "0"
+assert_not_contains "UM960 skips signalgroup by default" "CONFIG SIGNALGROUP" "$COMMAND_LOG"
+assert_not_contains "UM960 avoids UM982-only signalgroup" "CONFIG SIGNALGROUP 3 6" "$COMMAND_LOG"
+assert_contains "UM960 saves config" "SAVECONFIG" "$COMMAND_LOG"
 
 run_scenario "UM982 already at 921600" "921600" "UM982" "921600" "0"
 assert_contains "UM982 uses SIGNALGROUP 3 6" "CONFIG SIGNALGROUP 3 6" "$COMMAND_LOG"
 assert_eq "UM982 does not resend baud config" "" "$(printf '%s' "$COMMAND_LOG" | grep -F "CONFIG COM1 921600" || true)"
+
+reset_marker_dir="$(mktemp -d)"
+UNICORE_FIRST_RUN_RESET="true"
+UNICORE_RESET_MARKER_PATH="$reset_marker_dir/unicore-reset.done"
+UNICORE_RESET_COMMAND="FRESET"
+run_scenario "UM982 first-run reset before config" "460800" "UM982" "460800 115200 921600" "0"
+assert_contains "first-run reset sends reset command" "FRESET" "$COMMAND_LOG"
+if [ -f "$UNICORE_RESET_MARKER_PATH" ]; then
+  echo "PASS: first-run reset writes marker"
+else
+  echo "FAIL: first-run reset writes marker"
+  failures=$((failures + 1))
+fi
+
+run_scenario "UM982 reset marker skips second reset" "460800" "UM982" "460800 115200 921600" "0"
+assert_eq "second run skips reset command" "" "$(printf '%s' "$COMMAND_LOG" | grep -F "FRESET" || true)"
+UNICORE_FIRST_RUN_RESET="false"
+rm -rf "$reset_marker_dir"
 
 run_scenario "Unknown model is rejected" "115200" "unknown" "115200" "1"
 assert_eq "Unknown model skips saveconfig" "" "$(printf '%s' "$COMMAND_LOG" | grep -F "SAVECONFIG" || true)"

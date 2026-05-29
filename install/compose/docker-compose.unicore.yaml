@@ -3,20 +3,25 @@
 #
 # Mirrors the docker-compose.gps.yml fragment so all GNSS backends share
 # the same shape:
-#   * privileged + /dev mounted so the udev /dev/gps symlink (UART or USB)
-#     is visible inside the container regardless of how the receiver is
-#     wired
+#   * privileged + /dev mounted so the selected UART path or USB by-id
+#     symlink is visible inside the container regardless of how the receiver
+#     is wired
 #   * /config mount points at docker/config/mowgli (NOT .../mowgli) so
 #     start_gps.sh can read /config/mowgli_robot.yaml directly
+#   * the canonical GPS runtime contract comes from docker/.env via
+#     GPS_PORT / GPS_BAUD / GPS_PROTOCOL, with GPS_DEVICE_PATH kept as a
+#     compatibility alias and the YAML kept only as a fallback for manual
+#     shell runs
 #   * dedicated UNICORE_IMAGE — the unicore container is built from a
 #     separate Dockerfile (sensors/unicore) with the UM982 driver +
 #     ntrip_client, not the main mowgli-ros2 image
 #   * x-ros2-env anchor + cyclonedds.xml so MaxAutoParticipantIndex=500
 #     applies (same as the gps + ublox fragments)
 #
-# The container's CMD (`/start_gps.sh`) is intentionally left as-is —
-# it reads gps_port / gps_baudrate / ntrip_* from /config/mowgli_robot.yaml
-# and runs `ros2 run ${UNICORE_ROS_PACKAGE} ${UNICORE_ROS_EXECUTABLE}` +
+# The container's CMD (`/start_gps.sh`) is intentionally left as-is — it
+# resolves GPS_PORT / GPS_BAUD / GPS_FRAME_ID / UNICORE_* from the compose env
+# first, keeps mowgli_robot.yaml as fallback for manual shell runs, and runs
+# `ros2 run ${UNICORE_ROS_PACKAGE} ${UNICORE_ROS_EXECUTABLE}` +
 # `ros2 run ntrip_client_node ntrip_client_node` directly. Defaults are
 # unicore_gnss / unicore_node (see install/lib/env.sh). Do NOT override
 # `command:` here with a `ros2 launch mowgli_bringup ...` invocation:
@@ -43,6 +48,14 @@ services:
       <<: *ros2-env
 
       HARDWARE_BACKEND: ${HARDWARE_BACKEND}
+      GNSS_BACKEND: ${GNSS_BACKEND}
+      GPS_CONNECTION: ${GPS_CONNECTION}
+      GPS_PORT: ${GPS_PORT}
+      GPS_BY_ID: ${GPS_BY_ID}
+      GPS_PROTOCOL: ${GPS_PROTOCOL}
+      GPS_DEVICE_PATH: ${GPS_PORT}
+      GPS_BAUD: ${GPS_BAUD}
+      GPS_FRAME_ID: ${GPS_FRAME_ID:-gps_link}
 
       UNICORE_TARGET_BAUD: ${UNICORE_TARGET_BAUD}
       UNICORE_PROFILE: ${UNICORE_PROFILE}
@@ -77,11 +90,16 @@ services:
 
       UNICORE_ROS_PACKAGE: ${UNICORE_ROS_PACKAGE}
       UNICORE_ROS_EXECUTABLE: ${UNICORE_ROS_EXECUTABLE}
+      UNICORE_AUTO_CONFIGURE: ${UNICORE_AUTO_CONFIGURE}
+      UNICORE_FIRST_RUN_RESET: ${UNICORE_FIRST_RUN_RESET}
+      UNICORE_RESET_MARKER_PATH: ${UNICORE_RESET_MARKER_PATH}
+      UNICORE_RESET_COMMAND: ${UNICORE_RESET_COMMAND}
 
     volumes:
       - /dev:/dev
       - ./docker/config/mowgli:/config:ro
       - ./docker/config/cyclonedds.xml:/cyclonedds.xml:ro
+      - mowgli_maps:/state
 
     restart: unless-stopped
 

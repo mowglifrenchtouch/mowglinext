@@ -54,8 +54,28 @@ run_profile() {
   cat "$log_file"
 }
 
+run_with_transport_override() {
+  local log_file="$WORKDIR/transport_override.log"
+  PATH="$WORKDIR/bin:$PATH" \
+  ROS2_LOG_PATH="$log_file" \
+  MOWGLI_CONFIG_PATH="$WORKDIR/mowgli_robot.yaml" \
+  GPS_PROTOCOL="UNICORE" \
+  GPS_FRAME_ID="gps_antenna" \
+  GPS_DEVICE_PATH="/dev/serial/by-id/usb-Unicore_UM980" \
+  GPS_BAUD="460800" \
+  UNICORE_TARGET_BAUD="460800" \
+  UNICORE_AUTO_CONFIGURE="false" \
+  "$SCRIPT_DIR/start_gps.sh" >/dev/null 2>&1 || true
+  cat "$log_file"
+}
+
 make_fake_ros2
 make_config
+
+TRANSPORT_OVERRIDE_ARGS="$(run_with_transport_override)"
+assert_contains "env override forwards GPS device path" "port:=/dev/serial/by-id/usb-Unicore_UM980" "$TRANSPORT_OVERRIDE_ARGS"
+assert_contains "env override forwards GPS baud" "baudrate:=460800" "$TRANSPORT_OVERRIDE_ARGS"
+assert_contains "env override forwards GPS frame id" "frame_id:=gps_antenna" "$TRANSPORT_OVERRIDE_ARGS"
 
 NORMAL_ARGS="$(run_profile normal)"
 assert_contains "normal disables satellite diagnostics" "enable_satellite_status:=false" "$NORMAL_ARGS"
