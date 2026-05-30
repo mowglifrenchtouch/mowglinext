@@ -133,6 +133,13 @@ void MapServerNode::on_get_remaining_area_polygon(
   //    robot can drive across it on the way home (DOCKING_AREA keepout only).
   BgPolygon original = to_bg_polygon(area.polygon);
 
+  // Lobes that a boundary-crossing exclusion pinches off the area. The
+  // largest piece stays in `original` (keeping the hole-reattach logic
+  // simple); every other above-sliver lobe is collected here and emitted as
+  // its own MapArea piece so a large obstacle that partitions the area no
+  // longer drops half the garden (see the split branch below).
+  std::vector<BgPolygon> split_lobes;
+
   auto punch_exclusion = [&](BgPolygon excl)
   {
     bg::correct(excl);
@@ -166,23 +173,40 @@ void MapServerNode::on_get_remaining_area_polygon(
     {
       return;  // exclusion covers the whole area — leave original as-is
     }
-    const BgPolygon* best = &notched[0];
+    size_t best_idx = 0;
     for (size_t ni = 1; ni < notched.size(); ++ni)
     {
-      if (bg::area(notched[ni]) > bg::area(*best))
+      if (bg::area(notched[ni]) > bg::area(notched[best_idx]))
       {
-        best = &notched[ni];
+        best_idx = ni;
       }
     }
+    const BgPolygon* best = &notched[best_idx];
     if (notched.size() > 1)
     {
-      // The notch pinched the area into multiple pieces; we keep only the
-      // largest. Log it so a future dock geometry that splits off a
-      // genuinely-reachable lobe is observable rather than silent.
+      // The notch pinched the area into multiple disjoint pieces. Keep the
+      // largest as the working `original` (so the hole-reattach below stays
+      // simple) and preserve every other above-sliver lobe in `split_lobes`.
+      // Dropping them silently left a whole reachable part of the garden
+      // unmowed when a large obstacle split the area (field 2026-05-30) — the
+      // GetRemainingAreaPolygon contract is a LIST of pieces and
+      // PlanCoverageArea already plans each, so emit them all.
+      const double sliver_area_m2 = tool_width_ * tool_width_;
+      size_t kept = 1;
+      for (size_t ni = 0; ni < notched.size(); ++ni)
+      {
+        if (ni == best_idx || std::abs(bg::area(notched[ni])) < sliver_area_m2)
+        {
+          continue;
+        }
+        split_lobes.push_back(notched[ni]);
+        ++kept;
+      }
       RCLCPP_WARN(get_logger(),
                   "remaining_polygon: exclusion split the area into %zu pieces; "
-                  "keeping the largest (%.2f m²).",
+                  "keeping %zu (largest %.2f m²), dropping sub-sliver lobes.",
                   notched.size(),
+                  kept,
                   bg::area(*best));
     }
     // Replace the outer ring with the notched one, then re-attach the holes
@@ -221,6 +245,20 @@ void MapServerNode::on_get_remaining_area_polygon(
   }
   bg::correct(original);
 
+  // Combine the main (largest) piece with any lobes a notch split off, so
+  // every reachable region of the area is planned — not just the biggest.
+  // (An exclusion punched AFTER a split applies only to the main piece; that
+  // only matters when two separate boundary-crossing exclusions both split
+  // the area, which is rare — the lobes are still emitted, just without the
+  // later exclusion subtracted.)
+  BgMultiPolygon area_mp;
+  area_mp.push_back(original);
+  for (auto& lobe : split_lobes)
+  {
+    bg::correct(lobe);
+    area_mp.push_back(lobe);
+  }
+
   // 2. Walk mow_progress over the area polygon, collect mowed cell positions.
   //    Rule: cell is "mowed" when mow_progress >= 0.3 (matches the rest of
   //    the planner: see is_strip_mowed / compute_coverage_stats).
@@ -257,31 +295,40 @@ void MapServerNode::on_get_remaining_area_polygon(
 
   if (mowed.empty())
   {
-    // Nothing mowed yet: return the whole area as a single piece — but use
-    // the punched `original` (dock notch/hole + operator obstacles applied
-    // above), NOT the raw area.polygon, so the very first plan already
-    // excludes the dock and stays a simple polygon F2C can handle.
-    mowgli_interfaces::msg::MapArea piece;
-    piece.name = area.name + "_remaining_0";
-    BgPolygon simple_orig;
-    bg::simplify(original, simple_orig, 0.02);
-    if (simple_orig.outer().size() < 4)
+    // Nothing mowed yet: return the punched area (dock notch/hole + operator
+    // obstacles applied above), NOT the raw area.polygon, so the very first
+    // plan already excludes the dock and stays a simple polygon F2C can
+    // handle. Emit every split lobe too, so a large obstacle that partitions
+    // the area still plans all of it on the first call.
+    const double sliver_area_m2 = tool_width_ * tool_width_;
+    for (const auto& sub : area_mp)
     {
-      simple_orig = original;
-    }
-    piece.area = to_ros_polygon(simple_orig.outer());
-    for (const auto& inner : simple_orig.inners())
-    {
-      if (inner.size() < 4)
+      if (std::abs(bg::area(sub)) < sliver_area_m2)
       {
         continue;
       }
-      piece.obstacles.push_back(to_ros_polygon(inner));
-    }
-    piece.is_navigation_area = false;
-    if (piece.area.points.size() >= 3)
-    {
-      res->pieces.push_back(piece);
+      BgPolygon simple_orig;
+      bg::simplify(sub, simple_orig, 0.02);
+      if (simple_orig.outer().size() < 4)
+      {
+        simple_orig = sub;
+      }
+      mowgli_interfaces::msg::MapArea piece;
+      piece.name = area.name + "_remaining_" + std::to_string(res->pieces.size());
+      piece.area = to_ros_polygon(simple_orig.outer());
+      for (const auto& inner : simple_orig.inners())
+      {
+        if (inner.size() < 4)
+        {
+          continue;
+        }
+        piece.obstacles.push_back(to_ros_polygon(inner));
+      }
+      piece.is_navigation_area = false;
+      if (piece.area.points.size() >= 3)
+      {
+        res->pieces.push_back(piece);
+      }
     }
     res->success = true;
     return;
@@ -347,9 +394,9 @@ void MapServerNode::on_get_remaining_area_polygon(
   }
   const BgMultiPolygon& mowed_mp = rect_mps.front();
 
-  // 4. remaining = original - mowed_mp.
+  // 4. remaining = area (all lobes) - mowed_mp.
   BgMultiPolygon remaining;
-  bg::difference(original, mowed_mp, remaining);
+  bg::difference(area_mp, mowed_mp, remaining);
 
   // 5. Convert each output piece to a MapArea. Drop pieces whose area is
   //    smaller than one swath (tool_width²) — they are slivers F2C cannot

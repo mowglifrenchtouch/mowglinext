@@ -1824,6 +1824,100 @@ TEST_F(RemainingPolygonTest, MowedIslandBecomesHoleInRemainingPiece)
   EXPECT_LT(outer, 24.5);
 }
 
+// ── Large-obstacle partition (field 2026-05-30) ──────────────────────────────
+// Reproduces the real-robot symptom: a big obstacle the robot can't bypass
+// splits the area into two reachable lobes, but the planner only ever covered
+// the larger half — F2C was fed a single piece and the far region of the
+// garden was never mowed. get_remaining_area_polygon must return BOTH lobes so
+// PlanCoverageArea (which iterates pieces) plans each.
+
+// Build a closed rectangle Polygon [x0,x1] x [y0,y1].
+static geometry_msgs::msg::Polygon make_rect(double x0, double y0, double x1, double y1)
+{
+  geometry_msgs::msg::Polygon poly;
+  for (auto p : std::vector<std::pair<double, double>>{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}})
+  {
+    geometry_msgs::msg::Point32 pt;
+    pt.x = static_cast<float>(p.first);
+    pt.y = static_cast<float>(p.second);
+    pt.z = 0.0f;
+    poly.points.push_back(pt);
+  }
+  return poly;
+}
+
+TEST_F(RemainingPolygonTest, LargeObstacleSplittingAreaKeepsBothLobes)
+{
+  // A vertical bar crossing the full height of the 6x4 m area at x in
+  // [-0.2, 0.2] (extending past the top/bottom edges so it cleanly notches
+  // rather than punching a boundary-touching hole) splits it into a left
+  // lobe (x in [-3,-0.2]) and a right lobe (x in [0.2,3]), ~11.2 m² each.
+  ASSERT_TRUE(node_->apply_promoted_obstacle_for_test(0, make_rect(-0.2, -2.5, 0.2, 2.5)));
+
+  auto req = std::make_shared<mowgli_interfaces::srv::GetRemainingAreaPolygon::Request>();
+  req->area_id = 0;
+  auto res = std::make_shared<mowgli_interfaces::srv::GetRemainingAreaPolygon::Response>();
+  node_->get_remaining_area_polygon_for_test(req, res);
+
+  EXPECT_TRUE(res->success) << res->error;
+  // BOTH lobes must survive — not just the largest. Before the fix this
+  // returned a single ~11 m² piece and the other half of the garden was
+  // silently dropped from the F2C plan.
+  ASSERT_EQ(res->pieces.size(), 2u)
+      << "a bar splitting the area must yield both reachable lobes, not the largest only";
+
+  double total = 0.0;
+  double min_piece = 1e9;
+  for (const auto& p : res->pieces)
+  {
+    const double a = polygon_area(p.area);
+    total += a;
+    min_piece = std::min(min_piece, a);
+  }
+  // area (24) minus bar (0.4 wide x 4 tall = 1.6 m²) ≈ 22.4 m².
+  EXPECT_GT(total, 20.0);
+  EXPECT_LT(total, 24.0);
+  // Each lobe is a real ~11 m² region — neither is a dropped sliver.
+  EXPECT_GT(min_piece, 8.0);
+}
+
+TEST_F(RemainingPolygonTest, SplitAreaKeepsBothLobesAfterPartialMowing)
+{
+  // Same split, but with a patch of the left lobe already mowed — exercises
+  // the mow_progress difference path over the multi-lobe area. The right lobe
+  // must stay fully represented and the left lobe (minus the mowed patch)
+  // must still appear.
+  ASSERT_TRUE(node_->apply_promoted_obstacle_for_test(0, make_rect(-0.2, -2.5, 0.2, 2.5)));
+
+  const double step = node_->tool_width();
+  for (double x = -2.5; x <= -1.5 + 1e-6; x += step)
+  {
+    for (double y = -1.0; y <= 1.0 + 1e-6; y += step)
+    {
+      node_->mark_mowed(x, y);
+    }
+  }
+
+  auto req = std::make_shared<mowgli_interfaces::srv::GetRemainingAreaPolygon::Request>();
+  req->area_id = 0;
+  auto res = std::make_shared<mowgli_interfaces::srv::GetRemainingAreaPolygon::Response>();
+  node_->get_remaining_area_polygon_for_test(req, res);
+
+  EXPECT_TRUE(res->success) << res->error;
+  // At least both lobes (mowing the left lobe may add a hole or shave it, but
+  // it must not erase the right lobe).
+  ASSERT_GE(res->pieces.size(), 2u)
+      << "the un-mowed right lobe must survive partial mowing of the left lobe";
+
+  double max_piece = 0.0;
+  for (const auto& p : res->pieces)
+  {
+    max_piece = std::max(max_piece, polygon_area(p.area));
+  }
+  // The intact right lobe is ~11 m² and must be present.
+  EXPECT_GT(max_piece, 9.0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Entry point
 // ─────────────────────────────────────────────────────────────────────────────
